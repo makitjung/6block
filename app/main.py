@@ -34,6 +34,25 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+@app.middleware("http")
+async def no_cache_headers(request: Request, call_next):
+    """정적 자원·HTML은 항상 서버와 재검증(no-cache)해 옛 캐시(특히 폰 PWA)가 남지 않게 한다.
+
+    StaticFiles의 ETag/Last-Modified와 함께 동작해, 안 바뀌면 304로 가볍게,
+    바뀌면 새 파일을 받게 한다.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    ctype = response.headers.get("content-type", "")
+    if (
+        path.startswith("/static/")
+        or path.endswith(".webmanifest")
+        or ctype.startswith("text/html")
+    ):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def _ko_weekday(date_str: str) -> str:
     d = datetime.strptime(date_str, "%Y-%m-%d").date()
     return KO_WEEKDAYS[d.weekday()]
@@ -52,6 +71,21 @@ def _short_date(date_str: str) -> str:
 templates.env.filters["ko_weekday"] = _ko_weekday
 templates.env.filters["pretty_date"] = _pretty_date
 templates.env.filters["short_date"] = _short_date
+
+
+def _asset_ver() -> str:
+    """app.js/style.css의 최신 수정시각을 캐시버스팅 쿼리값으로 반환(파일 바뀌면 자동 변경)."""
+    try:
+        mtimes = [
+            (BASE_DIR / "static" / "app.js").stat().st_mtime,
+            (BASE_DIR / "static" / "style.css").stat().st_mtime,
+        ]
+        return str(int(max(mtimes)))
+    except OSError:
+        return "1"
+
+
+templates.env.globals["asset_ver"] = _asset_ver
 
 
 def today_str() -> str:

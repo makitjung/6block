@@ -22,7 +22,7 @@
             } catch (e) {}
         })();
     </script>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_ver() }}">
 </head>
 <body>
     <header class="topbar">
@@ -60,6 +60,6 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{ asset_ver() }}"></script>
 </body>
 </html>
