@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0A0B0E">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="6block">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icon.svg">
+    <title>{% block title %}6block{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a href="/today" class="logo">
+                <span class="logo-mark"></span>
+                <span class="logo-text">6block</span>
+            </a>
+            <nav class="topnav">
+                <a href="/today" class="{% if active == 'today' %}is-active{% endif %}">오늘</a>
+                <a href="/week"  class="{% if active == 'week'  %}is-active{% endif %}">주간</a>
+            </nav>
+            <div class="topbar-right">
+                <span id="now-clock" class="now-clock mono"></span>
+            </div>
+        </div>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+
+    <aside id="pomo" class="pomo">
+        <div class="pomo-head">
+            <span class="pomo-phase">대기</span>
+            <button type="button" class="pomo-auto" title="자동 모드 (정각·30분 자동 시작)">AUTO</button>
+        </div>
+        <div class="pomo-time mono">—</div>
+        <div class="pomo-bar-wrap"><div class="pomo-bar"></div></div>
+        <div class="pomo-slot mono"></div>
+        <div class="pomo-actions">
+            <button type="button" class="pomo-start" title="지금 25분 집중 시작">시작</button>
+            <button type="button" class="pomo-skip"  title="현재 단계 스킵">스킵</button>
+            <button type="button" class="pomo-stop"  title="중지">중지</button>
+        </div>
+    </aside>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

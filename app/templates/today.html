@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set active = 'today' %}
+{% block title %}{{ date_str }} | 6block{% endblock %}
+{% block content %}
+<form method="post" action="/save/{{ date_str }}" class="day-form" accept-charset="UTF-8">
+    <section class="hero">
+        <div class="hero-nav">
+            <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날">‹</a>
+            <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날">›</a>
+        </div>
+        <div class="hero-date">
+            <div class="hero-date-main">{{ date_str | pretty_date }}</div>
+            <div class="hero-date-sub mono">{{ date_str }}</div>
+        </div>
+        <div class="hero-actions">
+            <a href="/day/{{ date_str }}" class="ghost-btn">새로고침</a>
+            <button type="submit" class="primary-btn">저장</button>
+        </div>
+    </section>
+
+    <section class="meta-card">
+        <div class="meta-grid">
+            <label class="field">
+                <span class="field-label">오늘 목표</span>
+                <textarea name="today_goal" rows="2" placeholder="가장 중요한 한 가지">{{ (meta.today_goal if meta else '') or '' }}</textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">오늘 계획</span>
+                <textarea name="daily_plan" rows="2" placeholder="흐름과 순서">{{ (meta.daily_plan if meta else '') or '' }}</textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">메모</span>
+                <textarea name="memo" rows="2" placeholder="떠오르는 것">{{ (meta.memo if meta else '') or '' }}</textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">각오</span>
+                <textarea name="vow" rows="2" placeholder="한 줄 다짐">{{ (meta.vow if meta else '') or '' }}</textarea>
+            </label>
+        </div>
+    </section>
+
+    <section class="block-stack">
+    {% for b in blocks %}
+        <article class="block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}" data-block-id="{{ b.id }}">
+            <header class="block-head">
+                <div class="block-id">
+                    <span class="block-label">{{ b.block_label }}</span>
+                    <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
+                </div>
+                {% if b.is_core and themes_by_label.get(b.block_label) %}
+                <div class="block-theme" title="이번 주 {{ b.block_label }} 테마">{{ themes_by_label[b.block_label] }}</div>
+                {% endif %}
+            </header>
+
+            <div class="plan-see">
+                <label class="field">
+                    <span class="field-label">PLAN</span>
+                    <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
+                </label>
+                <label class="field">
+                    <span class="field-label">SEE</span>
+                    <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
+                </label>
+            </div>
+
+            <div class="slots">
+            {% for s in slots_by_block[b.id] %}
+                <div class="slot" data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">
+                    <span class="slot-time mono">{{ s.start_time }}</span>
+                    <div class="slot-cat">
+                        <select name="cat_{{ s.id }}" class="cat-select" aria-label="카테고리">
+                            <option value="">—</option>
+                            {% for c in categories %}
+                            <option value="{{ c.id }}" data-color="{{ c.color }}" {% if s.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯에서 25분 시작">▶</button>
+                </div>
+            {% endfor %}
+            </div>
+        </article>
+    {% endfor %}
+    </section>
+
+    <div class="actions-sticky">
+        <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
+    </div>
+</form>
+{% endblock %}

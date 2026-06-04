@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set active = 'week' %}
+{% block title %}{{ week_start }} 주 | 6block{% endblock %}
+{% block content %}
+<form method="post" action="/week/save/{{ week_start }}" class="week-form" accept-charset="UTF-8">
+    <section class="hero">
+        <div class="hero-nav">
+            <a href="/week/{{ prev_week }}" class="icon-btn" aria-label="지난 주">‹</a>
+            <a href="/week/{{ next_week }}" class="icon-btn" aria-label="다음 주">›</a>
+        </div>
+        <div class="hero-date">
+            <div class="hero-date-main">{{ week_start | pretty_date }} 주</div>
+            <div class="hero-date-sub mono">{{ dates[0] | short_date }} – {{ dates[6] | short_date }}</div>
+        </div>
+        <div class="hero-actions">
+            <button type="submit" class="primary-btn">저장</button>
+        </div>
+    </section>
+
+    <section class="kpi-row">
+        <div class="kpi">
+            <span class="kpi-label">코어 PLAN 사용</span>
+            <span class="kpi-value mono"><strong>{{ used_core }}</strong>/{{ total_core }}</span>
+            <div class="kpi-bar"><span style="width: {{ (used_core / total_core * 100) | round(0) }}%"></span></div>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">PLAN → DO 달성률</span>
+            <span class="kpi-value mono"><strong>{{ achieve_pct }}</strong>%</span>
+            <div class="kpi-bar"><span style="width: {{ achieve_pct }}%"></span></div>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">기록된 시간</span>
+            {% set total_h = (cat_summary | sum(attribute='hours')) %}
+            <span class="kpi-value mono"><strong>{{ '%.1f' % total_h }}</strong>h</span>
+            <div class="kpi-bar"><span style="width: {{ ((total_h / 105) * 100) | round(0) }}%"></span></div>
+        </div>
+    </section>
+
+    <section class="meta-card">
+        <div class="meta-grid">
+            <label class="field">
+                <span class="field-label">주간 목표 / 계획</span>
+                <textarea name="weekly_goal" rows="3" placeholder="이번 주에 닿고 싶은 것">{{ (wmeta.weekly_goal if wmeta else '') or '' }}</textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">약속 · 특이사항</span>
+                <textarea name="appointments" rows="3" placeholder="고정 일정, 미팅, 외출">{{ (wmeta.appointments if wmeta else '') or '' }}</textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">각오</span>
+                <textarea name="vow" rows="3" placeholder="한 주를 끌어가는 한 문장">{{ (wmeta.vow if wmeta else '') or '' }}</textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">메모</span>
+                <textarea name="memo" rows="3" placeholder="가벼운 단상, 후회, 결심">{{ (wmeta.memo if wmeta else '') or '' }}</textarea>
+            </label>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="card-title">주간 블록 테마 <span class="card-sub">B1 - B6 코어 블록이 이번 주 어떤 의미인가</span></h2>
+        <div class="theme-grid">
+            {% for lbl in core_labels %}
+            <label class="theme-card">
+                <span class="theme-label">{{ lbl }}</span>
+                <textarea name="theme_{{ lbl }}" rows="3" placeholder="{{ lbl }} 테마">{{ themes_by_label.get(lbl, '') or '' }}</textarea>
+            </label>
+            {% endfor %}
+        </div>
+    </section>
+
+    {% if cat_summary %}
+    <section class="card">
+        <h2 class="card-title">카테고리별 시간 분포</h2>
+        <div class="cat-bars">
+            {% for c in cat_summary %}
+            <div class="cat-bar-row">
+                <span class="cat-bar-name"><span class="dot" style="background:{{ c.color }}"></span>{{ c.name }}</span>
+                <div class="cat-bar-track">
+                    <span class="cat-bar-fill" style="width: {{ c.pct }}%; background: {{ c.color }};"></span>
+                </div>
+                <span class="cat-bar-val mono">{{ '%.1f' % c.hours }}h <span class="muted">{{ c.pct }}%</span></span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="card">
+        <h2 class="card-title">7일 보기</h2>
+        <div class="week-grid">
+            {% for d in dates %}
+            <article class="day-col">
+                <h3 class="day-head">
+                    <a href="/day/{{ d }}">
+                        <span class="day-wd">{{ d | ko_weekday }}</span>
+                        <span class="day-date mono">{{ d | short_date }}</span>
+                    </a>
+                </h3>
+                {% for b in blocks_by_date[d] %}
+                <div class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
+                    <div class="mini-head">
+                        <strong>{{ b.block_label }}</strong>
+                        <span class="muted mono">{{ b.start_time }}</span>
+                    </div>
+                    <div class="mini-plan">{{ b.plan_text or '' }}</div>
+                </div>
+                {% endfor %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <div class="actions-sticky">
+        <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
+    </div>
+</form>
+{% endblock %}
