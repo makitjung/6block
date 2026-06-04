@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS weekly_block_themes (
 
 CREATE INDEX IF NOT EXISTS idx_weekly_themes_week ON weekly_block_themes(week_start);
 
+-- GTD 빠른 수집함. 폰(안드로이드/아이폰)에서 떠오르는 생각을 즉시 적어둔다.
+CREATE TABLE IF NOT EXISTS inbox (
+    id INTEGER PRIMARY KEY,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_inbox_done ON inbox(done, id);
+
 -- Phase 3에서 Things3 / 구글 캘린더 연동 시 채울 외부 이벤트 캐시
 CREATE TABLE IF NOT EXISTS external_events (
     id INTEGER PRIMARY KEY,

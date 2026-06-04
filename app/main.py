@@ -5,12 +5,17 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import DAY_BLOCKS, slots_for_day
+from app.config import DAY_BLOCKS, hhmm_to_min, slots_for_day
 from app.db import get_conn, init_db
+from app.integrations import gcal, things
 
 KST = ZoneInfo("Asia/Seoul")
 BASE_DIR = Path(__file__).parent
@@ -101,10 +106,35 @@ def day_view(request: Request, date_str: str):
     return _day_view(request, date_str)
 
 
+def _distribute(blocks, timed_items):
+    """시각이 있는 항목을 시작 분 기준으로 해당 블록에 배치한다.
+
+    반환: (block_id -> [item...], 어느 블록에도 안 들어간 leftover 리스트).
+    """
+    ranges = [
+        (b["id"], hhmm_to_min(b["start_time"]), hhmm_to_min(b["end_time"]))
+        for b in blocks
+    ]
+    by_block: dict[int, list] = {b["id"]: [] for b in blocks}
+    leftover: list = []
+    for it in timed_items:
+        m = it["start_min"]
+        for bid, s, e in ranges:
+            if s <= m < e:
+                by_block[bid].append(it)
+                break
+        else:
+            leftover.append(it)
+    for items in by_block.values():
+        items.sort(key=lambda x: x["start_min"])
+    return by_block, leftover
+
+
 def _day_view(request: Request, date_str: str):
     d = datetime.strptime(date_str, "%Y-%m-%d").date()
     prev_date = (d - timedelta(days=1)).strftime("%Y-%m-%d")
     next_date = (d + timedelta(days=1)).strftime("%Y-%m-%d")
+    is_today = date_str == today_str()
     with get_conn() as conn:
         ensure_day_skeleton(conn, date_str)
         categories = conn.execute(
@@ -129,11 +159,53 @@ def _day_view(request: Request, date_str: str):
             "WHERE week_start = ?",
             (wk_start,),
         ).fetchall()
+        inbox = conn.execute(
+            "SELECT id, text FROM inbox WHERE done = 0 ORDER BY id DESC"
+        ).fetchall()
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     slots_by_block: dict[int, list] = {}
     for s in slots:
         slots_by_block.setdefault(s["block_id"], []).append(s)
+
+    # 외부 연동: Things3 Today + 구글 캘린더 일정을 시간 블록에 분배.
+    # 시각이 없는 항목(종일 일정, 시간 미지정 할 일)은 reminders로 모아
+    # 모든 블록에 반복 노출해 리마인드한다.
+    timed: list = []
+    reminders: list = []
+    for ev in gcal.events_for_date(d):
+        if ev["all_day"] or ev["start_min"] is None:
+            reminders.append({"kind": "event", "title": ev["title"], "meta": "종일"})
+        else:
+            timed.append(
+                {
+                    "kind": "event",
+                    "title": ev["title"],
+                    "time": ev["start"],
+                    "end": ev["end"],
+                    "location": ev["location"],
+                    "start_min": ev["start_min"],
+                }
+            )
+    for t in things.today_tasks(d, include_overdue=is_today):
+        if t["time_min"] is None:
+            meta_txt = "지남" if t["overdue"] else (f"~{t['deadline']}" if t["deadline"] else None)
+            reminders.append({"kind": "task", "title": t["title"], "meta": meta_txt})
+        else:
+            timed.append(
+                {
+                    "kind": "task",
+                    "title": t["title"],
+                    "time": t["time"],
+                    "end": None,
+                    "location": None,
+                    "start_min": t["time_min"],
+                }
+            )
+
+    block_events, leftover = _distribute(blocks, timed)
+    for it in leftover:
+        reminders.append({"kind": it["kind"], "title": it["title"], "meta": it.get("time")})
 
     return templates.TemplateResponse(
         "today.html",
@@ -142,11 +214,16 @@ def _day_view(request: Request, date_str: str):
             "date_str": date_str,
             "prev_date": prev_date,
             "next_date": next_date,
+            "is_today": is_today,
             "blocks": blocks,
             "slots_by_block": slots_by_block,
             "categories": categories,
             "meta": meta,
             "themes_by_label": themes_by_label,
+            "block_events": block_events,
+            "reminders": reminders,
+            "inbox": inbox,
+            "cal_enabled": gcal.enabled(),
         },
     )
 
@@ -202,6 +279,31 @@ async def save_day(date_str: str, request: Request):
             ),
         )
     return RedirectResponse(url=f"/day/{date_str}", status_code=303)
+
+
+# -- GTD 빠른 수집함 --------------------------------------------------------
+
+
+@app.post("/inbox/add")
+async def inbox_add(request: Request):
+    form = await request.form()
+    text = (form.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO inbox (text, created_at) VALUES (?, ?)", (text, now)
+        )
+        new_id = cur.lastrowid
+    return JSONResponse({"ok": True, "id": new_id, "text": text})
+
+
+@app.post("/inbox/done/{item_id}")
+def inbox_done(item_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE inbox SET done = 1 WHERE id = ?", (item_id,))
+    return JSONResponse({"ok": True})
 
 
 @app.get("/week")
@@ -272,6 +374,30 @@ def _week_view(request: Request, monday: date):
     for r in rows:
         blocks_by_date[r["date"]].append(r)
 
+    # 주간 캘린더: 각 날짜 일정을 블록(block_order)에 매핑, 종일 일정은 따로.
+    cal_by_date = gcal.events_for_range(monday, monday + timedelta(days=6))
+    week_block_events: dict[str, dict[int, list]] = {}
+    week_allday: dict[str, list] = {}
+    for ds in dates:
+        ranges = [
+            (b["block_order"], hhmm_to_min(b["start_time"]), hhmm_to_min(b["end_time"]))
+            for b in blocks_by_date[ds]
+        ]
+        by_order: dict[int, list] = {}
+        allday: list = []
+        for ev in cal_by_date.get(ds, []):
+            if ev["all_day"] or ev["start_min"] is None:
+                allday.append(ev["title"])
+                continue
+            for order, s, e in ranges:
+                if s <= ev["start_min"] < e:
+                    by_order.setdefault(order, []).append(
+                        {"time": ev["start"], "title": ev["title"]}
+                    )
+                    break
+        week_block_events[ds] = by_order
+        week_allday[ds] = allday
+
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = 42
@@ -304,6 +430,10 @@ def _week_view(request: Request, monday: date):
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
             "core_labels": CORE_LABELS,
+            "week_block_events": week_block_events,
+            "week_allday": week_allday,
+            "cal_enabled": gcal.enabled(),
+            "today": today_str(),
         },
     )
 

@@ -50,6 +50,10 @@
         const s = sec % 60;
         return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
+    function hhmmToMin(s) {
+        if (!s) return -1;
+        return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
+    }
 
     // ---- sound + notify --------------------------------------------------
     let audioCtx = null;
@@ -217,6 +221,18 @@
             row.classList.toggle('is-pomo-focus', isNow && state.phase === 'FOCUS' && state.slotStart === t);
             row.classList.toggle('is-pomo-break', isNow && state.phase === 'BREAK' && state.slotStart === t);
         });
+
+        // 현재 시각 블록 강조 (실제 오늘을 보는 경우에만)
+        const dayForm = document.querySelector('.day-form');
+        if (dayForm && dayForm.dataset.today === '1') {
+            const d = new Date();
+            const m = d.getHours() * 60 + d.getMinutes();
+            document.querySelectorAll('.block').forEach((blk) => {
+                const s = hhmmToMin(blk.dataset.start);
+                const e = hhmmToMin(blk.dataset.end);
+                blk.classList.toggle('is-current', m >= s && m < e);
+            });
+        }
     }
 
     function nextBoundary() {
@@ -243,6 +259,85 @@
                 if (form) { e.preventDefault(); form.submit(); }
             }
         });
+    }
+
+    // ---- theme -----------------------------------------------------------
+    function applyTheme(t) {
+        document.documentElement.setAttribute('data-theme', t);
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', t === 'dark' ? '#15171c' : '#ffffff');
+        try { localStorage.setItem('theme', t); } catch (e) {}
+    }
+    function toggleTheme() {
+        const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+    }
+
+    // ---- inbox (GTD 빠른 수집) -------------------------------------------
+    function inboxAdd() {
+        const input = document.getElementById('inbox-input');
+        if (!input) return;
+        const text = input.value.trim();
+        if (!text) return;
+        fetch('/inbox/add', { method: 'POST', body: new URLSearchParams({ text }) })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data.ok) return;
+                addInboxItem(data.id, data.text);
+                input.value = '';
+                bumpInboxCount(1);
+                toast('수집함에 추가');
+            })
+            .catch(() => toast('추가 실패'));
+    }
+    function addInboxItem(id, text) {
+        const list = document.getElementById('inbox-list');
+        if (!list) return;
+        const item = document.createElement('div');
+        item.className = 'inbox-item';
+        item.dataset.id = id;
+        const span = document.createElement('span');
+        span.className = 'txt';
+        span.textContent = text;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'inbox-done';
+        btn.title = '완료/정리';
+        btn.textContent = '✓';
+        btn.addEventListener('click', () => inboxDone(item));
+        item.appendChild(span);
+        item.appendChild(btn);
+        list.insertBefore(item, list.firstChild);
+    }
+    function inboxDone(item) {
+        if (!item) return;
+        fetch('/inbox/done/' + item.dataset.id, { method: 'POST' })
+            .then(() => { item.remove(); bumpInboxCount(-1); })
+            .catch(() => toast('처리 실패'));
+    }
+    function bumpInboxCount(delta) {
+        const el = document.getElementById('inbox-count');
+        if (!el) return;
+        el.textContent = Math.max(0, (parseInt(el.textContent, 10) || 0) + delta);
+    }
+
+    // ---- 현재/지정 블록으로 스크롤 ---------------------------------------
+    function initialScroll() {
+        let target = null;
+        const hash = location.hash;
+        if (hash && hash.indexOf('#blk-') === 0) {
+            target = document.querySelector(hash);
+        } else {
+            const dayForm = document.querySelector('.day-form');
+            if (dayForm && dayForm.dataset.today === '1') {
+                target = document.querySelector('.block.is-current');
+            }
+        }
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('flash');
+            setTimeout(() => target.classList.remove('flash'), 1500);
+        }
     }
 
     // ---- init ------------------------------------------------------------
@@ -272,8 +367,21 @@
             pomo.querySelector('.pomo-auto')?.addEventListener('click', () => toggleAuto());
         }
 
+        // 테마 토글
+        document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
+
+        // 빠른 수집함
+        document.getElementById('inbox-add')?.addEventListener('click', inboxAdd);
+        document.getElementById('inbox-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); inboxAdd(); }
+        });
+        document.querySelectorAll('.inbox-done').forEach((btn) => {
+            btn.addEventListener('click', () => inboxDone(btn.closest('.inbox-item')));
+        });
+
         bindForm();
         render();
+        requestAnimationFrame(initialScroll);
         setInterval(tick, TICK_MS);
 
         // service worker

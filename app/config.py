@@ -1,8 +1,24 @@
-# 하루 9블록(코어 6 + 버퍼 3)과 30분 슬롯, 카테고리 상수를 정의하는 설정 파일
+# 하루 9블록(코어 6 + 버퍼 3)과 30분 슬롯, 카테고리, 외부 연동 환경값을 정의하는 설정 파일
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 프로젝트 루트의 .env에서 시크릿(구글 캘린더 비공개 주소 등)을 읽는다. 없으면 무시.
+load_dotenv(PROJECT_ROOT / ".env")
 
 DB_PATH = Path.home() / "6block-data" / "blocks.db"
 BACKUP_DIR = Path.home() / "6block-data" / "backups"
+
+# 구글 캘린더 비공개 iCal 주소 (.env의 GCAL_ICAL_URL). 비어 있으면 캘린더 연동 비활성.
+GCAL_ICAL_URL = os.getenv("GCAL_ICAL_URL", "").strip()
+
+# Things3 그룹 컨테이너. 실제 DB는 things 모듈이 글롭으로 찾는다.
+THINGS_GROUP_DIR = (
+    Path.home()
+    / "Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac"
+)
 
 # (block_label, is_core, start, end)
 DAY_BLOCKS = [
@@ -28,6 +44,11 @@ CATEGORIES = [
     ("점검",  "#0EA5E9"),
     ("기타",  "#6B7280"),
 ]
+
+
+def hhmm_to_min(hhmm: str) -> int:
+    """'HH:MM' 문자열을 자정 기준 분으로 변환."""
+    return int(hhmm[:2]) * 60 + int(hhmm[3:5])
 
 
 def slots_for_day():

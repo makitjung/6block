@@ -87,24 +87,35 @@
     {% endif %}
 
     <section class="card">
-        <h2 class="card-title">7일 보기</h2>
+        <h2 class="card-title">7일 보기 <span class="card-sub">블록을 누르면 그 날짜의 해당 블록으로 이동</span></h2>
         <div class="week-grid">
             {% for d in dates %}
             <article class="day-col">
-                <h3 class="day-head">
+                <h3 class="day-head {% if d == today %}is-today{% endif %}">
                     <a href="/day/{{ d }}">
                         <span class="day-wd">{{ d | ko_weekday }}</span>
                         <span class="day-date mono">{{ d | short_date }}</span>
                     </a>
                 </h3>
+                {% if week_allday.get(d) %}
+                <div class="day-allday">
+                    {% for t in week_allday[d] %}
+                    <span class="allday-chip" title="{{ t }}">{{ t }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
                 {% for b in blocks_by_date[d] %}
-                <div class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
+                <a class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}"
+                   href="/day/{{ d }}#blk-{{ b.block_order }}">
                     <div class="mini-head">
                         <strong>{{ b.block_label }}</strong>
                         <span class="muted mono">{{ b.start_time }}</span>
                     </div>
-                    <div class="mini-plan">{{ b.plan_text or '' }}</div>
-                </div>
+                    {% if b.plan_text %}<div class="mini-plan">{{ b.plan_text }}</div>{% endif %}
+                    {% for ev in week_block_events.get(d, {}).get(b.block_order, []) %}
+                    <div class="mini-ev"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>
+                    {% endfor %}
+                </a>
                 {% endfor %}
             </article>
             {% endfor %}
