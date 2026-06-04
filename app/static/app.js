@@ -381,7 +381,12 @@
 
         bindForm();
         render();
-        requestAnimationFrame(initialScroll);
+        // 브라우저 스크롤 복원이 초기 포커스를 덮어쓰지 않도록 수동 처리 후
+        // 레이아웃이 끝난 시점(load + 약간의 지연)에 현재 블록으로 이동.
+        if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+        const runScroll = () => setTimeout(initialScroll, 180);
+        if (document.readyState === 'complete') runScroll();
+        else window.addEventListener('load', runScroll, { once: true });
         setInterval(tick, TICK_MS);
 
         // service worker

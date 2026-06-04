@@ -233,6 +233,71 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .ctx-head .count { color: var(--accent); font-weight: 700; }
 .ctx-empty { font-size: 12px; color: var(--text-subtle); }
 
+/* 목표 3 · 계획 3 */
+.goal-plan { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.gp-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gp-col > .field-label { margin-bottom: 2px; }
+.gp-row { display: flex; align-items: center; gap: 8px; }
+.gp-no {
+    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--surface-3); color: var(--text-muted); font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.gp-row input { flex: 1; }
+
+/* 메모·각오 접이식 */
+.ctx-extra { margin: 12px 0 2px; }
+.ctx-extra > summary,
+.block-reminder > summary {
+    cursor: pointer; list-style: none; user-select: none;
+}
+.ctx-extra > summary::-webkit-details-marker,
+.block-reminder > summary::-webkit-details-marker { display: none; }
+.ctx-extra > summary {
+    font-size: 12px; font-weight: 700; color: var(--text-muted); padding: 4px 0;
+}
+.ctx-extra > summary::before { content: "▸ "; color: var(--text-subtle); }
+.ctx-extra[open] > summary::before { content: "▾ "; }
+.ctx-extra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-top: 8px; }
+
+/* 최상단 아젠다(캘린더+Things3, 줄바꿈 1회) */
+.agenda { display: flex; flex-direction: column; gap: 1px; }
+.agenda-row {
+    display: grid; grid-template-columns: 50px 1fr auto; gap: 10px; align-items: baseline;
+    padding: 4px 8px; border-radius: var(--r-sm); font-size: 13px;
+}
+.agenda-row:hover { background: var(--surface-2); }
+.agenda-row .t { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; }
+.agenda-row.event .t { color: var(--accent); }
+.agenda-row.task .t { color: var(--text-muted); }
+.agenda-row .x { min-width: 0; word-break: break-word; }
+.agenda-row .x::before {
+    content: ""; display: inline-block; margin-right: 7px; vertical-align: middle;
+    width: 7px; height: 7px;
+}
+.agenda-row.event .x::before { border-radius: 50%; background: var(--accent); }
+.agenda-row.task .x::before { border-radius: 2px; border: 1.5px solid var(--text-subtle); }
+.agenda-row .dl { font-size: 11px; color: var(--danger); white-space: nowrap; }
+
+/* 블록 반복분: 목표·계획 접이식 */
+.block-reminder { margin-bottom: 10px; }
+.block-reminder > summary {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 700; color: var(--text-muted);
+    padding: 5px 10px; background: var(--surface-2);
+    border: 1px dashed var(--border-strong); border-radius: var(--r-sm);
+}
+.block-reminder > summary::before { content: "▸"; color: var(--text-subtle); }
+.block-reminder[open] > summary::before { content: "▾"; }
+.br-grid { display: flex; flex-direction: column; gap: 4px; padding: 8px 2px 2px; }
+.br-item { font-size: 12.5px; color: var(--text-soft); display: flex; gap: 8px; align-items: baseline; }
+.br-item > span {
+    flex: 0 0 auto; font-size: 9px; font-weight: 800; color: #fff;
+    padding: 2px 6px; border-radius: 4px;
+}
+.br-item.goal > span { background: var(--accent); }
+.br-item.plan > span { background: var(--buffer); }
+
 /* chips (reminders / tasks / events) */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {

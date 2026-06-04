@@ -14,12 +14,6 @@ BACKUP_DIR = Path.home() / "6block-data" / "backups"
 # 구글 캘린더 비공개 iCal 주소 (.env의 GCAL_ICAL_URL). 비어 있으면 캘린더 연동 비활성.
 GCAL_ICAL_URL = os.getenv("GCAL_ICAL_URL", "").strip()
 
-# Things3 그룹 컨테이너. 실제 DB는 things 모듈이 글롭으로 찾는다.
-THINGS_GROUP_DIR = (
-    Path.home()
-    / "Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac"
-)
-
 # (block_label, is_core, start, end)
 DAY_BLOCKS = [
     ("B1",         True,  "07:00", "09:30"),

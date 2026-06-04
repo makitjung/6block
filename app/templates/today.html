@@ -18,23 +18,45 @@
         </div>
     </section>
 
-    <!-- 오늘 컨텍스트: 목표/계획 + 외부 일정·할 일 + 빠른 수집함 -->
+    <!-- 오늘 컨텍스트: 목표 3 · 계획 3 + 외부 일정·할 일(최상단 1회) + 빠른 수집함 -->
     <section class="context-card">
-        <div class="ctx-goals">
-            <label class="field">
+        <div class="goal-plan">
+            <div class="gp-col">
                 <span class="field-label">오늘 목표</span>
-                <textarea name="today_goal" rows="2" placeholder="가장 중요한 한 가지">{{ (meta.today_goal if meta else '') or '' }}</textarea>
-            </label>
-            <label class="field">
+                {% for i in range(3) %}
+                <div class="gp-row">
+                    <span class="gp-no">{{ i + 1 }}</span>
+                    <input type="text" name="goal{{ i + 1 }}" value="{{ goals[i] }}" placeholder="목표 {{ i + 1 }}" autocomplete="off">
+                </div>
+                {% endfor %}
+            </div>
+            <div class="gp-col">
                 <span class="field-label">오늘 계획</span>
-                <textarea name="daily_plan" rows="2" placeholder="흐름과 순서">{{ (meta.daily_plan if meta else '') or '' }}</textarea>
-            </label>
+                {% for i in range(3) %}
+                <div class="gp-row">
+                    <span class="gp-no">{{ i + 1 }}</span>
+                    <input type="text" name="dplan{{ i + 1 }}" value="{{ plans[i] }}" placeholder="계획 {{ i + 1 }}" autocomplete="off">
+                </div>
+                {% endfor %}
+            </div>
         </div>
 
-        <div class="ctx-section">
-            <div class="ctx-head">
-                빠른 수집함 <span class="count" id="inbox-count">{{ inbox | length }}</span>
+        <details class="ctx-extra">
+            <summary>메모 · 각오</summary>
+            <div class="ctx-extra-grid">
+                <label class="field">
+                    <span class="field-label">메모</span>
+                    <textarea name="memo" rows="2" placeholder="떠오르는 것">{{ (meta.memo if meta else '') or '' }}</textarea>
+                </label>
+                <label class="field">
+                    <span class="field-label">각오</span>
+                    <textarea name="vow" rows="2" placeholder="한 줄 다짐">{{ (meta.vow if meta else '') or '' }}</textarea>
+                </label>
             </div>
+        </details>
+
+        <div class="ctx-section">
+            <div class="ctx-head">빠른 수집함 <span class="count" id="inbox-count">{{ inbox | length }}</span></div>
             <div class="inbox-form">
                 <input type="text" id="inbox-input" placeholder="떠오른 생각을 바로 적기 (Enter)" autocomplete="off">
                 <button type="button" class="inbox-add" id="inbox-add" aria-label="수집함에 추가">+</button>
@@ -51,17 +73,27 @@
 
         <div class="ctx-section">
             <div class="ctx-head">
-                오늘 할 일 · 일정
+                오늘 일정 · 할 일
                 {% if not cal_enabled %}<span class="ctx-empty">(구글 캘린더 미연결)</span>{% endif %}
             </div>
-            {% if reminders %}
-            <div class="chips">
-                {% for r in reminders %}
-                <span class="chip chip-{{ r.kind }}">{{ r.title }}{% if r.meta %}<i>{{ r.meta }}</i>{% endif %}</span>
+            {% if cal_events or task_list %}
+            <div class="agenda">
+                {% for ev in cal_events %}
+                <div class="agenda-row event">
+                    <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
+                    <span class="x">{{ ev.title }}</span>
+                </div>
+                {% endfor %}
+                {% for t in task_list %}
+                <div class="agenda-row task">
+                    <span class="t">{{ t.time or '·' }}</span>
+                    <span class="x">{{ t.title }}</span>
+                    {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
+                </div>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="ctx-empty">Things3 Today와 구글 캘린더 종일 일정이 여기에 모입니다.</div>
+            <div class="ctx-empty">Things3 Today와 구글 캘린더 일정이 여기에 한 번에 모입니다.</div>
             {% endif %}
         </div>
     </section>
@@ -83,17 +115,19 @@
                 {% endif %}
             </header>
 
-            <!-- 매 블록 반복 리마인드: 오늘 목표 + 시간 미지정 할 일/종일 일정 -->
-            {% if (meta and meta.today_goal) or reminders %}
-            <div class="reminder-strip">
-                {% if meta and meta.today_goal %}<span class="rs-goal">{{ meta.today_goal }}</span>{% endif %}
-                {% for r in reminders %}
-                <span class="chip chip-{{ r.kind }}">{{ r.title }}{% if r.meta %}<i>{{ r.meta }}</i>{% endif %}</span>
-                {% endfor %}
-            </div>
+            <!-- 블록 반복분: 오늘 목표·계획 (접힘, 펼치기 토글) -->
+            {% set has_gp = (goals | select | list) or (plans | select | list) %}
+            {% if has_gp %}
+            <details class="block-reminder">
+                <summary>오늘 목표 · 계획</summary>
+                <div class="br-grid">
+                    {% for g in goals if g %}<div class="br-item goal"><span>목표</span>{{ g }}</div>{% endfor %}
+                    {% for p in plans if p %}<div class="br-item plan"><span>계획</span>{{ p }}</div>{% endfor %}
+                </div>
+            </details>
             {% endif %}
 
-            <!-- 이 시간대에 배치된 캘린더 일정 / 시간 지정 할 일 -->
+            <!-- 이 시간대 캘린더 일정 / 시간 지정 할 일 -->
             {% if block_events.get(b.id) %}
             <div class="block-agenda">
                 {% for it in block_events[b.id] %}

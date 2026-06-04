@@ -106,6 +106,19 @@ def day_view(request: Request, date_str: str):
     return _day_view(request, date_str)
 
 
+def _split3(s) -> list[str]:
+    """줄바꿈으로 저장된 목표/계획을 정확히 3칸으로 분리(빈 칸 유지)."""
+    parts = (s or "").split("\n")
+    return (parts + ["", "", ""])[:3]
+
+
+def _join3(form, prefix: str) -> str:
+    """폼의 prefix1/2/3 값을 줄바꿈으로 합친다. 모두 비면 빈 문자열."""
+    vals = [(form.get(f"{prefix}{i}", "") or "").strip() for i in (1, 2, 3)]
+    joined = "\n".join(vals)
+    return joined if joined.strip() else ""
+
+
 def _distribute(blocks, timed_items):
     """시각이 있는 항목을 시작 분 기준으로 해당 블록에 배치한다.
 
@@ -168,44 +181,39 @@ def _day_view(request: Request, date_str: str):
     for s in slots:
         slots_by_block.setdefault(s["block_id"], []).append(s)
 
-    # 외부 연동: Things3 Today + 구글 캘린더 일정을 시간 블록에 분배.
-    # 시각이 없는 항목(종일 일정, 시간 미지정 할 일)은 reminders로 모아
-    # 모든 블록에 반복 노출해 리마인드한다.
+    # 외부 연동: Things3 Today + 구글 캘린더 일정.
+    # 전체 목록은 최상단에 1번만 줄바꿈으로 노출(cal_events, task_list),
+    # 시각이 있는 항목만 해당 시간 블록의 아젠다로 배치한다.
+    cal_events = gcal.events_for_date(d)
+    task_list = things.today_tasks(d, include_overdue=is_today)
     timed: list = []
-    reminders: list = []
-    for ev in gcal.events_for_date(d):
-        if ev["all_day"] or ev["start_min"] is None:
-            reminders.append({"kind": "event", "title": ev["title"], "meta": "종일"})
-        else:
+    for ev in cal_events:
+        if not ev["all_day"] and ev["start_min"] is not None:
             timed.append(
                 {
                     "kind": "event",
                     "title": ev["title"],
                     "time": ev["start"],
                     "end": ev["end"],
-                    "location": ev["location"],
                     "start_min": ev["start_min"],
                 }
             )
-    for t in things.today_tasks(d, include_overdue=is_today):
-        if t["time_min"] is None:
-            meta_txt = "지남" if t["overdue"] else (f"~{t['deadline']}" if t["deadline"] else None)
-            reminders.append({"kind": "task", "title": t["title"], "meta": meta_txt})
-        else:
+    for t in task_list:
+        if t["time_min"] is not None:
             timed.append(
                 {
                     "kind": "task",
                     "title": t["title"],
                     "time": t["time"],
                     "end": None,
-                    "location": None,
                     "start_min": t["time_min"],
                 }
             )
+    block_events, _leftover = _distribute(blocks, timed)
 
-    block_events, leftover = _distribute(blocks, timed)
-    for it in leftover:
-        reminders.append({"kind": it["kind"], "title": it["title"], "meta": it.get("time")})
+    # 오늘 목표/계획을 각각 3개로 분리(줄바꿈 저장, 레거시 1줄도 호환).
+    goals = _split3(meta["today_goal"] if meta else "")
+    plans = _split3(meta["daily_plan"] if meta else "")
 
     return templates.TemplateResponse(
         "today.html",
@@ -219,9 +227,12 @@ def _day_view(request: Request, date_str: str):
             "slots_by_block": slots_by_block,
             "categories": categories,
             "meta": meta,
+            "goals": goals,
+            "plans": plans,
             "themes_by_label": themes_by_label,
             "block_events": block_events,
-            "reminders": reminders,
+            "cal_events": cal_events,
+            "task_list": task_list,
             "inbox": inbox,
             "cal_enabled": gcal.enabled(),
         },
@@ -272,8 +283,8 @@ async def save_day(date_str: str, request: Request):
             """,
             (
                 date_str,
-                form.get("today_goal", ""),
-                form.get("daily_plan", ""),
+                _join3(form, "goal"),
+                _join3(form, "dplan"),
                 form.get("memo", ""),
                 form.get("vow", ""),
             ),
@@ -499,6 +510,12 @@ def manifest():
         BASE_DIR / "static" / "manifest.json",
         media_type="application/manifest+json",
     )
+
+
+@app.get("/api/health")
+def api_health():
+    """연동 상태 점검. 브라우저에서 /api/health로 캘린더·Things 연결 확인."""
+    return {"gcal": gcal.status(), "things": things.status()}
 
 
 @app.get("/api/now")
