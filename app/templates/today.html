@@ -106,7 +106,9 @@
             <header class="block-head">
                 <div class="block-id">
                     <span class="block-label">{{ b.block_label }}</span>
-                    {% if themes_by_label.get(b.block_label) %}<span class="block-name">{{ themes_by_label[b.block_label] }}</span>{% endif %}
+                    <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
+                </div>
+                <div class="block-meta">
                     <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
                     <span class="now-badge">지금</span>
                 </div>

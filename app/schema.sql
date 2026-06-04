@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     end_time TEXT NOT NULL,
     plan_text TEXT,
     see_text TEXT,
+    name TEXT,
     updated_at TEXT NOT NULL,
     UNIQUE(date, block_order)
 );

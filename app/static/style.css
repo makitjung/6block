@@ -384,7 +384,17 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     display: flex; justify-content: space-between; align-items: center;
     gap: 12px; margin-bottom: 10px;
 }
-.block-id { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; }
+.block-id { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.block-meta { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.block-name-input {
+    flex: 1; min-width: 60px; width: auto;
+    border: 1px solid transparent; background: transparent;
+    font-size: 15px; font-weight: 600; color: var(--text);
+    padding: 4px 6px; border-radius: var(--r-sm);
+}
+.block-name-input:hover { border-color: var(--border); }
+.block-name-input:focus { background: var(--surface); border-color: var(--border-focus); }
+.block-name-input::placeholder { color: var(--text-subtle); font-weight: 400; }
 .block-label { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
 .block.is-core .block-label { color: var(--accent); }
 .block-time { color: var(--text-muted); font-size: 12px; }

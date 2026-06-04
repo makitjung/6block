@@ -461,10 +461,16 @@
 
         bindSlotChecks();
 
-        // 실시간 폴링: 화면을 보고 있는 동안 60초마다 + 탭 복귀 시 즉시
+        // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {
             setInterval(pollDay, 60000);
-            document.addEventListener('visibilitychange', () => { if (!document.hidden) pollDay(); });
+            let hiddenAt = 0;
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) { hiddenAt = Date.now(); return; }
+                pollDay();
+                // 한동안 닫았다 다시 열면(폰 PWA 복귀 포함) 현재 블록으로 재포커스
+                if (Date.now() - hiddenAt > 90000) setTimeout(initialScroll, 220);
+            });
             window.addEventListener('focus', pollDay);
         }
 

@@ -211,6 +211,11 @@ def _day_view(request: Request, date_str: str):
         ).fetchall()
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
+    # 일간 블록 이름 = 일간 덮어쓰기(blocks.name)가 있으면 그것, 없으면 주간 이름.
+    block_name_by_id = {
+        b["id"]: ((b["name"] or "").strip() or (themes_by_label.get(b["block_label"]) or ""))
+        for b in blocks
+    }
     slots_by_block: dict[int, list] = {}
     for s in slots:
         slots_by_block.setdefault(s["block_id"], []).append(s)
@@ -239,6 +244,7 @@ def _day_view(request: Request, date_str: str):
             "goals": goals,
             "plans": plans,
             "themes_by_label": themes_by_label,
+            "block_name_by_id": block_name_by_id,
             "block_events": block_events,
             "cal_events": cal_events,
             "task_list": task_list,
@@ -254,6 +260,23 @@ async def save_day(date_str: str, request: Request):
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
         ensure_day_skeleton(conn, date_str)
+        # 일간 블록 이름 덮어쓰기 판정을 위해 주간 이름과 블록 라벨을 미리 로드
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        wk = week_start(d).strftime("%Y-%m-%d")
+        block_label_by_id = {
+            r["id"]: r["block_label"]
+            for r in conn.execute(
+                "SELECT id, block_label FROM blocks WHERE date = ?", (date_str,)
+            )
+        }
+        weekly_name = {
+            r["block_label"]: (r["theme_text"] or "").strip()
+            for r in conn.execute(
+                "SELECT block_label, theme_text FROM weekly_block_themes "
+                "WHERE week_start = ?",
+                (wk,),
+            )
+        }
         for key, val in form.multi_items():
             prefix, _, suffix = key.partition("_")
             if not suffix.isdigit():
@@ -279,6 +302,16 @@ async def save_day(date_str: str, request: Request):
                 conn.execute(
                     "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, sid),
+                )
+            elif prefix == "bname":
+                # 비었거나 주간 이름과 같으면 덮어쓰기 해제(NULL)→주간 값을 따른다
+                label = block_label_by_id.get(sid, "")
+                inherited = weekly_name.get(label, "")
+                v = (val or "").strip()
+                override = None if (not v or v == inherited) else v
+                conn.execute(
+                    "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
+                    (override, now, sid),
                 )
         conn.execute(
             """
@@ -403,7 +436,7 @@ def _week_view(request: Request, monday: date):
             ensure_day_skeleton(conn, ds)
         rows = conn.execute(
             f"SELECT date, block_label, block_order, is_core, plan_text, "
-            f"       see_text, start_time, end_time FROM blocks "
+            f"       see_text, name, start_time, end_time FROM blocks "
             f"WHERE date IN ({placeholders}) ORDER BY date, block_order",
             dates,
         ).fetchall()

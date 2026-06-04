@@ -111,7 +111,8 @@
                         <strong>{{ b.block_label }}</strong>
                         <span class="muted mono">{{ b.start_time }}</span>
                     </div>
-                    {% if themes_by_label.get(b.block_label) %}<div class="mini-name">{{ themes_by_label[b.block_label] }}</div>{% endif %}
+                    {% set ename = (b.name or '').strip() or themes_by_label.get(b.block_label) %}
+                    {% if ename %}<div class="mini-name">{{ ename }}</div>{% endif %}
                     {% if b.plan_text %}<div class="mini-plan">{{ b.plan_text }}</div>{% endif %}
                     {% for ev in week_block_events.get(d, {}).get(b.block_order, []) %}
                     <div class="mini-ev"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>

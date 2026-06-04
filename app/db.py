@@ -26,6 +26,10 @@ def _migrate(conn: sqlite3.Connection):
     slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)").fetchall()}
     if "done" not in slot_cols:
         conn.execute("ALTER TABLE slots ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
+    # 블록 이름 일간 덮어쓰기(NULL이면 주간 이름을 따른다)
+    block_cols = {r[1] for r in conn.execute("PRAGMA table_info(blocks)").fetchall()}
+    if "name" not in block_cols:
+        conn.execute("ALTER TABLE blocks ADD COLUMN name TEXT")
 
 
 @contextmanager
