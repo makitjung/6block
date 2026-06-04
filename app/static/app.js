@@ -233,6 +233,23 @@
                 blk.classList.toggle('is-current', m >= s && m < e);
             });
         }
+
+        applyBlockCollapse();
+    }
+
+    // 접힘 상태면 현재 시각 블록만 보이게(현재 블록이 없으면 전체 표시)
+    function applyBlockCollapse() {
+        const stack = document.querySelector('.block-stack');
+        if (!stack) return;
+        const blocks = stack.querySelectorAll('.block');
+        if (!stack.classList.contains('collapsed')) {
+            blocks.forEach((b) => b.classList.remove('blk-collapsed'));
+            return;
+        }
+        const hasCurrent = !!stack.querySelector('.block.is-current');
+        blocks.forEach((b) => {
+            b.classList.toggle('blk-collapsed', hasCurrent && !b.classList.contains('is-current'));
+        });
     }
 
     function nextBoundary() {
@@ -373,18 +390,36 @@
         }
     }
     function renderBlockAgendas(data) {
+        // 각 블록 '일정' 호버 팝오버: 그 시간대 캘린더 일정만 갱신
         const blocks = data.blocks || {};
-        document.querySelectorAll('.block-agenda[data-order]').forEach((box) => {
+        document.querySelectorAll('.cal-pop[data-order]').forEach((box) => {
             const items = blocks[box.dataset.order] || [];
             box.textContent = '';
             items.forEach((it) => {
-                const chip = el('span', 'evchip evchip-' + it.kind);
-                chip.appendChild(el('span', 't', it.time || ''));
-                chip.appendChild(document.createTextNode(' ' + it.title));
-                if (it.end) chip.appendChild(el('span', 'end', '~' + it.end));
-                box.appendChild(chip);
+                const row = el('div', 'pop-row ' + it.kind);
+                if (it.time) row.appendChild(el('span', 't', it.time));
+                row.appendChild(el('span', 'x', it.title));
+                if (it.end) row.appendChild(el('span', 'end', '~' + it.end));
+                box.appendChild(row);
             });
+            if (!items.length) box.appendChild(el('div', 'pop-empty', '이 시간대 일정 없음'));
+            const cnt = box.closest('.hover-wrap')?.querySelector('.hb-count');
+            if (cnt) cnt.textContent = items.length;
         });
+        // 각 블록 '할 일' 호버 팝오버: Things3 Today 전체(모든 블록 동일)
+        const tasks = data.tasks || [];
+        document.querySelectorAll('.task-pop').forEach((box) => {
+            box.textContent = '';
+            tasks.forEach((t) => {
+                const row = el('div', 'pop-row task');
+                row.appendChild(el('span', 'x', t.title));
+                if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
+                else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));
+                box.appendChild(row);
+            });
+            if (!tasks.length) box.appendChild(el('div', 'pop-empty', 'Things3 Today 비어 있음'));
+        });
+        document.querySelectorAll('.task-count').forEach((c) => { c.textContent = tasks.length; });
     }
     let polling = false;
     function pollDay() {
@@ -418,6 +453,48 @@
                     .catch(() => toast('저장 실패'));
             });
         });
+    }
+
+    // ---- 블록 호버 버튼 + 현재/전체 토글 ---------------------------------
+    function bindBlockTools() {
+        // 호버 버튼: 데스크톱은 CSS :hover, 모바일은 탭으로 팝오버 토글
+        document.querySelectorAll('.hover-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const wrap = btn.closest('.hover-wrap');
+                const open = wrap.classList.contains('open');
+                document.querySelectorAll('.hover-wrap.open').forEach((w) => w.classList.remove('open'));
+                if (!open) wrap.classList.add('open');
+            });
+        });
+        document.querySelectorAll('.hover-pop').forEach((p) => {
+            p.addEventListener('click', (e) => e.stopPropagation());
+        });
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.hover-wrap.open').forEach((w) => w.classList.remove('open'));
+        });
+
+        // 현재 블록만 보기 ↔ 전체 보기 (오늘 화면에서만)
+        const stack = document.querySelector('.block-stack');
+        const toggle = document.getElementById('blocks-toggle');
+        const dayForm = document.querySelector('.day-form');
+        if (stack && dayForm && dayForm.dataset.today === '1') {
+            stack.classList.add('collapsed');  // 기본값: 현재 블록만
+        }
+        if (stack && toggle) {
+            toggle.addEventListener('click', () => {
+                const collapsed = stack.classList.toggle('collapsed');
+                toggle.textContent = collapsed ? '전체 블록 보기' : '현재 블록만 보기';
+                applyBlockCollapse();
+                const cur = stack.querySelector('.block.is-current');
+                if (collapsed) {
+                    if (cur) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    setTimeout(initialScroll, 60);
+                }
+            });
+        }
     }
 
     // ---- init ------------------------------------------------------------
@@ -460,6 +537,7 @@
         });
 
         bindSlotChecks();
+        bindBlockTools();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

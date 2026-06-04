@@ -97,6 +97,12 @@
         </div>
     </section>
 
+    {% if is_today %}
+    <div class="block-stack-bar">
+        <button type="button" id="blocks-toggle" class="ghost-btn">전체 블록 보기</button>
+    </div>
+    {% endif %}
+
     <section class="block-stack">
     {% for b in blocks %}
         <article class="block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}"
@@ -126,16 +132,41 @@
             </details>
             {% endif %}
 
-            <!-- 이 시간대 캘린더 일정 / 시간 지정 할 일 (실시간 갱신 대상) -->
-            <div class="block-agenda" data-order="{{ b.block_order }}">
-                {% for it in block_events.get(b.id, []) %}
-                <span class="evchip evchip-{{ it.kind }}">
-                    <span class="t">{{ it.time }}</span>{{ it.title }}{% if it.end %}<span class="end">~{{ it.end }}</span>{% endif %}
-                </span>
-                {% endfor %}
-            </div>
-
             <div class="plan-see">
+                <!-- 이 블록의 외부 컨텍스트(캘린더 일정·Things3 할 일)는 호버 버튼으로 본다 -->
+                <div class="ps-tools">
+                    <div class="hover-wrap">
+                        <button type="button" class="hover-btn" data-pop="cal" aria-label="이 시간대 일정 보기">
+                            일정 <span class="hb-count">{{ block_events.get(b.id, []) | length }}</span>
+                        </button>
+                        <div class="hover-pop cal-pop" data-order="{{ b.block_order }}">
+                            {% for it in block_events.get(b.id, []) %}
+                            <div class="pop-row {{ it.kind }}">
+                                {% if it.time %}<span class="t">{{ it.time }}</span>{% endif %}
+                                <span class="x">{{ it.title }}</span>
+                                {% if it.end %}<span class="end">~{{ it.end }}</span>{% endif %}
+                            </div>
+                            {% else %}
+                            <div class="pop-empty">이 시간대 일정 없음</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="hover-wrap">
+                        <button type="button" class="hover-btn" data-pop="task" aria-label="Things3 할 일 보기">
+                            할 일 <span class="hb-count task-count">{{ task_list | length }}</span>
+                        </button>
+                        <div class="hover-pop task-pop">
+                            {% for t in task_list %}
+                            <div class="pop-row task">
+                                <span class="x">{{ t.title }}</span>
+                                {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
+                            </div>
+                            {% else %}
+                            <div class="pop-empty">Things3 Today 비어 있음</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
                 <label class="field">
                     <span class="field-label">PLAN</span>
                     <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
