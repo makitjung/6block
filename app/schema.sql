@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS slots (
     end_time TEXT NOT NULL,
     do_text TEXT,
     category_id INTEGER REFERENCES categories(id),
+    done INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL,
     UNIQUE(date, slot_index)
 );

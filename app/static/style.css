@@ -422,7 +422,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .slots { display: flex; flex-direction: column; gap: 3px; }
 .slot {
     --row-accent: transparent;
-    display: grid; grid-template-columns: 52px 104px 1fr 28px;
+    display: grid; grid-template-columns: 52px 104px 1fr 22px 28px;
     align-items: center; gap: 10px;
     padding: 5px 10px 5px 12px;
     background: var(--surface-2); border: 1px solid var(--border);
@@ -459,6 +459,36 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     transition: background .15s ease, color .15s ease, transform .12s ease;
 }
 .slot-play:hover { color: var(--accent); border-color: var(--accent); transform: scale(1.08); }
+
+/* DO 실행 체크박스 */
+.slot-check {
+    width: 18px; height: 18px; margin: 0; cursor: pointer; justify-self: center;
+    accent-color: var(--success);
+}
+.slot.is-done { background: var(--success-soft); }
+.slot.is-done .slot-do { text-decoration: line-through; color: var(--text-subtle); }
+.slot.is-done::before { background: var(--success); }
+
+/* 블록 이름(주간에서 정한 이름) */
+.block-name {
+    font-size: 14px; font-weight: 600; color: var(--text-soft);
+    max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.block.is-core .block-name { color: var(--text); }
+
+/* 빈 블록 아젠다는 공간 차지 안 함 */
+.block-agenda:empty { display: none; }
+
+/* 주간 미니블록 이름 */
+.mini-name { font-size: 11px; font-weight: 600; color: var(--accent-soft-text); margin-top: 2px; }
+
+/* 실시간 갱신 표시 점 */
+.live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success); margin-left: 2px; vertical-align: middle;
+    animation: livepulse 2.4s ease-in-out infinite;
+}
+@keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 /* === Theme grid (week) === */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -584,7 +614,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .now-clock { display: none; }
     .plan-see { grid-template-columns: 1fr; }
     .theme-grid { grid-template-columns: 1fr; }
-    .slot { grid-template-columns: 46px 92px 1fr 26px; gap: 6px; padding: 5px 8px 5px 10px; }
+    .slot { grid-template-columns: 42px 80px 1fr 20px 26px; gap: 6px; padding: 5px 8px 5px 10px; }
     .cat-bar-row { grid-template-columns: 80px 1fr 90px; gap: 10px; }
     .hero-date-main { font-size: 20px; }
     .pomo { width: calc(100% - 32px); bottom: 76px; }

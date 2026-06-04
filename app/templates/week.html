@@ -58,12 +58,12 @@
     </section>
 
     <section class="card">
-        <h2 class="card-title">주간 블록 테마 <span class="card-sub">B1 - B6 코어 블록이 이번 주 어떤 의미인가</span></h2>
+        <h2 class="card-title">이번 주 블록 이름 <span class="card-sub">여기서 정한 이름이 그 주의 일간 블록에 표시됩니다</span></h2>
         <div class="theme-grid">
             {% for lbl in core_labels %}
             <label class="theme-card">
                 <span class="theme-label">{{ lbl }}</span>
-                <textarea name="theme_{{ lbl }}" rows="3" placeholder="{{ lbl }} 테마">{{ themes_by_label.get(lbl, '') or '' }}</textarea>
+                <input type="text" name="theme_{{ lbl }}" value="{{ themes_by_label.get(lbl, '') or '' }}" placeholder="{{ lbl }}에 무엇을 할지" autocomplete="off">
             </label>
             {% endfor %}
         </div>
@@ -111,6 +111,7 @@
                         <strong>{{ b.block_label }}</strong>
                         <span class="muted mono">{{ b.start_time }}</span>
                     </div>
+                    {% if themes_by_label.get(b.block_label) %}<div class="mini-name">{{ themes_by_label[b.block_label] }}</div>{% endif %}
                     {% if b.plan_text %}<div class="mini-plan">{{ b.plan_text }}</div>{% endif %}
                     {% for ev in week_block_events.get(d, {}).get(b.block_order, []) %}
                     <div class="mini-ev"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>

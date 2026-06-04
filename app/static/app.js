@@ -340,6 +340,86 @@
         }
     }
 
+    // ---- 실시간 폴링 (캘린더/Things Today 갱신) -------------------------
+    function el(tag, cls, text) {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+    }
+    function renderAgenda(data) {
+        const box = document.getElementById('agenda');
+        if (!box) return;
+        const events = data.events || [];
+        const tasks = data.tasks || [];
+        box.textContent = '';
+        events.forEach((ev) => {
+            const row = el('div', 'agenda-row event');
+            row.appendChild(el('span', 't', ev.all_day ? '종일' : (ev.start || '')));
+            row.appendChild(el('span', 'x', ev.title));
+            box.appendChild(row);
+        });
+        tasks.forEach((t) => {
+            const row = el('div', 'agenda-row task');
+            row.appendChild(el('span', 't', t.time || '·'));
+            row.appendChild(el('span', 'x', t.title));
+            if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
+            else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));
+            box.appendChild(row);
+        });
+        if (!events.length && !tasks.length) {
+            box.appendChild(el('div', 'ctx-empty agenda-empty',
+                'Things3 Today와 구글 캘린더 일정이 여기에 한 번에 모입니다.'));
+        }
+    }
+    function renderBlockAgendas(data) {
+        const blocks = data.blocks || {};
+        document.querySelectorAll('.block-agenda[data-order]').forEach((box) => {
+            const items = blocks[box.dataset.order] || [];
+            box.textContent = '';
+            items.forEach((it) => {
+                const chip = el('span', 'evchip evchip-' + it.kind);
+                chip.appendChild(el('span', 't', it.time || ''));
+                chip.appendChild(document.createTextNode(' ' + it.title));
+                if (it.end) chip.appendChild(el('span', 'end', '~' + it.end));
+                box.appendChild(chip);
+            });
+        });
+    }
+    let polling = false;
+    function pollDay() {
+        const form = document.querySelector('.day-form');
+        if (!form || polling || !form.dataset.date) return;
+        if (document.hidden) return;
+        polling = true;
+        fetch('/api/day/' + form.dataset.date, { cache: 'no-store' })
+            .then((r) => r.json())
+            .then((data) => {
+                renderAgenda(data);
+                renderBlockAgendas(data);
+                const w = document.querySelector('.cal-warn');
+                if (w) w.style.display = data.cal_enabled ? 'none' : '';
+            })
+            .catch(() => {})
+            .finally(() => { polling = false; });
+    }
+
+    // ---- DO 실행 체크 (즉시 저장) ---------------------------------------
+    function bindSlotChecks() {
+        document.querySelectorAll('.slot-check').forEach((cb) => {
+            cb.addEventListener('change', () => {
+                const done = cb.checked ? '1' : '0';
+                cb.closest('.slot')?.classList.toggle('is-done', cb.checked);
+                fetch('/slot/done/' + cb.dataset.slot, {
+                    method: 'POST', body: new URLSearchParams({ done }),
+                })
+                    .then((r) => r.json())
+                    .then(() => toast(cb.checked ? '완료 체크' : '체크 해제'))
+                    .catch(() => toast('저장 실패'));
+            });
+        });
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();
@@ -378,6 +458,15 @@
         document.querySelectorAll('.inbox-done').forEach((btn) => {
             btn.addEventListener('click', () => inboxDone(btn.closest('.inbox-item')));
         });
+
+        bindSlotChecks();
+
+        // 실시간 폴링: 화면을 보고 있는 동안 60초마다 + 탭 복귀 시 즉시
+        if (document.querySelector('.day-form')) {
+            setInterval(pollDay, 60000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) pollDay(); });
+            window.addEventListener('focus', pollDay);
+        }
 
         bindForm();
         render();

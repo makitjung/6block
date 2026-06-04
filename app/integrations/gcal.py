@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from app.config import GCAL_ICAL_URL
 
 KST = ZoneInfo("Asia/Seoul")
-_CACHE_TTL = 600  # 초. 같은 .ics를 10분 동안 재사용한다.
+_CACHE_TTL = 120  # 초. 같은 .ics를 2분 동안 재사용(구글 피드 갱신 지연이 더 큼).
 _cache: dict = {"at": 0.0, "cal": None}
 
 try:

@@ -3,7 +3,7 @@ import subprocess
 import time
 from datetime import date
 
-_CACHE_TTL = 120  # 초. Things Today를 2분간 캐시.
+_CACHE_TTL = 20  # 초. 폴링과 함께 Things Today를 거의 실시간으로 반영.
 _cache: dict = {"at": 0.0, "items": None}
 
 # Today 항목 이름을 줄바꿈으로 직렬화해 반환 (제목 안의 쉼표 문제 회피)

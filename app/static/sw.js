@@ -1,5 +1,5 @@
 // 6block PWA 서비스 워커 - 설치 기준 충족 및 정적 자원 캐시 폴백
-const CACHE_NAME = '6block-v2';
+const CACHE_NAME = '6block-v3';
 const CORE_ASSETS = [
     '/static/style.css',
     '/static/app.js',

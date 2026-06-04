@@ -2,7 +2,7 @@
 {% set active = 'today' %}
 {% block title %}{{ date_str }} | 6block{% endblock %}
 {% block content %}
-<form method="post" action="/save/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}">
+<form method="post" action="/save/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}" data-date="{{ date_str }}">
     <section class="hero">
         <div class="hero-nav">
             <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날">‹</a>
@@ -73,11 +73,10 @@
 
         <div class="ctx-section">
             <div class="ctx-head">
-                오늘 일정 · 할 일
-                {% if not cal_enabled %}<span class="ctx-empty">(구글 캘린더 미연결)</span>{% endif %}
+                오늘 일정 · 할 일 <span class="live-dot" title="실시간 갱신"></span>
+                <span class="ctx-empty cal-warn"{% if cal_enabled %} style="display:none"{% endif %}>(구글 캘린더 미연결)</span>
             </div>
-            {% if cal_events or task_list %}
-            <div class="agenda">
+            <div class="agenda" id="agenda">
                 {% for ev in cal_events %}
                 <div class="agenda-row event">
                     <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
@@ -91,10 +90,10 @@
                     {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
                 </div>
                 {% endfor %}
+                {% if not cal_events and not task_list %}
+                <div class="ctx-empty agenda-empty">Things3 Today와 구글 캘린더 일정이 여기에 한 번에 모입니다.</div>
+                {% endif %}
             </div>
-            {% else %}
-            <div class="ctx-empty">Things3 Today와 구글 캘린더 일정이 여기에 한 번에 모입니다.</div>
-            {% endif %}
         </div>
     </section>
 
@@ -107,12 +106,10 @@
             <header class="block-head">
                 <div class="block-id">
                     <span class="block-label">{{ b.block_label }}</span>
+                    {% if themes_by_label.get(b.block_label) %}<span class="block-name">{{ themes_by_label[b.block_label] }}</span>{% endif %}
                     <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
                     <span class="now-badge">지금</span>
                 </div>
-                {% if b.is_core and themes_by_label.get(b.block_label) %}
-                <div class="block-theme" title="이번 주 {{ b.block_label }} 테마">{{ themes_by_label[b.block_label] }}</div>
-                {% endif %}
             </header>
 
             <!-- 블록 반복분: 오늘 목표·계획 (접힘, 펼치기 토글) -->
@@ -127,16 +124,14 @@
             </details>
             {% endif %}
 
-            <!-- 이 시간대 캘린더 일정 / 시간 지정 할 일 -->
-            {% if block_events.get(b.id) %}
-            <div class="block-agenda">
-                {% for it in block_events[b.id] %}
+            <!-- 이 시간대 캘린더 일정 / 시간 지정 할 일 (실시간 갱신 대상) -->
+            <div class="block-agenda" data-order="{{ b.block_order }}">
+                {% for it in block_events.get(b.id, []) %}
                 <span class="evchip evchip-{{ it.kind }}">
                     <span class="t">{{ it.time }}</span>{{ it.title }}{% if it.end %}<span class="end">~{{ it.end }}</span>{% endif %}
                 </span>
                 {% endfor %}
             </div>
-            {% endif %}
 
             <div class="plan-see">
                 <label class="field">
@@ -151,7 +146,7 @@
 
             <div class="slots">
             {% for s in slots_by_block[b.id] %}
-                <div class="slot" data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">
+                <div class="slot{% if s.done %} is-done{% endif %}" data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">
                     <span class="slot-time mono">{{ s.start_time }}</span>
                     <div class="slot-cat">
                         <select name="cat_{{ s.id }}" class="cat-select" aria-label="카테고리">
@@ -162,6 +157,7 @@
                         </select>
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    <input type="checkbox" class="slot-check" data-slot="{{ s.id }}" {% if s.done %}checked{% endif %} title="실제로 했는지 체크" aria-label="실행 완료">
                     <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯에서 25분 시작">▶</button>
                 </div>
             {% endfor %}

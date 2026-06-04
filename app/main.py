@@ -143,6 +143,40 @@ def _distribute(blocks, timed_items):
     return by_block, leftover
 
 
+def _day_agenda(blocks, d, is_today):
+    """그날의 캘린더 일정·Things Today를 모으고 시간 항목을 블록에 배치한다.
+
+    반환: (cal_events 전체, task_list 전체, block_id -> [시간 항목...]).
+    """
+    cal_events = gcal.events_for_date(d)
+    task_list = things.today_tasks(d, include_overdue=is_today)
+    timed: list = []
+    for ev in cal_events:
+        if not ev["all_day"] and ev["start_min"] is not None:
+            timed.append(
+                {
+                    "kind": "event",
+                    "title": ev["title"],
+                    "time": ev["start"],
+                    "end": ev["end"],
+                    "start_min": ev["start_min"],
+                }
+            )
+    for t in task_list:
+        if t["time_min"] is not None:
+            timed.append(
+                {
+                    "kind": "task",
+                    "title": t["title"],
+                    "time": t["time"],
+                    "end": None,
+                    "start_min": t["time_min"],
+                }
+            )
+    block_events, _leftover = _distribute(blocks, timed)
+    return cal_events, task_list, block_events
+
+
 def _day_view(request: Request, date_str: str):
     d = datetime.strptime(date_str, "%Y-%m-%d").date()
     prev_date = (d - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -184,32 +218,7 @@ def _day_view(request: Request, date_str: str):
     # 외부 연동: Things3 Today + 구글 캘린더 일정.
     # 전체 목록은 최상단에 1번만 줄바꿈으로 노출(cal_events, task_list),
     # 시각이 있는 항목만 해당 시간 블록의 아젠다로 배치한다.
-    cal_events = gcal.events_for_date(d)
-    task_list = things.today_tasks(d, include_overdue=is_today)
-    timed: list = []
-    for ev in cal_events:
-        if not ev["all_day"] and ev["start_min"] is not None:
-            timed.append(
-                {
-                    "kind": "event",
-                    "title": ev["title"],
-                    "time": ev["start"],
-                    "end": ev["end"],
-                    "start_min": ev["start_min"],
-                }
-            )
-    for t in task_list:
-        if t["time_min"] is not None:
-            timed.append(
-                {
-                    "kind": "task",
-                    "title": t["title"],
-                    "time": t["time"],
-                    "end": None,
-                    "start_min": t["time_min"],
-                }
-            )
-    block_events, _leftover = _distribute(blocks, timed)
+    cal_events, task_list, block_events = _day_agenda(blocks, d, is_today)
 
     # 오늘 목표/계획을 각각 3개로 분리(줄바꿈 저장, 레거시 1줄도 호환).
     goals = _split3(meta["today_goal"] if meta else "")
@@ -315,6 +324,61 @@ def inbox_done(item_id: int):
     with get_conn() as conn:
         conn.execute("UPDATE inbox SET done = 1 WHERE id = ?", (item_id,))
     return JSONResponse({"ok": True})
+
+
+# -- 슬롯 실행 체크 + 실시간 폴링 -------------------------------------------
+
+
+@app.post("/slot/done/{slot_id}")
+async def slot_done(slot_id: int, request: Request):
+    """DO 옆 체크박스. 즉시 저장(폼 저장과 별개)."""
+    form = await request.form()
+    val = 1 if (form.get("done") in ("1", "true", "on")) else 0
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE slots SET done = ?, updated_at = ? WHERE id = ?",
+            (val, now, slot_id),
+        )
+    return JSONResponse({"ok": True, "done": val})
+
+
+@app.get("/api/day/{date_str}")
+def api_day(date_str: str):
+    """현재 캘린더·Things 아젠다를 JSON으로. 클라이언트가 주기적으로 폴링해 갱신."""
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    is_today = date_str == today_str()
+    with get_conn() as conn:
+        ensure_day_skeleton(conn, date_str)
+        blocks = conn.execute(
+            "SELECT * FROM blocks WHERE date = ? ORDER BY block_order",
+            (date_str,),
+        ).fetchall()
+    cal_events, task_list, block_events = _day_agenda(blocks, d, is_today)
+    order_by_id = {b["id"]: b["block_order"] for b in blocks}
+    blocks_json: dict[str, list] = {}
+    for bid, items in block_events.items():
+        if items:
+            blocks_json[str(order_by_id[bid])] = items
+    return JSONResponse(
+        {
+            "cal_enabled": gcal.enabled(),
+            "events": [
+                {"all_day": e["all_day"], "start": e["start"], "title": e["title"]}
+                for e in cal_events
+            ],
+            "tasks": [
+                {
+                    "time": t["time"],
+                    "title": t["title"],
+                    "deadline": t["deadline"],
+                    "overdue": t["overdue"],
+                }
+                for t in task_list
+            ],
+            "blocks": blocks_json,
+        }
+    )
 
 
 @app.get("/week")
