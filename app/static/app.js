@@ -56,6 +56,14 @@
         return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
     }
 
+    // ---- screen wake lock (화면 꺼짐 방지) -------------------------------
+    let wakeLock = null;
+    async function requestWakeLock() {
+        if (!('wakeLock' in navigator) || document.hidden) return;
+        try { wakeLock = await navigator.wakeLock.request('screen'); }
+        catch (e) {}
+    }
+
     // ---- sound + notify --------------------------------------------------
     let audioCtx = null;
     function getAudio() {
@@ -81,6 +89,30 @@
             osc.connect(gain).connect(ctx.destination);
             osc.start(start);
             osc.stop(end + 0.05);
+        }
+    }
+    // 종소리 알람(비조화 배음 + 긴 여운, 가볍게 times회)
+    function bell(times) {
+        const ctx = getAudio(); if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+        const base = 740;
+        const partials = [1, 2.0, 2.96, 4.21];   // 종 특유의 비조화 배음
+        const weights = [1, 0.5, 0.3, 0.18];
+        for (let n = 0; n < (times || 1); n++) {
+            const t0 = ctx.currentTime + n * 0.9;
+            partials.forEach((p, i) => {
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = base * p;
+                const peak = 0.22 * weights[i];
+                g.gain.setValueAtTime(0.0001, t0);
+                g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
+                g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
+                osc.connect(g).connect(ctx.destination);
+                osc.start(t0);
+                osc.stop(t0 + 1.7);
+            });
         }
     }
     function ensureNotifPermission() {
@@ -115,7 +147,7 @@
         state.phase = 'BREAK';
         state.startedAt = Date.now();
         persist();
-        chime(2, 660);
+        bell(2);
         notify('휴식 시간', '5분 휴식 시작');
         toast('휴식 시작');
         render();
@@ -123,7 +155,7 @@
     function transitionToIdle(auto) {
         state.phase = 'IDLE';
         persist();
-        chime(3, 980);
+        bell(2);
         notify('30분 슬롯 완료', auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!');
         toast('슬롯 완료');
         render();
@@ -606,6 +638,11 @@
         }
         window.addEventListener('orientationchange', () => scheduleRefocus(true));
         window.addEventListener('resize', () => scheduleRefocus(false));
+
+        // 화면 꺼짐 방지: 로드 시 + 다시 보일 때 + 첫 입력 시 wake lock 획득
+        requestWakeLock();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) requestWakeLock(); });
+        window.addEventListener('pointerdown', requestWakeLock, { passive: true, once: true });
 
         render();
         // 브라우저 스크롤 복원이 초기 포커스를 덮어쓰지 않도록 수동 처리 후
