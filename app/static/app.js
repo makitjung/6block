@@ -381,6 +381,15 @@
         if (slot) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
+    // 화면 회전·리사이즈 후 현재 슬롯을 다시 중앙에 맞춤(가로 전환 등에서 어긋남 방지)
+    function refocusCurrent() {
+        const dayForm = document.querySelector('.day-form');
+        if (!dayForm || dayForm.dataset.today !== '1') return;
+        const target = document.querySelector('.slot.is-now') || document.querySelector('.block.is-current');
+        if (target) target.scrollIntoView({ behavior: 'auto', block: 'center' });
+        lastNowSlot = currentSlotHHMM();
+    }
+
     // ---- 실시간 폴링 (캘린더/Things Today 갱신) -------------------------
     function el(tag, cls, text) {
         const e = document.createElement(tag);
@@ -585,6 +594,18 @@
         ['wheel', 'touchstart', 'touchmove', 'pointerdown'].forEach((ev) => {
             window.addEventListener(ev, () => { lastUserInteract = Date.now(); }, { passive: true });
         });
+
+        // 화면 회전·리사이즈 시 현재 슬롯으로 재포커스(가로 전환에서 어긋남 방지)
+        let reflowTimer = null;
+        function scheduleRefocus(force) {
+            clearTimeout(reflowTimer);
+            reflowTimer = setTimeout(() => {
+                if (!force && Date.now() - lastUserInteract < 1500) return;  // 스크롤발 주소창 리사이즈는 무시
+                refocusCurrent();
+            }, 300);
+        }
+        window.addEventListener('orientationchange', () => scheduleRefocus(true));
+        window.addEventListener('resize', () => scheduleRefocus(false));
 
         render();
         // 브라우저 스크롤 복원이 초기 포커스를 덮어쓰지 않도록 수동 처리 후
