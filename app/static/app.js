@@ -5,6 +5,7 @@
     const FOCUS_SEC = 25 * 60;
     const BREAK_SEC = 5 * 60;
     const TICK_MS = 1000;
+    const RING_C = 2 * Math.PI * 44;   // 진행 링 둘레(r=44), CSS stroke-dasharray와 일치
 
     const state = {
         phase: 'IDLE',      // 'IDLE' | 'FOCUS' | 'BREAK'
@@ -148,6 +149,8 @@
 
     // ---- main tick -------------------------------------------------------
     let lastBoundaryFired = '';
+    let lastUserInteract = 0;   // 마지막 사용자 스크롤·터치 시각(자동 추적 억제용)
+    let lastNowSlot = '';       // 마지막으로 추적한 현재 30분 슬롯(HH:MM)
     function tick() {
         const now = new Date();
         const sec = now.getSeconds();
@@ -179,7 +182,7 @@
             tc.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
         }
 
-        // pomo card
+        // pomo dial
         const pomo = document.getElementById('pomo');
         if (pomo) {
             pomo.classList.toggle('active', state.phase !== 'IDLE' || state.auto);
@@ -190,24 +193,24 @@
 
             const phaseLabel = state.phase === 'FOCUS' ? '집중'
                               : state.phase === 'BREAK' ? '휴식'
-                              : (state.auto ? '대기 (자동)' : '대기');
+                              : (state.auto ? '자동' : '대기');
             const phaseEl = pomo.querySelector('.pomo-phase');
             if (phaseEl) phaseEl.textContent = phaseLabel;
 
             const timeEl = pomo.querySelector('.pomo-time');
-            const barEl = pomo.querySelector('.pomo-bar');
+            const ringEl = pomo.querySelector('.pomo-ring-prog');
             const slotEl = pomo.querySelector('.pomo-slot');
             if (state.phase === 'IDLE') {
                 if (timeEl) timeEl.textContent = state.auto ? 'AUTO' : '—';
-                if (barEl) barEl.style.width = '0%';
+                if (ringEl) ringEl.style.strokeDashoffset = RING_C;
                 if (slotEl) slotEl.textContent = state.auto
                     ? `다음 시작 · ${nextBoundary()}` : '';
             } else {
                 const total = state.phase === 'FOCUS' ? FOCUS_SEC : BREAK_SEC;
                 const remain = total - (Date.now() - state.startedAt) / 1000;
+                const frac = Math.min(1, Math.max(0, remain / total));
                 if (timeEl) timeEl.textContent = fmt(remain);
-                if (barEl) barEl.style.width =
-                    Math.min(100, Math.max(0, (1 - remain / total) * 100)) + '%';
+                if (ringEl) ringEl.style.strokeDashoffset = RING_C * (1 - frac);
                 if (slotEl) slotEl.textContent = `슬롯 ${state.slotStart}`;
             }
         }
@@ -235,6 +238,7 @@
         }
 
         applyBlockCollapse();
+        autoFollowSlot();
     }
 
     // 접힘 상태면 현재 시각 블록만 보이게(현재 블록이 없으면 전체 표시)
@@ -341,20 +345,40 @@
     // ---- 현재/지정 블록으로 스크롤 ---------------------------------------
     function initialScroll() {
         let target = null;
+        let isSlot = false;
         const hash = location.hash;
         if (hash && hash.indexOf('#blk-') === 0) {
             target = document.querySelector(hash);
         } else {
             const dayForm = document.querySelector('.day-form');
             if (dayForm && dayForm.dataset.today === '1') {
-                target = document.querySelector('.block.is-current');
+                // 현재 30분 슬롯을 우선 포커스, 없으면 현재 코어 블록
+                const slot = document.querySelector('.slot.is-now');
+                if (slot) { target = slot; isSlot = true; }
+                else target = document.querySelector('.block.is-current');
             }
         }
         if (target) {
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            target.classList.add('flash');
-            setTimeout(() => target.classList.remove('flash'), 1500);
+            lastNowSlot = currentSlotHHMM();
+            if (!isSlot) {
+                target.classList.add('flash');
+                setTimeout(() => target.classList.remove('flash'), 1500);
+            }
         }
+    }
+
+    // 현재 30분 슬롯이 바뀌면 화면을 부드럽게 따라 이동(사용자 조작 중에는 억제)
+    function autoFollowSlot() {
+        const dayForm = document.querySelector('.day-form');
+        if (!dayForm || dayForm.dataset.today !== '1') return;
+        const cur = currentSlotHHMM();
+        if (cur === lastNowSlot) return;
+        if (lastNowSlot === '') { lastNowSlot = cur; return; }   // 초기 1회는 initialScroll이 담당
+        lastNowSlot = cur;
+        if (Date.now() - lastUserInteract < 8000) return;        // 손으로 조작 중이면 방해 안 함
+        const slot = document.querySelector('.slot.is-now');
+        if (slot) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     // ---- 실시간 폴링 (캘린더/Things Today 갱신) -------------------------
@@ -515,6 +539,9 @@
 
         const pomo = document.getElementById('pomo');
         if (pomo) {
+            pomo.querySelector('.pomo-dial')?.addEventListener('click', () => {
+                pomo.classList.toggle('expanded');
+            });
             pomo.querySelector('.pomo-start')?.addEventListener('click', () => {
                 ensureNotifPermission();
                 startFocus(currentSlotHHMM());
@@ -553,6 +580,12 @@
         }
 
         bindForm();
+
+        // 사용자가 직접 스크롤·터치 중이면 자동 슬롯 추적을 잠시 멈춤
+        ['wheel', 'touchstart', 'touchmove', 'pointerdown'].forEach((ev) => {
+            window.addEventListener(ev, () => { lastUserInteract = Date.now(); }, { passive: true });
+        });
+
         render();
         // 브라우저 스크롤 복원이 초기 포커스를 덮어쓰지 않도록 수동 처리 후
         // 레이아웃이 끝난 시점(load + 약간의 지연)에 현재 블록으로 이동.

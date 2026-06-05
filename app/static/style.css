@@ -566,39 +566,54 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .actions-sticky { position: fixed; bottom: 16px; right: 16px; z-index: 30; display: flex; gap: 10px; }
 .save-btn { box-shadow: var(--sh-3); }
 
-/* === Pomodoro floating card === */
-.pomo {
-    position: fixed; left: 16px; bottom: 16px; z-index: 40;
-    width: 224px; padding: 13px 15px;
-    background: var(--surface); border: 1px solid var(--border-strong);
-    border-radius: var(--r-lg); box-shadow: var(--sh-3); color: var(--text);
-    opacity: 0.6; transition: opacity .2s ease;
+/* === Pomodoro floating dial === */
+.pomo { position: fixed; left: 16px; bottom: 16px; z-index: 40; }
+.pomo-dial {
+    position: relative; display: block; width: 92px; height: 92px;
+    padding: 0; border: 0; background: transparent; cursor: pointer;
+    border-radius: 50%; box-shadow: var(--sh-3);
+    opacity: 0.62; transition: opacity .2s ease, transform .12s ease;
 }
-.pomo:hover, .pomo.active { opacity: 1; }
-.pomo-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.pomo-phase { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 700; }
-.pomo.focus .pomo-phase { color: var(--warm); }
-.pomo.break .pomo-phase { color: var(--success); }
-.pomo-auto {
-    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
-    padding: 2px 8px; border-radius: var(--r-pill); font-size: 10px; letter-spacing: 0.08em; font-weight: 700;
+.pomo:hover .pomo-dial, .pomo.active .pomo-dial { opacity: 1; }
+.pomo-dial:active { transform: scale(0.96); }
+.pomo-ring { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.pomo-ring-track { fill: var(--surface); stroke: var(--surface-3); stroke-width: 7; }
+.pomo-ring-prog {
+    fill: none; stroke: var(--border-strong); stroke-width: 7; stroke-linecap: round;
+    stroke-dasharray: 276.46; stroke-dashoffset: 276.46;
+    transition: stroke-dashoffset .5s linear, stroke .2s ease;
 }
-.pomo-auto.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-.pomo-time { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; margin: 4px 0 8px; }
-.pomo.focus .pomo-time { color: var(--warm); }
+.pomo.focus .pomo-ring-prog { stroke: var(--danger); }
+.pomo.break .pomo-ring-prog { stroke: var(--success); }
+.pomo-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px; pointer-events: none;
+}
+.pomo-time { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: var(--text); }
+.pomo.focus .pomo-time { color: var(--danger); }
 .pomo.break .pomo-time { color: var(--success); }
-.pomo-bar-wrap { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
-.pomo-bar { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width .5s linear; }
-.pomo.focus .pomo-bar { background: var(--warm); }
-.pomo.break .pomo-bar { background: var(--success); }
-.pomo-slot { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+.pomo-phase { font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 700; }
+
+.pomo-controls {
+    position: absolute; left: 0; bottom: 102px;
+    display: none; flex-direction: column; gap: 7px; width: 150px; padding: 9px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--r-md); box-shadow: var(--sh-3);
+}
+.pomo.expanded .pomo-controls, .pomo:hover .pomo-controls { display: flex; }
+.pomo-slot { font-size: 11px; color: var(--text-muted); min-height: 14px; }
 .pomo-actions { display: flex; gap: 6px; }
 .pomo-actions button {
     flex: 1; background: var(--surface-3); color: var(--text-soft);
-    border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 0; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 0; font-size: 12px; font-weight: 600;
 }
 .pomo-actions button:hover { background: var(--surface-hover); color: var(--text); }
 .pomo-start { background: var(--accent-soft) !important; color: var(--accent) !important; border-color: var(--accent) !important; }
+.pomo-auto {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+    padding: 4px 8px; border-radius: var(--r-pill); font-size: 10px; letter-spacing: 0.08em; font-weight: 700;
+}
+.pomo-auto.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
 /* === Toast === */
 .toast {
@@ -627,7 +642,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .slot { grid-template-columns: 42px 80px 1fr 20px 26px; gap: 6px; padding: 5px 8px 5px 10px; }
     .cat-bar-row { grid-template-columns: 80px 1fr 90px; gap: 10px; }
     .hero-date-main { font-size: 20px; }
-    .pomo { width: calc(100% - 32px); bottom: 76px; }
+    .pomo { bottom: 72px; }
     .actions-sticky { bottom: 12px; right: 12px; }
 }
 /* 가로 회전(landscape) - 주간 7열 유지, 좁은 높이에서 포모도로 축소 */
@@ -635,7 +650,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .week-grid { grid-template-columns: repeat(7, 1fr); }
     .theme-grid { grid-template-columns: repeat(3, 1fr); }
     .ctx-goals { grid-template-columns: 1fr 1fr; }
-    .pomo { width: 200px; bottom: 12px; }
+    .pomo { bottom: 12px; }
 }
 
 /* === 블록별 일정·할 일 호버 팝오버 === */

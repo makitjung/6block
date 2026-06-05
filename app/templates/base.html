@@ -43,18 +43,25 @@
     </header>
     <main>{% block content %}{% endblock %}</main>
 
-    <aside id="pomo" class="pomo">
-        <div class="pomo-head">
-            <span class="pomo-phase">대기</span>
-            <button type="button" class="pomo-auto" title="자동 모드 (정각·30분 자동 시작)">AUTO</button>
-        </div>
-        <div class="pomo-time mono">—</div>
-        <div class="pomo-bar-wrap"><div class="pomo-bar"></div></div>
-        <div class="pomo-slot mono"></div>
-        <div class="pomo-actions">
-            <button type="button" class="pomo-start" title="지금 25분 집중 시작">시작</button>
-            <button type="button" class="pomo-skip"  title="현재 단계 스킵">스킵</button>
-            <button type="button" class="pomo-stop"  title="중지">중지</button>
+    <aside id="pomo" class="pomo" aria-label="포모도로 타이머">
+        <button type="button" class="pomo-dial" title="집중·휴식 타이머 (눌러서 컨트롤 열기)">
+            <svg class="pomo-ring" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="pomo-ring-track" cx="50" cy="50" r="44"></circle>
+                <circle class="pomo-ring-prog" cx="50" cy="50" r="44"></circle>
+            </svg>
+            <span class="pomo-center">
+                <span class="pomo-time mono">—</span>
+                <span class="pomo-phase">대기</span>
+            </span>
+        </button>
+        <div class="pomo-controls">
+            <div class="pomo-slot mono"></div>
+            <div class="pomo-actions">
+                <button type="button" class="pomo-start" title="지금 25분 집중 시작">시작</button>
+                <button type="button" class="pomo-skip"  title="현재 단계 스킵">스킵</button>
+                <button type="button" class="pomo-stop"  title="중지">중지</button>
+            </div>
+            <button type="button" class="pomo-auto" title="자동 모드 (정각·30분 자동 시작)">AUTO 모드</button>
         </div>
     </aside>
 
