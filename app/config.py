@@ -16,7 +16,7 @@ GCAL_ICAL_URL = os.getenv("GCAL_ICAL_URL", "").strip()
 
 # (block_label, is_core, start, end)
 DAY_BLOCKS = [
-    ("B1",         True,  "07:00", "09:30"),
+    ("B1",         True,  "07:30", "09:30"),
     ("B2",         True,  "09:30", "11:30"),
     ("점심·기타", False, "11:30", "12:30"),
     ("B3",         True,  "12:30", "14:30"),
