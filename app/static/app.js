@@ -297,11 +297,14 @@
     }
 
     // ---- category color stripe ------------------------------------------
+    // 카테고리 색은 테마별 톤 변수(--tone-blue/red/black)로 칠해 다크모드에서도 보이게 한다
     function paintCategory(sel) {
         const opt = sel.options[sel.selectedIndex];
-        const color = (opt && opt.dataset) ? opt.dataset.color : '';
+        const tone = (opt && opt.dataset) ? opt.dataset.tone : '';
+        const accent = tone ? `var(--tone-${tone})` : 'transparent';
         const row = sel.closest('.slot');
-        if (row) row.style.setProperty('--row-accent', color || 'transparent');
+        if (row) row.style.setProperty('--row-accent', accent);
+        sel.style.color = tone ? `var(--tone-${tone})` : '';
     }
 
     // ---- form save indication -------------------------------------------

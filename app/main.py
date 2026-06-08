@@ -13,7 +13,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import DAY_BLOCKS, hhmm_to_min, slots_for_day
+from app.config import DAY_BLOCKS, cat_tone, hhmm_to_min, slots_for_day
 from app.db import get_conn, init_db
 from app.integrations import gcal, things
 
@@ -218,10 +218,14 @@ def _day_view(request: Request, date_str: str):
     is_today = date_str == today_str()
     with get_conn() as conn:
         ensure_day_skeleton(conn, date_str)
-        categories = conn.execute(
-            "SELECT id, name, color FROM categories "
-            "WHERE is_active = 1 ORDER BY display_order"
-        ).fetchall()
+        categories = [
+            {"id": r["id"], "name": r["name"], "color": r["color"],
+             "tone": cat_tone(r["name"])}
+            for r in conn.execute(
+                "SELECT id, name, color FROM categories "
+                "WHERE is_active = 1 ORDER BY display_order"
+            )
+        ]
         blocks = conn.execute(
             "SELECT * FROM blocks WHERE date = ? ORDER BY block_order",
             (date_str,),
@@ -549,6 +553,7 @@ def _week_view(request: Request, monday: date):
         {
             "name": r["name"],
             "color": r["color"],
+            "tone": cat_tone(r["name"]),
             "slot_count": r["slot_count"],
             "hours": r["slot_count"] * 0.5,
             "pct": round(r["slot_count"] / total_slots * 100, 1) if total_slots else 0,

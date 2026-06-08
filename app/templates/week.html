@@ -75,9 +75,9 @@
         <div class="cat-bars">
             {% for c in cat_summary %}
             <div class="cat-bar-row">
-                <span class="cat-bar-name"><span class="dot" style="background:{{ c.color }}"></span>{{ c.name }}</span>
+                <span class="cat-bar-name"><span class="dot" style="background: var(--tone-{{ c.tone }})"></span>{{ c.name }}</span>
                 <div class="cat-bar-track">
-                    <span class="cat-bar-fill" style="width: {{ c.pct }}%; background: {{ c.color }};"></span>
+                    <span class="cat-bar-fill" style="width: {{ c.pct }}%; background: var(--tone-{{ c.tone }});"></span>
                 </div>
                 <span class="cat-bar-val mono">{{ '%.1f' % c.hours }}h <span class="muted">{{ c.pct }}%</span></span>
             </div>

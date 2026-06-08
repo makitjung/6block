@@ -36,6 +36,11 @@
     --danger-soft: #fce8e6;
     --now-line: #ea4335;
 
+    /* 카테고리(구분) 색 톤 - 코어·점검 파랑, 약속 빨강, 업무·휴식·기타 검정 */
+    --tone-blue: #1a73e8;
+    --tone-red: #d93025;
+    --tone-black: #202124;
+
     /* shape */
     --r-sm: 8px;
     --r-md: 10px;
@@ -79,6 +84,10 @@
     --danger: #f28b82;
     --danger-soft: #3a2220;
     --now-line: #f28b82;
+    /* 다크에서 검정 톤은 본문 텍스트색으로 대체해 보이게 한다 */
+    --tone-blue: #8ab4f8;
+    --tone-red: #f28b82;
+    --tone-black: #e8eaed;
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --sh-2: 0 2px 6px rgba(0, 0, 0, 0.5);
     --sh-3: 0 6px 18px rgba(0, 0, 0, 0.55);

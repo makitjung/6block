@@ -185,7 +185,7 @@
                         <select name="cat_{{ s.id }}" class="cat-select" aria-label="카테고리">
                             <option value="">—</option>
                             {% for c in categories %}
-                            <option value="{{ c.id }}" data-color="{{ c.color }}" {% if s.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                            <option value="{{ c.id }}" data-color="{{ c.color }}" data-tone="{{ c.tone }}" {% if s.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
