@@ -403,6 +403,14 @@ def inbox_done(item_id: int):
     return JSONResponse({"ok": True})
 
 
+@app.post("/inbox/delete/{item_id}")
+def inbox_delete(item_id: int):
+    """수집함 항목을 완전히 삭제한다(정리 ✓와 달리 DB에서 지움)."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM inbox WHERE id = ?", (item_id,))
+    return JSONResponse({"ok": True})
+
+
 # -- 슬롯 실행 체크 + 실시간 폴링 -------------------------------------------
 
 

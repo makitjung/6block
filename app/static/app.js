@@ -363,8 +363,15 @@
         btn.title = '완료/정리';
         btn.textContent = '✓';
         btn.addEventListener('click', () => inboxDone(item));
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'inbox-del';
+        del.title = '삭제';
+        del.textContent = '✕';
+        del.addEventListener('click', () => inboxDelete(item));
         item.appendChild(span);
         item.appendChild(btn);
+        item.appendChild(del);
         list.insertBefore(item, list.firstChild);
     }
     function inboxDone(item) {
@@ -372,6 +379,12 @@
         fetch('/inbox/done/' + item.dataset.id, { method: 'POST' })
             .then(() => { item.remove(); bumpInboxCount(-1); })
             .catch(() => toast('처리 실패'));
+    }
+    function inboxDelete(item) {
+        if (!item) return;
+        fetch('/inbox/delete/' + item.dataset.id, { method: 'POST' })
+            .then(() => { item.remove(); bumpInboxCount(-1); })
+            .catch(() => toast('삭제 실패'));
     }
     function bumpInboxCount(delta) {
         const el = document.getElementById('inbox-count');
@@ -607,6 +620,9 @@
         });
         document.querySelectorAll('.inbox-done').forEach((btn) => {
             btn.addEventListener('click', () => inboxDone(btn.closest('.inbox-item')));
+        });
+        document.querySelectorAll('.inbox-del').forEach((btn) => {
+            btn.addEventListener('click', () => inboxDelete(btn.closest('.inbox-item')));
         });
 
         bindSlotChecks();

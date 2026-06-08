@@ -355,6 +355,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: var(--text-subtle); font-size: 12px; line-height: 1;
 }
 .inbox-done:hover { border-color: var(--success); color: var(--success); background: var(--success-soft); }
+.inbox-del {
+    width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+    border: 1px solid var(--border-strong); background: var(--surface);
+    color: var(--text-subtle); font-size: 11px; line-height: 1;
+}
+.inbox-del:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 
 /* === KPI === */
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
