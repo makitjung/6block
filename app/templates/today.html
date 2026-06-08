@@ -191,7 +191,7 @@
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
                     <input type="checkbox" class="slot-check" data-slot="{{ s.id }}" {% if s.done %}checked{% endif %} title="실제로 했는지 체크" aria-label="실행 완료">
-                    <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯에서 25분 시작">▶</button>
+                    <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯 끝까지 집중">▶</button>
                 </div>
             {% endfor %}
             </div>

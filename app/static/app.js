@@ -1,15 +1,15 @@
-// 6block 클라이언트 - 30분 슬롯 경계와 동기화되는 25/5 포모도로, 카테고리 띠, PWA 등록
+// 6block 클라이언트 - 누른 슬롯의 종료시각까지 집중하는 포모도로, 카테고리 띠, PWA 등록
 (function () {
     'use strict';
 
-    const FOCUS_SEC = 25 * 60;
-    const BREAK_SEC = 5 * 60;
     const TICK_MS = 1000;
+    const SLOT_MIN = 30;   // 슬롯 길이(분). 집중은 누른 슬롯의 종료시각까지 흐른다.
     const RING_C = 2 * Math.PI * 44;   // 진행 링 둘레(r=44), CSS stroke-dasharray와 일치
 
     const state = {
-        phase: 'IDLE',      // 'IDLE' | 'FOCUS' | 'BREAK'
-        startedAt: 0,       // epoch ms
+        phase: 'IDLE',      // 'IDLE' | 'FOCUS'
+        startedAt: 0,       // epoch ms (집중 시작 시각)
+        endsAt: 0,          // epoch ms (집중 종료 = 슬롯 종료시각)
         slotStart: '',      // 'HH:MM'
         auto: localStorage.getItem('pomoAuto') === 'true',
     };
@@ -17,23 +17,21 @@
     // ---- storage ---------------------------------------------------------
     function persist() {
         localStorage.setItem('pomoState', JSON.stringify({
-            phase: state.phase, startedAt: state.startedAt, slotStart: state.slotStart,
+            phase: state.phase, startedAt: state.startedAt,
+            endsAt: state.endsAt, slotStart: state.slotStart,
         }));
         localStorage.setItem('pomoAuto', String(state.auto));
     }
     function restore() {
         try {
             const raw = JSON.parse(localStorage.getItem('pomoState') || '{}');
-            if (raw.phase) {
-                state.phase = raw.phase;
-                state.startedAt = raw.startedAt;
-                state.slotStart = raw.slotStart;
-                // 만료된 세션은 즉시 정리
-                const total = raw.phase === 'FOCUS' ? FOCUS_SEC
-                            : raw.phase === 'BREAK' ? BREAK_SEC : 0;
-                if (total && (Date.now() - raw.startedAt) / 1000 >= total + 60) {
-                    state.phase = 'IDLE';
-                }
+            if (raw.phase === 'FOCUS') {
+                state.phase = 'FOCUS';
+                state.startedAt = raw.startedAt || 0;
+                state.endsAt = raw.endsAt || 0;
+                state.slotStart = raw.slotStart || '';
+                // 종료시각이 지난 세션은 즉시 정리
+                if (!state.endsAt || Date.now() >= state.endsAt) state.phase = 'IDLE';
             }
         } catch (e) {}
     }
@@ -54,6 +52,13 @@
     function hhmmToMin(s) {
         if (!s) return -1;
         return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
+    }
+    // 'HH:MM' 슬롯 시작 → 그 슬롯 종료시각(시작+30분)의 epoch ms (오늘 기준)
+    function slotEndEpoch(slotStart) {
+        const endMin = hhmmToMin(slotStart) + SLOT_MIN;
+        const d = new Date();
+        d.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0);
+        return d.getTime();
     }
 
     // ---- screen wake lock (화면 꺼짐 방지) -------------------------------
@@ -134,39 +139,38 @@
     }
 
     // ---- state transitions ----------------------------------------------
+    // 누른 슬롯의 종료시각까지 집중. 휴식 단계는 없고, AUTO는 다음 경계에서 다시 시작한다.
     function startFocus(slotTime) {
+        const slot = slotTime || currentSlotHHMM();
+        const endsAt = slotEndEpoch(slot);
+        // 이미 끝난 슬롯이면 시작하지 않는다
+        if (endsAt - Date.now() < 1000) { toast('이미 지난 슬롯'); return; }
         state.phase = 'FOCUS';
         state.startedAt = Date.now();
-        state.slotStart = slotTime || currentSlotHHMM();
+        state.endsAt = endsAt;
+        state.slotStart = slot;
         persist();
         chime(1, 880);
-        toast(`집중 시작 · ${state.slotStart}`);
-        render();
-    }
-    function transitionToBreak() {
-        state.phase = 'BREAK';
-        state.startedAt = Date.now();
-        persist();
-        bell(2);
-        notify('휴식 시간', '5분 휴식 시작');
-        toast('휴식 시작');
+        const mins = Math.round((endsAt - state.startedAt) / 60000);
+        toast(`집중 시작 · ${state.slotStart} 끝까지 ${mins}분`);
         render();
     }
     function transitionToIdle(auto) {
         state.phase = 'IDLE';
+        state.endsAt = 0;
         persist();
         bell(2);
-        notify('30분 슬롯 완료', auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!');
+        notify('슬롯 완료', auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!');
         toast('슬롯 완료');
         render();
     }
     function skip() {
-        if (state.phase === 'FOCUS') transitionToBreak();
-        else if (state.phase === 'BREAK') transitionToIdle(false);
+        if (state.phase === 'FOCUS') transitionToIdle(false);
     }
     function stop() {
         state.phase = 'IDLE';
         state.startedAt = 0;
+        state.endsAt = 0;
         persist();
         render();
         toast('포모도로 중지');
@@ -197,10 +201,8 @@
                     startFocus(currentSlotHHMM(now));
                 }
             }
-        } else {
-            const elapsed = (Date.now() - state.startedAt) / 1000;
-            if (state.phase === 'FOCUS' && elapsed >= FOCUS_SEC) transitionToBreak();
-            else if (state.phase === 'BREAK' && elapsed >= BREAK_SEC) transitionToIdle(state.auto);
+        } else if (state.phase === 'FOCUS' && Date.now() >= state.endsAt) {
+            transitionToIdle(state.auto);
         }
         render();
     }
@@ -219,12 +221,10 @@
         if (pomo) {
             pomo.classList.toggle('active', state.phase !== 'IDLE' || state.auto);
             pomo.classList.toggle('focus', state.phase === 'FOCUS');
-            pomo.classList.toggle('break', state.phase === 'BREAK');
             const autoBtn = pomo.querySelector('.pomo-auto');
             if (autoBtn) autoBtn.classList.toggle('on', state.auto);
 
             const phaseLabel = state.phase === 'FOCUS' ? '집중'
-                              : state.phase === 'BREAK' ? '휴식'
                               : (state.auto ? '자동' : '대기');
             const phaseEl = pomo.querySelector('.pomo-phase');
             if (phaseEl) phaseEl.textContent = phaseLabel;
@@ -238,12 +238,12 @@
                 if (slotEl) slotEl.textContent = state.auto
                     ? `다음 시작 · ${nextBoundary()}` : '';
             } else {
-                const total = state.phase === 'FOCUS' ? FOCUS_SEC : BREAK_SEC;
-                const remain = total - (Date.now() - state.startedAt) / 1000;
-                const frac = Math.min(1, Math.max(0, remain / total));
+                const total = (state.endsAt - state.startedAt) / 1000;
+                const remain = (state.endsAt - Date.now()) / 1000;
+                const frac = total > 0 ? Math.min(1, Math.max(0, remain / total)) : 0;
                 if (timeEl) timeEl.textContent = fmt(remain);
                 if (ringEl) ringEl.style.strokeDashoffset = RING_C * (1 - frac);
-                if (slotEl) slotEl.textContent = `슬롯 ${state.slotStart}`;
+                if (slotEl) slotEl.textContent = `슬롯 ${state.slotStart} 끝까지`;
             }
         }
 
@@ -254,7 +254,6 @@
             const isNow = t === cur;
             row.classList.toggle('is-now', isNow);
             row.classList.toggle('is-pomo-focus', isNow && state.phase === 'FOCUS' && state.slotStart === t);
-            row.classList.toggle('is-pomo-break', isNow && state.phase === 'BREAK' && state.slotStart === t);
         });
 
         // 현재 시각 블록 강조 (실제 오늘을 보는 경우에만)
