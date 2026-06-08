@@ -30,6 +30,9 @@ def _migrate(conn: sqlite3.Connection):
     block_cols = {r[1] for r in conn.execute("PRAGMA table_info(blocks)").fetchall()}
     if "name" not in block_cols:
         conn.execute("ALTER TABLE blocks ADD COLUMN name TEXT")
+    # 블록 구분(카테고리). NULL이면 미지정.
+    if "category_id" not in block_cols:
+        conn.execute("ALTER TABLE blocks ADD COLUMN category_id INTEGER")
 
 
 @contextmanager

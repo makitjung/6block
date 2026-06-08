@@ -296,14 +296,17 @@
     }
 
     // ---- category color stripe ------------------------------------------
-    // 카테고리 색은 테마별 톤 변수(--tone-blue/red/black)로 칠해 다크모드에서도 보이게 한다
+    // 카테고리 색은 테마별 톤 변수(--tone-blue/red/black)로 칠해 다크모드에서도 보이게 한다.
+    // 슬롯은 왼쪽 띠, 블록·주간 미니블록은 왼쪽 테두리 색으로 구분을 표시한다.
     function paintCategory(sel) {
         const opt = sel.options[sel.selectedIndex];
         const tone = (opt && opt.dataset) ? opt.dataset.tone : '';
-        const accent = tone ? `var(--tone-${tone})` : 'transparent';
-        const row = sel.closest('.slot');
-        if (row) row.style.setProperty('--row-accent', accent);
-        sel.style.color = tone ? `var(--tone-${tone})` : '';
+        const accent = tone ? `var(--tone-${tone})` : '';
+        sel.style.color = accent;
+        const slot = sel.closest('.slot');
+        if (slot) { slot.style.setProperty('--row-accent', accent || 'transparent'); return; }
+        const block = sel.closest('.block, .mini-block');
+        if (block) block.style.borderLeftColor = accent || '';
     }
 
     // ---- form save indication -------------------------------------------
@@ -568,7 +571,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         restore();
 
-        document.querySelectorAll('.slot select.cat-select').forEach((sel) => {
+        document.querySelectorAll('select.cat-select').forEach((sel) => {
             paintCategory(sel);
             sel.addEventListener('change', () => paintCategory(sel));
         });

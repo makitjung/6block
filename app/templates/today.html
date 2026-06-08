@@ -115,6 +115,12 @@
                     <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
                 </div>
                 <div class="block-meta">
+                    <select name="bcat_{{ b.id }}" class="cat-select block-cat" aria-label="블록 구분">
+                        <option value="">구분</option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
                     <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
                     <span class="now-badge">지금</span>
                 </div>

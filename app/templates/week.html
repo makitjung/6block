@@ -105,19 +105,24 @@
                 </div>
                 {% endif %}
                 {% for b in blocks_by_date[d] %}
-                <a class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}"
-                   href="/day/{{ d }}#blk-{{ b.block_order }}">
+                {% set ename = (b.name or '').strip() or (themes_by_label.get(b.block_label) or '') %}
+                <div class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
                     <div class="mini-head">
                         <strong>{{ b.block_label }}</strong>
-                        <span class="muted mono">{{ b.start_time }}</span>
+                        <a class="mini-go muted mono" href="/day/{{ d }}#blk-{{ b.block_order }}" title="이 블록으로 이동">{{ b.start_time }} ↗</a>
                     </div>
-                    {% set ename = (b.name or '').strip() or themes_by_label.get(b.block_label) %}
-                    {% if ename %}<div class="mini-name">{{ ename }}</div>{% endif %}
+                    <input type="text" class="mini-name-input" name="bname_{{ b.id }}" value="{{ ename }}" placeholder="{{ b.block_label }} 이름" autocomplete="off" aria-label="블록 이름">
+                    <select name="bcat_{{ b.id }}" class="cat-select mini-cat" aria-label="블록 구분">
+                        <option value="">구분</option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
                     {% if b.plan_text %}<div class="mini-plan">{{ b.plan_text }}</div>{% endif %}
                     {% for ev in week_block_events.get(d, {}).get(b.block_order, []) %}
                     <div class="mini-ev"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>
                     {% endfor %}
-                </a>
+                </div>
                 {% endfor %}
             </article>
             {% endfor %}

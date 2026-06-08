@@ -341,6 +341,12 @@ async def save_day(date_str: str, request: Request):
                     "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, sid),
                 )
+            elif prefix == "bcat":
+                cid = int(val) if val else None
+                conn.execute(
+                    "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
+                    (cid, now, sid),
+                )
             elif prefix == "bname":
                 # 비었거나 주간 이름과 같으면 덮어쓰기 해제(NULL)→주간 값을 따른다
                 label = block_label_by_id.get(sid, "")
@@ -473,11 +479,19 @@ def _week_view(request: Request, monday: date):
         for ds in dates:
             ensure_day_skeleton(conn, ds)
         rows = conn.execute(
-            f"SELECT date, block_label, block_order, is_core, plan_text, "
-            f"       see_text, name, start_time, end_time FROM blocks "
+            f"SELECT id, date, block_label, block_order, is_core, plan_text, "
+            f"       see_text, name, category_id, start_time, end_time FROM blocks "
             f"WHERE date IN ({placeholders}) ORDER BY date, block_order",
             dates,
         ).fetchall()
+        categories = [
+            {"id": r["id"], "name": r["name"], "color": r["color"],
+             "tone": cat_tone(r["name"])}
+            for r in conn.execute(
+                "SELECT id, name, color FROM categories "
+                "WHERE is_active = 1 ORDER BY display_order"
+            )
+        ]
         cat_summary = conn.execute(
             f"""
             SELECT c.name, c.color, COUNT(s.id) AS slot_count
@@ -570,6 +584,7 @@ def _week_view(request: Request, monday: date):
             "next_week": next_week,
             "dates": dates,
             "blocks_by_date": blocks_by_date,
+            "categories": categories,
             "cat_summary": cat_summary_pct,
             "used_core": plan_total,
             "total_core": used_core_total,
@@ -622,6 +637,39 @@ async def save_week(week_start_str: str, request: Request):
                 """,
                 (week_start_str, label, txt, now),
             )
+        # 7일보기에서 직접 편집한 블록 이름·구분 저장(이름이 비거나 주간 이름과 같으면 상속)
+        d0 = datetime.strptime(week_start_str, "%Y-%m-%d").date()
+        wk_dates = [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        ph = ",".join("?" * len(wk_dates))
+        block_label_by_id = {
+            r["id"]: r["block_label"]
+            for r in conn.execute(
+                f"SELECT id, block_label FROM blocks WHERE date IN ({ph})", wk_dates
+            )
+        }
+        weekly_name = {
+            lbl: (form.get(f"theme_{lbl}", "") or "").strip() for lbl in CORE_LABELS
+        }
+        for key, val in form.multi_items():
+            prefix, _, suffix = key.partition("_")
+            if not suffix.isdigit():
+                continue
+            sid = int(suffix)
+            if prefix == "bname":
+                label = block_label_by_id.get(sid, "")
+                inherited = weekly_name.get(label, "")
+                v = (val or "").strip()
+                override = None if (not v or v == inherited) else v
+                conn.execute(
+                    "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
+                    (override, now, sid),
+                )
+            elif prefix == "bcat":
+                cid = int(val) if val else None
+                conn.execute(
+                    "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
+                    (cid, now, sid),
+                )
     return RedirectResponse(url=f"/week/{week_start_str}", status_code=303)
 
 
