@@ -461,7 +461,7 @@
         });
         tasks.forEach((t) => {
             const row = el('div', 'agenda-row task');
-            row.appendChild(el('span', 't', t.time || '·'));
+            if (t.time) row.appendChild(el('span', 't', t.time));
             row.appendChild(el('span', 'x', t.title));
             if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
             else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));

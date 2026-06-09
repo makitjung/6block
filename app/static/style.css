@@ -272,21 +272,21 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 최상단 아젠다(캘린더+Things3, 줄바꿈 1회) */
 .agenda { display: flex; flex-direction: column; gap: 1px; }
 .agenda-row {
-    display: grid; grid-template-columns: 50px 1fr auto; gap: 10px; align-items: baseline;
+    display: flex; align-items: baseline; gap: 8px;
     padding: 4px 8px; border-radius: var(--r-sm); font-size: 13px;
 }
 .agenda-row:hover { background: var(--surface-2); }
-.agenda-row .t { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; }
+.agenda-row .t { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; }
 .agenda-row.event .t { color: var(--accent); }
 .agenda-row.task .t { color: var(--text-muted); }
-.agenda-row .x { min-width: 0; word-break: break-word; }
+.agenda-row .x { flex: 1 1 auto; min-width: 0; word-break: break-word; }
 .agenda-row .x::before {
     content: ""; display: inline-block; margin-right: 7px; vertical-align: middle;
     width: 7px; height: 7px;
 }
 .agenda-row.event .x::before { border-radius: 50%; background: var(--accent); }
 .agenda-row.task .x::before { border-radius: 2px; border: 1.5px solid var(--text-subtle); }
-.agenda-row .dl { font-size: 11px; color: var(--danger); white-space: nowrap; }
+.agenda-row .dl { flex: 0 0 auto; margin-left: auto; font-size: 11px; color: var(--danger); white-space: nowrap; }
 
 /* 블록 반복분: 목표·계획 접이식 */
 .block-reminder { margin-bottom: 10px; }

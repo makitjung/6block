@@ -86,7 +86,7 @@
                 {% endfor %}
                 {% for t in task_list %}
                 <div class="agenda-row task">
-                    <span class="t">{{ t.time or '·' }}</span>
+                    {% if t.time %}<span class="t">{{ t.time }}</span>{% endif %}
                     <span class="x">{{ t.title }}</span>
                     {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
                 </div>
