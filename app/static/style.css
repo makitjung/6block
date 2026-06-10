@@ -731,6 +731,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* === Responsive === */
 @media (max-width: 900px) {
     .kpi-row { grid-template-columns: 1fr; }
+    .an-kpi { grid-template-columns: repeat(3, 1fr); }
     .theme-grid { grid-template-columns: repeat(2, 1fr); }
     .week-grid { grid-template-columns: 1fr; grid-template-rows: none; }
     .day-col { grid-template-rows: none; grid-row: auto; }
@@ -739,6 +740,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 @media (max-width: 640px) {
     main { padding: 14px 12px 40px; }
+    .an-kpi { grid-template-columns: repeat(2, 1fr); }
     .topbar-inner { grid-template-columns: 1fr auto; gap: 10px; padding: 9px 13px; }
     .topnav { grid-column: 1 / -1; justify-content: center; }
     .now-clock { display: none; }
@@ -857,6 +859,27 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .danger-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .danger-btn:not(:disabled):hover { filter: brightness(0.92); }
+
+/* === 분석 페이지 === */
+.range-toggle { display: inline-flex; gap: 2px; background: var(--surface-3); padding: 3px; border-radius: var(--r-pill); }
+.range-toggle a { padding: 5px 14px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.range-toggle a:hover { color: var(--text); }
+.range-toggle a.is-active { background: var(--surface); color: var(--accent); box-shadow: var(--sh-1); }
+.an-kpi { grid-template-columns: repeat(5, 1fr); }
+.an-kpi .kpi-value { font-size: 20px; }
+.trend { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; align-items: flex-end; }
+.trend-col { flex: 1 0 26px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 22px; }
+.trend-bar-wrap {
+    width: 100%; height: 90px; display: flex; align-items: flex-end;
+    background: var(--surface-3); border-radius: var(--r-sm); overflow: hidden;
+}
+.trend-bar {
+    width: 100%; background: var(--accent); min-height: 2px;
+    border-radius: var(--r-sm) var(--r-sm) 0 0; transition: height .4s ease;
+}
+.trend-bar.pd { background: var(--success); }
+.trend-pct { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.trend-label { font-size: 9px; color: var(--text-subtle); white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }

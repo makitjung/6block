@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% set active = 'analytics' %}
+{% block title %}분석 | 6block{% endblock %}
+{% block content %}
+<section class="hero">
+    <div class="hero-date">
+        <div class="hero-date-main">분석</div>
+        <div class="hero-date-sub mono">{{ start }} ~ {{ end }} · {{ range_label }}</div>
+    </div>
+    <div class="hero-actions">
+        <div class="range-toggle">
+            <a href="/analytics?rng=7" class="{% if rng == '7' %}is-active{% endif %}">7일</a>
+            <a href="/analytics?rng=30" class="{% if rng == '30' %}is-active{% endif %}">30일</a>
+            <a href="/analytics?rng=all" class="{% if rng == 'all' %}is-active{% endif %}">전체</a>
+        </div>
+    </div>
+</section>
+
+<section class="kpi-row an-kpi">
+    <div class="kpi">
+        <span class="kpi-label">연속 기록</span>
+        <span class="kpi-value mono"><strong>{{ summary.streak }}</strong>일</span>
+    </div>
+    <div class="kpi">
+        <span class="kpi-label">기록한 날</span>
+        <span class="kpi-value mono"><strong>{{ summary.rec_days }}</strong>일</span>
+    </div>
+    <div class="kpi">
+        <span class="kpi-label">기록된 시간</span>
+        <span class="kpi-value mono"><strong>{{ summary.total_hours }}</strong>h</span>
+    </div>
+    <div class="kpi">
+        <span class="kpi-label">평균 완료율</span>
+        <span class="kpi-value mono"><strong>{{ summary.avg_done }}</strong>%</span>
+    </div>
+    <div class="kpi">
+        <span class="kpi-label">PLAN→DO</span>
+        <span class="kpi-value mono"><strong>{{ summary.pd_pct }}</strong>%</span>
+    </div>
+</section>
+
+{% if cats %}
+<section class="card">
+    <h2 class="card-title">카테고리별 시간 분포</h2>
+    <div class="cat-bars">
+        {% for c in cats %}
+        <div class="cat-bar-row">
+            <span class="cat-bar-name"><span class="dot" style="background: var(--tone-{{ c.tone }})"></span>{{ c.name }}</span>
+            <div class="cat-bar-track">
+                <span class="cat-bar-fill" style="width: {{ c.pct }}%; background: var(--tone-{{ c.tone }});"></span>
+            </div>
+            <span class="cat-bar-val mono">{{ '%.1f' % c.hours }}h <span class="muted">{{ c.pct }}%</span></span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if days_data %}
+<section class="card">
+    <h2 class="card-title">슬롯 완료율 추세 <span class="card-sub">실행 체크한 슬롯 비율</span></h2>
+    <div class="trend">
+        {% for d in days_data %}
+        <div class="trend-col" title="{{ d.date }}({{ d.wd }}) · {{ d.done }}/{{ d.planned }}">
+            <div class="trend-bar-wrap"><span class="trend-bar" style="height: {{ d.pct }}%"></span></div>
+            <span class="trend-pct mono">{{ d.pct }}</span>
+            <span class="trend-label">{{ d.short }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if pd_data %}
+<section class="card">
+    <h2 class="card-title">PLAN→DO 달성률 <span class="card-sub">계획한 코어 블록 중 실행한 비율</span></h2>
+    <div class="trend">
+        {% for d in pd_data %}
+        <div class="trend-col" title="{{ d.date }} · {{ d.achieved }}/{{ d.planned }}">
+            <div class="trend-bar-wrap"><span class="trend-bar pd" style="height: {{ d.pct }}%"></span></div>
+            <span class="trend-pct mono">{{ d.pct }}</span>
+            <span class="trend-label">{{ d.short }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if not cats and not days_data %}
+<section class="card">
+    <div class="ctx-empty">이 기간에 기록된 데이터가 없습니다. 오늘 화면에서 슬롯을 채워 보세요.</div>
+</section>
+{% endif %}
+{% endblock %}

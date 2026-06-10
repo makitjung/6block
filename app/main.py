@@ -1002,6 +1002,110 @@ async def settings_purge(request: Request):
     return JSONResponse({"ok": True})
 
 
+# -- 분석 -------------------------------------------------------------------
+
+
+def _calc_streak(rec_dates: set, today: date) -> int:
+    """오늘(기록 없으면 어제)부터 거꾸로 연속으로 기록이 있는 날 수를 센다."""
+    if not rec_dates:
+        return 0
+    cur = today
+    if cur.strftime("%Y-%m-%d") not in rec_dates:
+        cur = today - timedelta(days=1)
+    streak = 0
+    while cur.strftime("%Y-%m-%d") in rec_dates:
+        streak += 1
+        cur = cur - timedelta(days=1)
+    return streak
+
+
+@app.get("/analytics")
+def analytics_view(request: Request, rng: str = "7"):
+    today = datetime.now(KST).date()
+    today_s = today.strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        if rng == "all":
+            row = conn.execute("SELECT MIN(date) FROM slots").fetchone()
+            start = row[0] or today_s
+            range_label = "전체"
+        else:
+            rng = "30" if rng == "30" else "7"
+            days = int(rng)
+            start = (today - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+            range_label = f"최근 {days}일"
+        cat_rows = conn.execute(
+            "SELECT c.name, c.tone, COUNT(s.id) AS cnt "
+            "FROM slots s JOIN categories c ON c.id = s.category_id "
+            "WHERE s.date >= ? AND s.date <= ? GROUP BY c.id ORDER BY cnt DESC",
+            (start, today_s),
+        ).fetchall()
+        day_rows = conn.execute(
+            "SELECT date, "
+            "SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) AS done_cnt, "
+            "SUM(CASE WHEN (do_text IS NOT NULL AND TRIM(do_text) != '') "
+            "         OR category_id IS NOT NULL OR done = 1 THEN 1 ELSE 0 END) AS planned_cnt "
+            "FROM slots WHERE date >= ? AND date <= ? GROUP BY date ORDER BY date",
+            (start, today_s),
+        ).fetchall()
+        pd_rows = conn.execute(
+            "SELECT b.date, COUNT(*) AS planned, "
+            "SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id "
+            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '') OR s.done = 1)) "
+            "    THEN 1 ELSE 0 END) AS achieved "
+            "FROM blocks b WHERE b.is_core = 1 AND TRIM(COALESCE(b.plan_text, '')) != '' "
+            "  AND b.date >= ? AND b.date <= ? GROUP BY b.date ORDER BY b.date",
+            (start, today_s),
+        ).fetchall()
+        rec_dates = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT date FROM slots "
+                "WHERE (do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1"
+            )
+        }
+    cat_total = sum(r["cnt"] for r in cat_rows)
+    cats = [
+        {"name": r["name"], "tone": r["tone"], "hours": r["cnt"] * 0.5,
+         "pct": round(r["cnt"] / cat_total * 100) if cat_total else 0}
+        for r in cat_rows
+    ]
+    days_data = [
+        {"date": r["date"], "wd": _ko_weekday(r["date"]), "short": _short_date(r["date"]),
+         "done": r["done_cnt"], "planned": r["planned_cnt"],
+         "pct": round(r["done_cnt"] / r["planned_cnt"] * 100) if r["planned_cnt"] else 0}
+        for r in day_rows
+    ]
+    pd_total_p = sum(r["planned"] for r in pd_rows)
+    pd_total_a = sum(r["achieved"] for r in pd_rows)
+    pd_data = [
+        {"date": r["date"], "short": _short_date(r["date"]),
+         "planned": r["planned"], "achieved": r["achieved"],
+         "pct": round(r["achieved"] / r["planned"] * 100) if r["planned"] else 0}
+        for r in pd_rows
+    ]
+    summary = {
+        "streak": _calc_streak(rec_dates, today),
+        "rec_days": len(days_data),
+        "total_hours": round(sum(c["hours"] for c in cats), 1),
+        "avg_done": round(sum(d["pct"] for d in days_data) / len(days_data)) if days_data else 0,
+        "pd_pct": round(pd_total_a / pd_total_p * 100) if pd_total_p else 0,
+    }
+    return templates.TemplateResponse(
+        "analytics.html",
+        {
+            "request": request,
+            "rng": rng,
+            "range_label": range_label,
+            "start": start,
+            "end": today_s,
+            "cats": cats,
+            "days_data": days_data,
+            "pd_data": pd_data,
+            "summary": summary,
+        },
+    )
+
+
 # -- PWA --------------------------------------------------------------------
 
 
