@@ -36,8 +36,9 @@
     --danger-soft: #fce8e6;
     --now-line: #ea4335;
 
-    /* 카테고리(구분) 색 톤 - 코어·점검 파랑, 약속 빨강, 업무·휴식·기타 검정 */
+    /* 카테고리(구분) 색 톤 - 코어 파랑, 점검 녹색, 약속 빨강, 업무·휴식·기타 검정 */
     --tone-blue: #1a73e8;
+    --tone-green: #188038;
     --tone-red: #d93025;
     --tone-black: #202124;
     /* 캘린더 색 - 계획(노랑) / 모임·여행(빨강) */
@@ -89,6 +90,7 @@
     --now-line: #f28b82;
     /* 다크에서 검정 톤은 본문 텍스트색으로 대체해 보이게 한다 */
     --tone-blue: #8ab4f8;
+    --tone-green: #81c995;
     --tone-red: #f28b82;
     --tone-black: #e8eaed;
     --cal-yellow: #fdd663;
@@ -552,6 +554,16 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .agenda-refresh:hover { background: var(--surface-3); color: var(--accent); border-color: var(--accent); }
 .agenda-refresh.spinning { animation: spin .8s linear; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* === 이번 주 블록 이름(접이식, 기본 닫힘) === */
+.theme-fold > summary {
+    cursor: pointer; list-style: none; user-select: none; margin: 0;
+}
+.theme-fold > summary::-webkit-details-marker { display: none; }
+.theme-fold > summary::after { content: "▸"; margin-left: 8px; color: var(--text-subtle); }
+.theme-fold[open] > summary::after { content: "▾"; }
+.theme-fold[open] > summary { margin-bottom: 12px; }
+.theme-fold:not([open]) > .theme-grid { display: none; }
 
 /* === Theme grid (week) === */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }

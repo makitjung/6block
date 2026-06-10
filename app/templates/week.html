@@ -57,8 +57,8 @@
         </div>
     </section>
 
-    <section class="card">
-        <h2 class="card-title">이번 주 블록 이름 <span class="card-sub">여기서 정한 이름이 그 주의 일간 블록에 표시됩니다</span></h2>
+    <details class="card theme-fold">
+        <summary class="card-title">이번 주 블록 이름 <span class="card-sub">여기서 정한 이름이 그 주의 일간 블록에 표시됩니다</span></summary>
         <div class="theme-grid">
             {% for lbl in core_labels %}
             <label class="theme-card">
@@ -67,7 +67,7 @@
             </label>
             {% endfor %}
         </div>
-    </section>
+    </details>
 
     {% if cat_summary %}
     <section class="card">

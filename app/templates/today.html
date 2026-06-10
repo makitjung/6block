@@ -115,6 +115,7 @@
                  data-start="{{ b.start_time }}" data-end="{{ b.end_time }}">
             <header class="block-head">
                 <div class="block-id">
+                    {% if b.is_core %}
                     <select name="bcat_{{ b.id }}" class="cat-select block-cat" aria-label="블록 구분">
                         <option value="">구분</option>
                         {% for c in categories %}
@@ -123,6 +124,9 @@
                     </select>
                     <span class="block-label">{{ b.block_label }}</span>
                     <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
+                    {% else %}
+                    <span class="block-label">{{ b.block_label }}</span>
+                    {% endif %}
                 </div>
                 <div class="block-meta">
                     <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
@@ -130,6 +134,7 @@
                 </div>
             </header>
 
+            {% if b.is_core %}
             <!-- 블록 반복분: 오늘 목표·계획 (접힘, 펼치기 토글) -->
             {% set has_gp = (goals | select | list) or (plans | select | list) %}
             {% if has_gp %}
@@ -186,6 +191,7 @@
                     <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
                 </label>
             </div>
+            {% endif %}
 
             <div class="slots">
             {% for s in slots_by_block[b.id] %}

@@ -209,9 +209,9 @@
             if (remain <= 0) {
                 transitionToIdle(state.auto);
             } else if (!warn5Fired && remain <= 5 * 60 * 1000) {
-                // 종료 5분 전 사전 알림(종료음과 다른 음으로 구분)
+                // 종료 5분 전 사전 알림(종소리 2회)
                 warn5Fired = true;
-                chime(2, 660);
+                bell(2);
                 notify('5분 남음', `슬롯 ${state.slotStart} 곧 종료`);
                 toast('종료 5분 전');
             }

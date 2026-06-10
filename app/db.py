@@ -52,6 +52,18 @@ def _migrate(conn: sqlite3.Connection):
     # 버퍼 블록 이름 변경(점심·기타→점심, 이동·휴식→저녁)을 기존 데이터에 멱등 반영
     conn.execute("UPDATE blocks SET block_label = '점심' WHERE block_label = '점심·기타'")
     conn.execute("UPDATE blocks SET block_label = '저녁' WHERE block_label = '이동·휴식'")
+    # B4 마지막 30분(16:30) 슬롯을 같은 날 저녁 블록으로 이동하고 경계를 16:30으로 맞춘다.
+    # 슬롯 데이터(do/did/cat/done)는 그대로 두고 소속 블록(block_id)만 옮기므로 무손실·멱등이다.
+    conn.execute(
+        "UPDATE slots SET block_id = ("
+        "    SELECT e.id FROM blocks e WHERE e.date = slots.date AND e.block_label = '저녁'"
+        ") "
+        "WHERE start_time = '16:30' "
+        "  AND block_id IN (SELECT b.id FROM blocks b WHERE b.block_label = 'B4') "
+        "  AND EXISTS (SELECT 1 FROM blocks e2 WHERE e2.date = slots.date AND e2.block_label = '저녁')"
+    )
+    conn.execute("UPDATE blocks SET end_time = '16:30' WHERE block_label = 'B4' AND end_time = '17:00'")
+    conn.execute("UPDATE blocks SET start_time = '16:30' WHERE block_label = '저녁' AND start_time = '17:00'")
 
 
 @contextmanager
