@@ -419,6 +419,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .block.is-core { border-left-color: var(--core); }
 .block.is-buffer { background: var(--surface-2); }
+/* 구분 미지정 코어 블록: 회색 점선 테두리로 '아직 안 정함'을 표시(지정되면 톤색 실선) */
+.block.cat-unset { border-left-color: var(--border-strong); border-left-style: dashed; }
 .block.is-current {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.25), var(--sh-2);
@@ -588,9 +590,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .cat-bar-fill { display: block; height: 100%; border-radius: 4px; transition: width .5s ease; }
 .cat-bar-val { font-size: 12px; text-align: right; color: var(--text-soft); }
 
-/* === Week grid === */
-.week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
-.day-col { display: flex; flex-direction: column; gap: 5px; }
+/* === Week grid (subgrid로 요일 간 같은 블록 행을 정렬) === */
+.week-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    grid-template-rows: auto auto repeat(8, auto);
+    gap: 5px 8px;
+}
+.day-col { display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; }
 .day-head { margin: 0 0 4px; text-align: center; }
 .day-head a {
     display: inline-flex; flex-direction: column; gap: 2px; color: var(--text);
@@ -613,6 +619,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .mini-block:hover { background: var(--surface-3); box-shadow: var(--sh-1); }
 .mini-block.is-core { border-left-color: var(--core); }
+.mini-block.cat-unset { border-left-color: var(--border-strong); border-left-style: dashed; }
 .mini-block.has-plan { background: var(--accent-soft); }
 .mini-head { display: flex; justify-content: space-between; align-items: baseline; }
 .mini-head strong { font-size: 12px; font-weight: 700; }
@@ -717,7 +724,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 @media (max-width: 900px) {
     .kpi-row { grid-template-columns: 1fr; }
     .theme-grid { grid-template-columns: repeat(2, 1fr); }
-    .week-grid { grid-template-columns: 1fr; }
+    .week-grid { grid-template-columns: 1fr; grid-template-rows: none; }
+    .day-col { grid-template-rows: none; grid-row: auto; }
     .hero { grid-template-columns: auto 1fr auto; }
     .ctx-goals { grid-template-columns: 1fr; }
 }
@@ -736,7 +744,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 /* 가로 회전(landscape) - 주간 7열 유지, 좁은 높이에서 포모도로 축소 */
 @media (max-width: 900px) and (orientation: landscape) {
-    .week-grid { grid-template-columns: repeat(7, 1fr); }
+    .week-grid { grid-template-columns: repeat(7, 1fr); grid-template-rows: auto auto repeat(8, auto); }
+    .day-col { grid-template-rows: subgrid; grid-row: 1 / -1; }
     .theme-grid { grid-template-columns: repeat(3, 1fr); }
     .ctx-goals { grid-template-columns: 1fr 1fr; }
     .pomo { bottom: 12px; }

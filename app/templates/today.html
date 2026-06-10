@@ -109,7 +109,7 @@
 
     <section class="block-stack">
     {% for b in blocks %}
-        <article class="block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}"
+        <article class="block {% if b.is_core %}is-core {% if b.category_id %}cat-set{% else %}cat-unset{% endif %}{% else %}is-buffer{% endif %}"
                  id="blk-{{ b.block_order }}"
                  data-block-id="{{ b.id }}"
                  data-start="{{ b.start_time }}" data-end="{{ b.end_time }}">

@@ -134,29 +134,31 @@
                         <span class="day-date mono">{{ d | short_date }}</span>
                     </a>
                 </h3>
-                {% if week_allday.get(d) %}
                 <div class="day-allday">
-                    {% for t in week_allday[d] %}
+                    {% for t in week_allday.get(d, []) %}
                     <span class="allday-chip cal-{{ t.color }}" title="{{ t.title }}">{{ t.title }}</span>
                     {% endfor %}
                 </div>
-                {% endif %}
                 {% for b in blocks_by_date[d] %}
                 {% set ename = (b.name or '').strip() or (themes_by_label.get(b.block_label) or '') %}
-                <div class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
+                <div class="mini-block {% if b.is_core %}is-core {% if b.category_id %}cat-set{% else %}cat-unset{% endif %}{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
                     <div class="mini-head">
                         <span class="mini-left">
+                            {% if b.is_core %}
                             <select name="bcat_{{ b.id }}" class="cat-select mini-cat" aria-label="블록 구분">
                                 <option value="">구분</option>
                                 {% for c in categories %}
                                 <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                                 {% endfor %}
                             </select>
+                            {% endif %}
                             <strong>{{ b.block_label }}</strong>
                         </span>
                         <a class="mini-go muted mono" href="/day/{{ d }}#blk-{{ b.block_order }}" title="이 블록으로 이동">{{ b.start_time }} ↗</a>
                     </div>
+                    {% if b.is_core %}
                     <input type="text" class="mini-name-input" name="bname_{{ b.id }}" value="{{ ename }}" placeholder="{{ b.block_label }} 이름" autocomplete="off" aria-label="블록 이름">
+                    {% endif %}
                     {% if b.plan_text %}<div class="mini-plan">{{ b.plan_text }}</div>{% endif %}
                     {% for ev in week_block_events.get(d, {}).get(b.block_order, []) %}
                     <div class="mini-ev cal-{{ ev.color }}"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>
