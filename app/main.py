@@ -13,7 +13,14 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import DAY_BLOCKS, cat_tone, hhmm_to_min, slots_for_day
+from app.config import (
+    DAY_BLOCKS,
+    WEEK_CORE_BLOCKS,
+    WEEK_TOTAL_HOURS,
+    cat_tone,
+    hhmm_to_min,
+    slots_for_day,
+)
 from app.db import get_conn, init_db
 from app.integrations import gcal, things
 
@@ -96,12 +103,50 @@ def week_start(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
+def _skeleton_matches_config(conn, date_str: str) -> bool:
+    """DB의 그날 블록 골격이 현재 설정(DAY_BLOCKS)과 정확히 같은지."""
+    have = [
+        (r["block_label"], r["start_time"], r["end_time"])
+        for r in conn.execute(
+            "SELECT block_label, start_time, end_time FROM blocks "
+            "WHERE date = ? ORDER BY block_order",
+            (date_str,),
+        )
+    ]
+    want = [(label, start, end) for (label, _core, start, end) in DAY_BLOCKS]
+    return have == want
+
+
+def _day_has_content(conn, date_str: str) -> bool:
+    """그날에 사용자가 입력한 내용이 있는지(슬롯 do·한 일·구분·완료, 블록 plan·see·이름·구분)."""
+    if conn.execute(
+        "SELECT 1 FROM slots WHERE date = ? AND ("
+        "TRIM(COALESCE(do_text,'')) != '' OR TRIM(COALESCE(did_text,'')) != '' "
+        "OR category_id IS NOT NULL OR done = 1) LIMIT 1",
+        (date_str,),
+    ).fetchone():
+        return True
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM blocks WHERE date = ? AND ("
+            "TRIM(COALESCE(plan_text,'')) != '' OR TRIM(COALESCE(see_text,'')) != '' "
+            "OR category_id IS NOT NULL OR TRIM(COALESCE(name,'')) != '') LIMIT 1",
+            (date_str,),
+        ).fetchone()
+    )
+
+
 def ensure_day_skeleton(conn, date_str: str):
-    """해당 날짜의 블록과 30분 슬롯 행이 없으면 생성한다."""
+    """블록·슬롯이 없으면 생성한다. 설정이 바뀌었고 입력이 없는 날은 새 배치로 자동 재생성한다."""
     if conn.execute(
         "SELECT 1 FROM blocks WHERE date = ? LIMIT 1", (date_str,)
     ).fetchone():
-        return
+        # 골격이 현재 설정과 같거나, 사용자가 입력한 내용이 있으면 그대로 둔다.
+        if _skeleton_matches_config(conn, date_str) or _day_has_content(conn, date_str):
+            return
+        # 설정이 바뀌었고 입력이 없는 날은 옛 골격을 지우고 새 배치로 다시 만든다.
+        conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
+        conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
     block_ids = {}
     for order, (label, is_core, start, end) in enumerate(DAY_BLOCKS):
@@ -138,6 +183,15 @@ def today_view(request: Request):
 @app.get("/day/{date_str}")
 def day_view(request: Request, date_str: str):
     return _day_view(request, date_str)
+
+
+def _name_override(value, inherited: str):
+    """블록 이름 입력값을 주간 상속과 비교해 덮어쓰기 값(없으면 None)을 돌려준다.
+
+    비었거나 주간 이름과 같으면 None(주간 값을 따름), 다르면 그 값으로 덮어쓴다.
+    """
+    v = (value or "").strip()
+    return None if (not v or v == inherited) else v
 
 
 def _split3(s) -> list[str]:
@@ -194,6 +248,7 @@ def _day_agenda(blocks, d, is_today):
                     "time": ev["start"],
                     "end": ev["end"],
                     "start_min": ev["start_min"],
+                    "color": ev["color"],
                 }
             )
     for t in task_list:
@@ -335,6 +390,11 @@ async def save_day(date_str: str, request: Request):
                     "UPDATE slots SET do_text = ?, updated_at = ? WHERE id = ?",
                     (val, now, sid),
                 )
+            elif prefix == "did":
+                conn.execute(
+                    "UPDATE slots SET did_text = ?, updated_at = ? WHERE id = ?",
+                    (val, now, sid),
+                )
             elif prefix == "cat":
                 cid = int(val) if val else None
                 conn.execute(
@@ -348,11 +408,8 @@ async def save_day(date_str: str, request: Request):
                     (cid, now, sid),
                 )
             elif prefix == "bname":
-                # 비었거나 주간 이름과 같으면 덮어쓰기 해제(NULL)→주간 값을 따른다
                 label = block_label_by_id.get(sid, "")
-                inherited = weekly_name.get(label, "")
-                v = (val or "").strip()
-                override = None if (not v or v == inherited) else v
+                override = _name_override(val, weekly_name.get(label, ""))
                 conn.execute(
                     "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
                     (override, now, sid),
@@ -411,6 +468,33 @@ def inbox_delete(item_id: int):
     return JSONResponse({"ok": True})
 
 
+@app.post("/inbox/assign")
+async def inbox_assign(request: Request):
+    """수집함 항목을 한 블록의 PLAN 끝에 한 줄로 옮기고 수집함에서는 정리한다(GTD 정리 단계)."""
+    form = await request.form()
+    try:
+        item_id = int(form.get("item_id"))
+        block_id = int(form.get("block_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        it = conn.execute("SELECT text FROM inbox WHERE id = ?", (item_id,)).fetchone()
+        blk = conn.execute(
+            "SELECT plan_text FROM blocks WHERE id = ?", (block_id,)
+        ).fetchone()
+        if not it or not blk:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        cur = (blk["plan_text"] or "").rstrip()
+        plan_text = f"{cur}\n{it['text']}" if cur else it["text"]
+        conn.execute(
+            "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
+            (plan_text, now, block_id),
+        )
+        conn.execute("UPDATE inbox SET done = 1 WHERE id = ?", (item_id,))
+    return JSONResponse({"ok": True, "block_id": block_id, "plan_text": plan_text})
+
+
 # -- 슬롯 실행 체크 + 실시간 폴링 -------------------------------------------
 
 
@@ -449,7 +533,8 @@ def api_day(date_str: str):
         {
             "cal_enabled": gcal.enabled(),
             "events": [
-                {"all_day": e["all_day"], "start": e["start"], "title": e["title"]}
+                {"all_day": e["all_day"], "start": e["start"], "title": e["title"],
+                 "color": e["color"]}
                 for e in cal_events
             ],
             "tasks": [
@@ -537,6 +622,24 @@ def _week_view(request: Request, monday: date):
             "WHERE week_start = ?",
             (week_start_str,),
         ).fetchall()
+        # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
+        review_inbox = conn.execute(
+            "SELECT id, text FROM inbox WHERE done = 0 ORDER BY id DESC"
+        ).fetchall()
+        missed_blocks = conn.execute(
+            f"""
+            SELECT b.date, b.block_label, b.block_order, b.name, b.plan_text
+            FROM blocks b
+            WHERE b.date IN ({placeholders}) AND b.is_core = 1
+              AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM slots s WHERE s.block_id = b.id
+                    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '') OR s.done = 1)
+              )
+            ORDER BY b.date, b.block_order
+            """,
+            dates,
+        ).fetchall()
 
     blocks_by_date: dict[str, list] = {d: [] for d in dates}
     for r in rows:
@@ -555,12 +658,12 @@ def _week_view(request: Request, monday: date):
         allday: list = []
         for ev in cal_by_date.get(ds, []):
             if ev["all_day"] or ev["start_min"] is None:
-                allday.append(ev["title"])
+                allday.append({"title": ev["title"], "color": ev["color"]})
                 continue
             for order, s, e in ranges:
                 if s <= ev["start_min"] < e:
                     by_order.setdefault(order, []).append(
-                        {"time": ev["start"], "title": ev["title"]}
+                        {"time": ev["start"], "title": ev["title"], "color": ev["color"]}
                     )
                     break
         week_block_events[ds] = by_order
@@ -568,7 +671,7 @@ def _week_view(request: Request, monday: date):
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
-    used_core_total = 42
+    used_core_total = WEEK_CORE_BLOCKS
 
     total_slots = sum(r["slot_count"] for r in cat_summary)
     cat_summary_pct = [
@@ -597,6 +700,7 @@ def _week_view(request: Request, monday: date):
             "used_core": plan_total,
             "total_core": used_core_total,
             "achieve_pct": achieve_pct,
+            "week_total_hours": WEEK_TOTAL_HOURS,
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
             "core_labels": CORE_LABELS,
@@ -604,6 +708,8 @@ def _week_view(request: Request, monday: date):
             "week_allday": week_allday,
             "cal_enabled": gcal.enabled(),
             "today": today_str(),
+            "review_inbox": review_inbox,
+            "missed_blocks": missed_blocks,
         },
     )
 
@@ -665,9 +771,7 @@ async def save_week(week_start_str: str, request: Request):
             sid = int(suffix)
             if prefix == "bname":
                 label = block_label_by_id.get(sid, "")
-                inherited = weekly_name.get(label, "")
-                v = (val or "").strip()
-                override = None if (not v or v == inherited) else v
+                override = _name_override(val, weekly_name.get(label, ""))
                 conn.execute(
                     "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
                     (override, now, sid),

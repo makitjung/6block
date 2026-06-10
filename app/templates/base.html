@@ -36,6 +36,7 @@
                 <a href="/week"  class="{% if active == 'week'  %}is-active{% endif %}">주간</a>
             </nav>
             <div class="topbar-right">
+                <span id="net-status" class="net-status" hidden></span>
                 <span id="now-clock" class="now-clock mono"></span>
                 <button type="button" id="theme-toggle" class="theme-toggle" title="라이트/다크 전환" aria-label="테마 전환">◐</button>
             </div>
@@ -66,6 +67,14 @@
     </aside>
 
     <div id="toast" class="toast" aria-live="polite"></div>
+
+    <!-- iOS 자동잠금 방지 폴백: 무음 인라인 영상을 재생하면 화면이 꺼지지 않는다 -->
+    <video id="nosleep-video" muted loop playsinline webkit-playsinline preload="auto"
+           aria-hidden="true"
+           style="position:fixed;left:-2px;bottom:-2px;width:1px;height:1px;opacity:0;pointer-events:none">
+        <source src="/static/nosleep.mp4" type="video/mp4">
+        <source src="/static/nosleep.webm" type="video/webm">
+    </video>
 
     <script src="/static/app.js?v={{ asset_ver() }}"></script>
 </body>

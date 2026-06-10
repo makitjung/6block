@@ -32,7 +32,7 @@
             <span class="kpi-label">기록된 시간</span>
             {% set total_h = (cat_summary | sum(attribute='hours')) %}
             <span class="kpi-value mono"><strong>{{ '%.1f' % total_h }}</strong>h</span>
-            <div class="kpi-bar"><span style="width: {{ ((total_h / 105) * 100) | round(0) }}%"></span></div>
+            <div class="kpi-bar"><span style="width: {{ ((total_h / week_total_hours) * 100) | round(0) }}%"></span></div>
         </div>
     </section>
 
@@ -86,6 +86,43 @@
     </section>
     {% endif %}
 
+    <section class="card review-card">
+        <h2 class="card-title">주간 리뷰 <span class="card-sub">계획만 하고 흘려보낸 것을 주말에 한 번에 검토</span></h2>
+        <div class="review-grid">
+            <div class="review-col">
+                <div class="review-head">미처리 수집함 <span class="count">{{ review_inbox | length }}</span></div>
+                {% if review_inbox %}
+                <ul class="review-list">
+                    {% for it in review_inbox %}
+                    <li class="rv-inbox">{{ it.text }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="ctx-empty">정리할 항목이 없습니다.</div>
+                {% endif %}
+            </div>
+            <div class="review-col">
+                <div class="review-head">흘려보낸 코어 블록 <span class="count">{{ missed_blocks | length }}</span></div>
+                {% if missed_blocks %}
+                <ul class="review-list">
+                    {% for m in missed_blocks %}
+                    {% set mname = (m.name or '').strip() or themes_by_label.get(m.block_label) or '' %}
+                    <li class="rv-missed">
+                        <a href="/day/{{ m.date }}#blk-{{ m.block_order }}">
+                            <span class="rv-date mono">{{ m.date | short_date }}({{ m.date | ko_weekday }})</span>
+                            <span class="rv-blk">{{ m.block_label }}{% if mname %} · {{ mname }}{% endif %}</span>
+                        </a>
+                        <span class="rv-plan">{{ m.plan_text }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="ctx-empty">계획만 하고 지나친 코어 블록이 없습니다.</div>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
     <section class="card">
         <h2 class="card-title">7일 보기 <span class="card-sub">블록을 누르면 그 날짜의 해당 블록으로 이동</span></h2>
         <div class="week-grid">
@@ -100,7 +137,7 @@
                 {% if week_allday.get(d) %}
                 <div class="day-allday">
                     {% for t in week_allday[d] %}
-                    <span class="allday-chip" title="{{ t }}">{{ t }}</span>
+                    <span class="allday-chip cal-{{ t.color }}" title="{{ t.title }}">{{ t.title }}</span>
                     {% endfor %}
                 </div>
                 {% endif %}
@@ -108,19 +145,21 @@
                 {% set ename = (b.name or '').strip() or (themes_by_label.get(b.block_label) or '') %}
                 <div class="mini-block {% if b.is_core %}is-core{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
                     <div class="mini-head">
-                        <strong>{{ b.block_label }}</strong>
+                        <span class="mini-left">
+                            <select name="bcat_{{ b.id }}" class="cat-select mini-cat" aria-label="블록 구분">
+                                <option value="">구분</option>
+                                {% for c in categories %}
+                                <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <strong>{{ b.block_label }}</strong>
+                        </span>
                         <a class="mini-go muted mono" href="/day/{{ d }}#blk-{{ b.block_order }}" title="이 블록으로 이동">{{ b.start_time }} ↗</a>
                     </div>
                     <input type="text" class="mini-name-input" name="bname_{{ b.id }}" value="{{ ename }}" placeholder="{{ b.block_label }} 이름" autocomplete="off" aria-label="블록 이름">
-                    <select name="bcat_{{ b.id }}" class="cat-select mini-cat" aria-label="블록 구분">
-                        <option value="">구분</option>
-                        {% for c in categories %}
-                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-                        {% endfor %}
-                    </select>
                     {% if b.plan_text %}<div class="mini-plan">{{ b.plan_text }}</div>{% endif %}
                     {% for ev in week_block_events.get(d, {}).get(b.block_order, []) %}
-                    <div class="mini-ev"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>
+                    <div class="mini-ev cal-{{ ev.color }}"><span class="t">{{ ev.time }}</span><span>{{ ev.title }}</span></div>
                     {% endfor %}
                 </div>
                 {% endfor %}

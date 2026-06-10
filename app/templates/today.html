@@ -65,8 +65,10 @@
                 {% for it in inbox %}
                 <div class="inbox-item" data-id="{{ it.id }}">
                     <span class="txt">{{ it.text }}</span>
+                    <button type="button" class="inbox-send" title="블록 계획으로 보내기">→</button>
                     <button type="button" class="inbox-done" title="완료/정리">✓</button>
                     <button type="button" class="inbox-del" title="삭제">✕</button>
+                    <div class="inbox-blocks" hidden></div>
                 </div>
                 {% endfor %}
             </div>
@@ -75,11 +77,12 @@
         <div class="ctx-section">
             <div class="ctx-head">
                 오늘 일정 · 할 일 <span class="live-dot" title="실시간 갱신"></span>
+                <button type="button" id="agenda-refresh" class="agenda-refresh" title="지금 동기화" aria-label="새로고침">↻</button>
                 <span class="ctx-empty cal-warn"{% if cal_enabled %} style="display:none"{% endif %}>(구글 캘린더 미연결)</span>
             </div>
             <div class="agenda" id="agenda">
                 {% for ev in cal_events %}
-                <div class="agenda-row event">
+                <div class="agenda-row event cal-{{ ev.color }}">
                     <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
                     <span class="x">{{ ev.title }}</span>
                 </div>
@@ -112,16 +115,16 @@
                  data-start="{{ b.start_time }}" data-end="{{ b.end_time }}">
             <header class="block-head">
                 <div class="block-id">
-                    <span class="block-label">{{ b.block_label }}</span>
-                    <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
-                </div>
-                <div class="block-meta">
                     <select name="bcat_{{ b.id }}" class="cat-select block-cat" aria-label="블록 구분">
                         <option value="">구분</option>
                         {% for c in categories %}
                         <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                         {% endfor %}
                     </select>
+                    <span class="block-label">{{ b.block_label }}</span>
+                    <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
+                </div>
+                <div class="block-meta">
                     <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
                     <span class="now-badge">지금</span>
                 </div>
@@ -148,7 +151,7 @@
                         </button>
                         <div class="hover-pop cal-pop" data-order="{{ b.block_order }}">
                             {% for it in block_events.get(b.id, []) %}
-                            <div class="pop-row {{ it.kind }}">
+                            <div class="pop-row {{ it.kind }}{% if it.color %} cal-{{ it.color }}{% endif %}">
                                 {% if it.time %}<span class="t">{{ it.time }}</span>{% endif %}
                                 <span class="x">{{ it.title }}</span>
                                 {% if it.end %}<span class="end">~{{ it.end }}</span>{% endif %}
@@ -192,11 +195,18 @@
                         <select name="cat_{{ s.id }}" class="cat-select" aria-label="카테고리">
                             <option value="">—</option>
                             {% for c in categories %}
-                            <option value="{{ c.id }}" data-color="{{ c.color }}" data-tone="{{ c.tone }}" {% if s.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                            <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if s.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    <div class="hover-wrap slot-did">
+                        <button type="button" class="slot-did-btn{% if s.did_text %} has-did{% endif %}" aria-label="실제로 한 일" title="실제로 한 일">한</button>
+                        <div class="hover-pop did-pop">
+                            <span class="did-label">실제로 한 일</span>
+                            <textarea name="did_{{ s.id }}" rows="3" class="slot-did-input" placeholder="이 슬롯에 실제로 한 일">{{ s.did_text or '' }}</textarea>
+                        </div>
+                    </div>
                     <input type="checkbox" class="slot-check" data-slot="{{ s.id }}" {% if s.done %}checked{% endif %} title="실제로 했는지 체크" aria-label="실행 완료">
                     <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯 끝까지 집중">▶</button>
                 </div>

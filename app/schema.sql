@@ -1,4 +1,4 @@
--- 6블록 카테고리, 블록/슬롯, 일/주 메타, 주간 블록 테마, 외부 일정을 저장하는 단일 스키마
+-- 6블록 카테고리, 블록/슬롯, 일/주 메타, 주간 블록 테마, GTD 수집함을 저장하는 단일 스키마
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS slots (
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
     do_text TEXT,
+    did_text TEXT,
     category_id INTEGER REFERENCES categories(id),
     done INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL,
@@ -78,17 +79,3 @@ CREATE TABLE IF NOT EXISTS inbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_inbox_done ON inbox(done, id);
-
--- Phase 3에서 Things3 / 구글 캘린더 연동 시 채울 외부 이벤트 캐시
-CREATE TABLE IF NOT EXISTS external_events (
-    id INTEGER PRIMARY KEY,
-    source TEXT NOT NULL,
-    external_id TEXT NOT NULL,
-    date TEXT NOT NULL,
-    start_time TEXT,
-    end_time TEXT,
-    title TEXT NOT NULL,
-    raw_json TEXT,
-    synced_at TEXT NOT NULL,
-    UNIQUE(source, external_id)
-);

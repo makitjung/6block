@@ -32,6 +32,7 @@
                 state.slotStart = raw.slotStart || '';
                 // 종료시각이 지난 세션은 즉시 정리
                 if (!state.endsAt || Date.now() >= state.endsAt) state.phase = 'IDLE';
+                else warn5Fired = (state.endsAt - Date.now()) <= 5 * 60 * 1000;
             }
         } catch (e) {}
     }
@@ -149,6 +150,7 @@
         state.startedAt = Date.now();
         state.endsAt = endsAt;
         state.slotStart = slot;
+        warn5Fired = (endsAt - Date.now()) <= 5 * 60 * 1000;  // 5분 이하 남았으면 사전알림 생략
         persist();
         chime(1, 880);
         const mins = Math.round((endsAt - state.startedAt) / 60000);
@@ -187,6 +189,7 @@
     let lastBoundaryFired = '';
     let lastUserInteract = 0;   // 마지막 사용자 스크롤·터치 시각(자동 추적 억제용)
     let lastNowSlot = '';       // 마지막으로 추적한 현재 30분 슬롯(HH:MM)
+    let warn5Fired = false;     // 종료 5분 전 사전 알림을 한 슬롯에 한 번만 울리기 위한 플래그
     function tick() {
         const now = new Date();
         const sec = now.getSeconds();
@@ -201,8 +204,17 @@
                     startFocus(currentSlotHHMM(now));
                 }
             }
-        } else if (state.phase === 'FOCUS' && Date.now() >= state.endsAt) {
-            transitionToIdle(state.auto);
+        } else if (state.phase === 'FOCUS') {
+            const remain = state.endsAt - Date.now();
+            if (remain <= 0) {
+                transitionToIdle(state.auto);
+            } else if (!warn5Fired && remain <= 5 * 60 * 1000) {
+                // 종료 5분 전 사전 알림(종료음과 다른 음으로 구분)
+                warn5Fired = true;
+                chime(2, 660);
+                notify('5분 남음', `슬롯 ${state.slotStart} 곧 종료`);
+                toast('종료 5분 전');
+            }
         }
         render();
     }
@@ -303,18 +315,106 @@
         const tone = (opt && opt.dataset) ? opt.dataset.tone : '';
         const accent = tone ? `var(--tone-${tone})` : '';
         sel.style.color = accent;
+        sel.classList.toggle('has-cat', !!accent);   // 색이 지정되면 색 칩 테두리
         const slot = sel.closest('.slot');
         if (slot) { slot.style.setProperty('--row-accent', accent || 'transparent'); return; }
         const block = sel.closest('.block, .mini-block');
         if (block) block.style.borderLeftColor = accent || '';
     }
 
-    // ---- form save indication -------------------------------------------
+    // ---- offline write queue (오프라인 쓰기 대기열) ----------------------
+    // 인터넷이 없을 때 저장·슬롯 체크·수집함 입력을 localStorage에 순서대로 쌓고,
+    // 연결되면 들어온 순서대로 자동 전송한다(개인용 1인 기준 마지막 저장 우선).
+    const Q_KEY = '6block-queue';
+    const FORM_HEADERS = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
+    function loadQueue() {
+        try { return JSON.parse(localStorage.getItem(Q_KEY) || '[]'); }
+        catch (e) { return []; }
+    }
+    function saveQueue(q) {
+        try { localStorage.setItem(Q_KEY, JSON.stringify(q)); } catch (e) {}
+    }
+    function genId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+    function enqueue(op) {
+        let q = loadQueue();
+        // 전체 폼 저장은 최신 1건만 남겨 큰 스냅샷이 쌓이지 않게 한다.
+        if (op.kind === 'form') q = q.filter((o) => !(o.kind === 'form' && o.url === op.url));
+        q.push(op);
+        saveQueue(q);
+        updateNetStatus();
+    }
+    function cancelQueued(opId) {
+        if (!opId) return;
+        saveQueue(loadQueue().filter((o) => o.id !== opId));
+        updateNetStatus();
+    }
+    // navigator.onLine은 폰 PWA(특히 Tailscale 접속)에서 false로 잘못 나오는 일이 잦아
+    // 신뢰하지 않는다. 항상 전송을 시도하고 실제로 실패할 때만 대기열로 보낸다.
+    function sendOrQueue(op, onOk, onQueued) {
+        fetch(op.url, { method: 'POST', headers: op.headers || {}, body: op.body })
+            .then((r) => { if (!r.ok) throw new Error('bad'); if (onOk) onOk(); })
+            .catch(() => { enqueue(op); if (onQueued) onQueued(); });
+    }
+    let flushing = false;
+    async function flushQueue() {
+        if (flushing) { updateNetStatus(); return; }
+        const q = loadQueue();
+        if (!q.length) { updateNetStatus(); return; }
+        flushing = true;
+        let sent = 0;
+        while (q.length) {
+            const op = q[0];
+            try {
+                const r = await fetch(op.url, { method: 'POST', headers: op.headers || {}, body: op.body });
+                if (!r.ok) throw new Error('bad');
+                q.shift(); saveQueue(q); sent += 1;
+            } catch (e) { break; }   // 끊기면 남은 건 다음 연결 때 다시
+        }
+        flushing = false;
+        updateNetStatus();
+        if (sent) toast('동기화 완료 ' + sent + '건');
+    }
+    function updateNetStatus() {
+        const el = document.getElementById('net-status');
+        if (!el) return;
+        // navigator.onLine은 신뢰하지 않는다. 전송 못 한 항목이 쌓이면 그 수만 표시한다.
+        const n = loadQueue().length;
+        if (n) {
+            el.hidden = false; el.className = 'net-status pending';
+            el.textContent = '대기 ' + n + '건';
+        } else {
+            el.hidden = true; el.textContent = '';
+        }
+    }
+
+    // ---- form save (저장 버튼 → 백그라운드 저장 + 오프라인 대기열) -------
+    function saveDayForm(form) {
+        const op = {
+            id: genId(), kind: 'form', url: form.getAttribute('action'),
+            headers: FORM_HEADERS,
+            body: new URLSearchParams(new FormData(form)).toString(),
+        };
+        fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
+            .then((r) => { if (!r.ok) throw new Error('bad'); location.reload(); })
+            .catch(() => {
+                enqueue(op);
+                toast('저장 대기 ' + loadQueue().length + '건 · 연결되면 자동 전송');
+            });
+    }
     function bindForm() {
+        const dayForm = document.querySelector('form.day-form');
+        if (dayForm) {
+            dayForm.addEventListener('submit', (e) => { e.preventDefault(); saveDayForm(dayForm); });
+        }
         document.addEventListener('keydown', (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-                const form = document.querySelector('form.day-form, form.week-form');
-                if (form) { e.preventDefault(); form.submit(); }
+                e.preventDefault();
+                const df = document.querySelector('form.day-form');
+                if (df) { saveDayForm(df); return; }
+                const wf = document.querySelector('form.week-form');
+                if (wf) wf.submit();
             }
         });
     }
@@ -337,7 +437,19 @@
         if (!input) return;
         const text = input.value.trim();
         if (!text) return;
-        fetch('/inbox/add', { method: 'POST', body: new URLSearchParams({ text }) })
+        const op = {
+            id: genId(), kind: 'inbox-add', url: '/inbox/add',
+            headers: FORM_HEADERS, body: new URLSearchParams({ text }).toString(),
+        };
+        // 오프라인이면 임시 항목으로 먼저 보여주고(temp id) 연결 시 자동 전송한다.
+        const queueIt = () => {
+            enqueue(op);
+            addInboxItem('tmp-' + op.id, text, op.id);
+            input.value = '';
+            bumpInboxCount(1);
+            toast('수집함 대기 · 연결되면 전송');
+        };
+        fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
             .then((r) => r.json())
             .then((data) => {
                 if (!data.ok) return;
@@ -346,17 +458,24 @@
                 bumpInboxCount(1);
                 toast('수집함에 추가');
             })
-            .catch(() => toast('추가 실패'));
+            .catch(queueIt);
     }
-    function addInboxItem(id, text) {
+    function addInboxItem(id, text, opId) {
         const list = document.getElementById('inbox-list');
         if (!list) return;
         const item = document.createElement('div');
         item.className = 'inbox-item';
         item.dataset.id = id;
+        if (opId) item.dataset.op = opId;
         const span = document.createElement('span');
         span.className = 'txt';
         span.textContent = text;
+        const send = document.createElement('button');
+        send.type = 'button';
+        send.className = 'inbox-send';
+        send.title = '블록 계획으로 보내기';
+        send.textContent = '→';
+        send.addEventListener('click', () => openInboxBlocks(item));
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'inbox-done';
@@ -369,23 +488,74 @@
         del.title = '삭제';
         del.textContent = '✕';
         del.addEventListener('click', () => inboxDelete(item));
+        const blocks = document.createElement('div');
+        blocks.className = 'inbox-blocks';
+        blocks.hidden = true;
         item.appendChild(span);
+        item.appendChild(send);
         item.appendChild(btn);
         item.appendChild(del);
+        item.appendChild(blocks);
         list.insertBefore(item, list.firstChild);
     }
-    function inboxDone(item) {
-        if (!item) return;
-        fetch('/inbox/done/' + item.dataset.id, { method: 'POST' })
-            .then(() => { item.remove(); bumpInboxCount(-1); })
-            .catch(() => toast('처리 실패'));
+
+    // 수집함 항목을 코어 블록 PLAN으로 보내기(GTD 정리 단계). 칩으로 블록을 고른다.
+    function coreBlocks() {
+        return Array.from(document.querySelectorAll('.block.is-core')).map((b) => ({
+            id: b.dataset.blockId,
+            label: b.querySelector('.block-label')?.textContent.trim() || '',
+            name: b.querySelector('.block-name-input')?.value.trim() || '',
+        }));
     }
-    function inboxDelete(item) {
-        if (!item) return;
-        fetch('/inbox/delete/' + item.dataset.id, { method: 'POST' })
-            .then(() => { item.remove(); bumpInboxCount(-1); })
-            .catch(() => toast('삭제 실패'));
+    function openInboxBlocks(item) {
+        const box = item.querySelector('.inbox-blocks');
+        if (!box) return;
+        if (!box.hidden) { box.hidden = true; return; }
+        document.querySelectorAll('.inbox-blocks').forEach((b) => { if (b !== box) b.hidden = true; });
+        const blocks = coreBlocks();
+        if (!blocks.length) { toast('오늘 화면에서만 보낼 수 있습니다'); return; }
+        box.textContent = '';
+        blocks.forEach((b) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'inbox-block-chip';
+            chip.textContent = b.name ? `${b.label} · ${b.name}` : b.label;
+            chip.addEventListener('click', () => assignInbox(item, b.id));
+            box.appendChild(chip);
+        });
+        box.hidden = false;
     }
+    function assignInbox(item, blockId) {
+        const id = item.dataset.id;
+        if (String(id).indexOf('tmp-') === 0) { toast('먼저 동기화가 필요합니다'); return; }
+        const body = new URLSearchParams({ item_id: id, block_id: blockId }).toString();
+        fetch('/inbox/assign', { method: 'POST', headers: FORM_HEADERS, body })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data.ok) { toast('보내기 실패'); return; }
+                const ta = document.querySelector('textarea[name="plan_' + data.block_id + '"]');
+                if (ta) ta.value = data.plan_text;
+                item.remove();
+                bumpInboxCount(-1);
+                toast('블록 계획으로 보냈습니다');
+            })
+            .catch(() => toast('연결이 필요합니다'));
+    }
+    // 아직 서버에 안 올라간 임시 항목(tmp-)은 대기 중인 추가를 취소하고 그냥 지운다.
+    function inboxRemove(item, url) {
+        if (!item) return;
+        const id = item.dataset.id;
+        item.remove();
+        bumpInboxCount(-1);
+        if (String(id).indexOf('tmp-') === 0) { cancelQueued(item.dataset.op); return; }
+        sendOrQueue(
+            { id: genId(), kind: 'inbox-op', url: url + id, headers: {}, body: '' },
+            null,
+            () => toast('전송 대기 · 자동 재시도'),
+        );
+    }
+    function inboxDone(item) { inboxRemove(item, '/inbox/done/'); }
+    function inboxDelete(item) { inboxRemove(item, '/inbox/delete/'); }
     function bumpInboxCount(delta) {
         const el = document.getElementById('inbox-count');
         if (!el) return;
@@ -454,7 +624,7 @@
         const tasks = data.tasks || [];
         box.textContent = '';
         events.forEach((ev) => {
-            const row = el('div', 'agenda-row event');
+            const row = el('div', 'agenda-row event' + (ev.color ? ' cal-' + ev.color : ''));
             row.appendChild(el('span', 't', ev.all_day ? '종일' : (ev.start || '')));
             row.appendChild(el('span', 'x', ev.title));
             box.appendChild(row);
@@ -479,7 +649,7 @@
             const items = blocks[box.dataset.order] || [];
             box.textContent = '';
             items.forEach((it) => {
-                const row = el('div', 'pop-row ' + it.kind);
+                const row = el('div', 'pop-row ' + it.kind + (it.color ? ' cal-' + it.color : ''));
                 if (it.time) row.appendChild(el('span', 't', it.time));
                 row.appendChild(el('span', 'x', it.title));
                 if (it.end) row.appendChild(el('span', 'end', '~' + it.end));
@@ -528,12 +698,12 @@
             cb.addEventListener('change', () => {
                 const done = cb.checked ? '1' : '0';
                 cb.closest('.slot')?.classList.toggle('is-done', cb.checked);
-                fetch('/slot/done/' + cb.dataset.slot, {
-                    method: 'POST', body: new URLSearchParams({ done }),
-                })
-                    .then((r) => r.json())
-                    .then(() => toast(cb.checked ? '완료 체크' : '체크 해제'))
-                    .catch(() => toast('저장 실패'));
+                sendOrQueue(
+                    { id: genId(), kind: 'slot', url: '/slot/done/' + cb.dataset.slot,
+                      headers: FORM_HEADERS, body: 'done=' + done },
+                    () => toast(cb.checked ? '완료 체크' : '체크 해제'),
+                    () => toast('전송 대기 · 자동 재시도'),
+                );
             });
         });
     }
@@ -541,7 +711,8 @@
     // ---- 블록 호버 버튼 + 현재/전체 토글 ---------------------------------
     function bindBlockTools() {
         // 호버 버튼: 데스크톱은 CSS :hover, 모바일은 탭으로 팝오버 토글
-        document.querySelectorAll('.hover-btn').forEach((btn) => {
+        // (슬롯 '한 일' 버튼도 같은 방식으로 탭하면 옆에 패널이 열린다)
+        document.querySelectorAll('.hover-btn, .slot-did-btn').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -618,11 +789,23 @@
         document.getElementById('inbox-input')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); inboxAdd(); }
         });
+        document.querySelectorAll('.inbox-send').forEach((btn) => {
+            btn.addEventListener('click', () => openInboxBlocks(btn.closest('.inbox-item')));
+        });
         document.querySelectorAll('.inbox-done').forEach((btn) => {
             btn.addEventListener('click', () => inboxDone(btn.closest('.inbox-item')));
         });
         document.querySelectorAll('.inbox-del').forEach((btn) => {
             btn.addEventListener('click', () => inboxDelete(btn.closest('.inbox-item')));
+        });
+
+        // 오늘 일정·할 일 수동 새로고침(즉시 폴링)
+        document.getElementById('agenda-refresh')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            btn.classList.add('spinning');
+            pollDay();
+            setTimeout(() => btn.classList.remove('spinning'), 800);
+            toast('동기화');
         });
 
         bindSlotChecks();
@@ -635,13 +818,20 @@
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) { hiddenAt = Date.now(); return; }
                 pollDay();
+                flushQueue();
                 // 한동안 닫았다 다시 열면(폰 PWA 복귀 포함) 현재 블록으로 재포커스
                 if (Date.now() - hiddenAt > 90000) setTimeout(initialScroll, 220);
             });
-            window.addEventListener('focus', pollDay);
+            window.addEventListener('focus', () => { pollDay(); flushQueue(); });
         }
 
         bindForm();
+
+        // 대기열 자동 전송: 로드 직후 + 30초마다 재시도 + 연결 복구 이벤트 때
+        updateNetStatus();
+        flushQueue();
+        setInterval(flushQueue, 30000);
+        window.addEventListener('online', () => { updateNetStatus(); flushQueue(); });
 
         // 사용자가 직접 스크롤·터치 중이면 자동 슬롯 추적을 잠시 멈춤
         ['wheel', 'touchstart', 'touchmove', 'pointerdown'].forEach((ev) => {
@@ -674,9 +864,21 @@
         else window.addEventListener('load', runScroll, { once: true });
         setInterval(tick, TICK_MS);
 
-        // service worker
+        // service worker: 등록 + 업데이트 자동 적용
+        // 새 서비스워커가 제어를 넘겨받으면(업데이트 활성화) 페이지를 한 번만 자동 새로고침해
+        // 안드로이드 크롬 등에서 옛 캐시가 남아 옛 화면이 보이는 문제를 방지한다.
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+            if (navigator.serviceWorker.controller) {
+                let swRefreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (swRefreshing) return;
+                    swRefreshing = true;
+                    window.location.reload();
+                });
+            }
+            navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                .then((reg) => { reg.update().catch(() => {}); })
+                .catch(() => {});
         }
 
         // first user interaction → unlock audio

@@ -1,5 +1,5 @@
 // 6block PWA 서비스 워커 - HTML은 항상 최신, 정적 자원은 네트워크 우선 + 오프라인 캐시 폴백
-const CACHE_NAME = '6block-v6';
+const CACHE_NAME = '6block-v11';
 const CORE_ASSETS = [
     '/static/style.css',
     '/static/app.js',
