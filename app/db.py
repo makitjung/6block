@@ -3,7 +3,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.config import CATEGORIES, DB_PATH
+from app.config import CAT_TONE, CATEGORIES, DEFAULT_SETTINGS, DB_PATH, cat_tone
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
@@ -14,6 +14,7 @@ def init_db():
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         _migrate(conn)
         _seed_categories(conn)
+        _seed_settings(conn)
         conn.commit()
 
 
@@ -23,9 +24,19 @@ def _seed_categories(conn: sqlite3.Connection):
         return
     for order, (name, color) in enumerate(CATEGORIES):
         conn.execute(
-            "INSERT INTO categories (name, color, display_order, is_active) "
-            "VALUES (?, ?, ?, 1)",
-            (name, color, order),
+            "INSERT INTO categories (name, color, tone, display_order, is_active) "
+            "VALUES (?, ?, ?, ?, 1)",
+            (name, color, cat_tone(name), order),
+        )
+
+
+def _seed_settings(conn: sqlite3.Connection):
+    """기본 동작 설정 키가 없으면 기본값으로 채운다(기존 값은 유지)."""
+    for key, val in DEFAULT_SETTINGS.items():
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO NOTHING",
+            (key, val),
         )
 
 
@@ -49,6 +60,12 @@ def _migrate(conn: sqlite3.Connection):
     # 블록 구분(카테고리). NULL이면 미지정.
     if "category_id" not in block_cols:
         conn.execute("ALTER TABLE blocks ADD COLUMN category_id INTEGER")
+    # 카테고리 색 톤 컬럼(설정에서 팔레트 색을 고른다). 없으면 추가하고 기존 행을 기본 톤으로 채운다.
+    cat_cols = {r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()}
+    if "tone" not in cat_cols:
+        conn.execute("ALTER TABLE categories ADD COLUMN tone TEXT NOT NULL DEFAULT 'black'")
+        for name, tone in CAT_TONE.items():
+            conn.execute("UPDATE categories SET tone = ? WHERE name = ?", (tone, name))
     # 버퍼 블록 이름 변경(점심·기타→점심, 이동·휴식→저녁)을 기존 데이터에 멱등 반영
     conn.execute("UPDATE blocks SET block_label = '점심' WHERE block_label = '점심·기타'")
     conn.execute("UPDATE blocks SET block_label = '저녁' WHERE block_label = '이동·휴식'")
@@ -79,3 +96,25 @@ def get_conn():
         raise
     finally:
         conn.close()
+
+
+def get_settings() -> dict:
+    """모든 동작 설정을 dict로 반환한다(기본값 위에 DB 저장값을 덮어쓴다)."""
+    out = dict(DEFAULT_SETTINGS)
+    try:
+        with get_conn() as conn:
+            for r in conn.execute("SELECT key, value FROM app_settings"):
+                out[r["key"]] = r["value"]
+    except Exception:
+        pass
+    return out
+
+
+def set_setting(key: str, value: str):
+    """설정 한 개를 저장한다(없으면 추가, 있으면 갱신)."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )

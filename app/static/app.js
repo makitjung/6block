@@ -6,12 +6,23 @@
     const SLOT_MIN = 30;   // 슬롯 길이(분). 집중은 누른 슬롯의 종료시각까지 흐른다.
     const RING_C = 2 * Math.PI * 44;   // 진행 링 둘레(r=44), CSS stroke-dasharray와 일치
 
+    // 서버 동작 설정(window.__settings). localStorage 값이 있으면 우선, 없으면 이 기본값을 따른다.
+    function setget(key) {
+        try { return (window.__settings || {})[key]; } catch (e) { return undefined; }
+    }
+    function settingOn(key, def) {
+        const v = setget(key);
+        return (v === undefined || v === null) ? def : v === '1';
+    }
+
     const state = {
         phase: 'IDLE',      // 'IDLE' | 'FOCUS'
         startedAt: 0,       // epoch ms (집중 시작 시각)
         endsAt: 0,          // epoch ms (집중 종료 = 슬롯 종료시각)
         slotStart: '',      // 'HH:MM'
-        auto: localStorage.getItem('pomoAuto') === 'true',
+        auto: localStorage.getItem('pomoAuto') !== null
+            ? localStorage.getItem('pomoAuto') === 'true'
+            : settingOn('pomo_auto', false),
     };
 
     // ---- storage ---------------------------------------------------------
@@ -209,11 +220,13 @@
             if (remain <= 0) {
                 transitionToIdle(state.auto);
             } else if (!warn5Fired && remain <= 5 * 60 * 1000) {
-                // 종료 5분 전 사전 알림(종소리 2회)
+                // 종료 5분 전 사전 알림(종소리 2회, 설정에서 끌 수 있음)
                 warn5Fired = true;
-                bell(2);
-                notify('5분 남음', `슬롯 ${state.slotStart} 곧 종료`);
-                toast('종료 5분 전');
+                if (settingOn('pomo_warn5', true)) {
+                    bell(2);
+                    notify('5분 남음', `슬롯 ${state.slotStart} 곧 종료`);
+                    toast('종료 5분 전');
+                }
             }
         }
         render();
@@ -733,8 +746,8 @@
         const stack = document.querySelector('.block-stack');
         const toggle = document.getElementById('blocks-toggle');
         const dayForm = document.querySelector('.day-form');
-        if (stack && dayForm && dayForm.dataset.today === '1') {
-            stack.classList.add('collapsed');  // 기본값: 현재 블록만
+        if (stack && dayForm && dayForm.dataset.today === '1' && settingOn('collapse_blocks', true)) {
+            stack.classList.add('collapsed');  // 기본값(설정): 현재 블록만
         }
         if (stack && toggle) {
             toggle.addEventListener('click', () => {
@@ -749,6 +762,96 @@
                 }
             });
         }
+    }
+
+    // ---- 설정 페이지 -----------------------------------------------------
+    function postForm(url, data) {
+        return fetch(url, {
+            method: 'POST', headers: FORM_HEADERS,
+            body: new URLSearchParams(data).toString(),
+        }).then((r) => r.json()).catch(() => null);
+    }
+    function moveCat(id, dir) {
+        postForm('/settings/category/move', { id: id, dir: dir })
+            .then((d) => { if (d && d.ok) location.reload(); });
+    }
+    function bindSettings() {
+        const addBtn = document.getElementById('set-cat-add-btn');
+        if (!addBtn && !document.getElementById('set-behavior')) return;   // 설정 페이지 아님
+
+        addBtn?.addEventListener('click', () => {
+            const name = (document.getElementById('set-cat-new-name').value || '').trim();
+            const tone = document.getElementById('set-cat-new-tone').value;
+            if (!name) { toast('이름을 입력하세요'); return; }
+            postForm('/settings/category/add', { name: name, tone: tone })
+                .then((d) => { if (d && d.ok) location.reload(); else toast('추가 실패'); });
+        });
+        document.querySelectorAll('.set-cat-name').forEach((inp) => {
+            inp.addEventListener('change', () => {
+                const v = (inp.value || '').trim();
+                if (!v) return;
+                postForm('/settings/category/update', { id: inp.dataset.id, name: v })
+                    .then(() => toast('이름 저장'));
+            });
+        });
+        document.querySelectorAll('.set-cat-tone').forEach((sel) => {
+            sel.addEventListener('change', () => {
+                postForm('/settings/category/update', { id: sel.dataset.id, tone: sel.value })
+                    .then(() => {
+                        const dot = sel.closest('.set-cat-row')?.querySelector('.set-cat-dot');
+                        if (dot) dot.style.background = 'var(--tone-' + sel.value + ')';
+                        toast('색 저장');
+                    });
+            });
+        });
+        document.querySelectorAll('.set-cat-up').forEach((b) =>
+            b.addEventListener('click', () => moveCat(b.dataset.id, 'up')));
+        document.querySelectorAll('.set-cat-down').forEach((b) =>
+            b.addEventListener('click', () => moveCat(b.dataset.id, 'down')));
+        document.querySelectorAll('.set-cat-del').forEach((b) =>
+            b.addEventListener('click', () => {
+                postForm('/settings/category/delete', { id: b.dataset.id })
+                    .then((d) => { if (d && d.ok) location.reload(); });
+            }));
+        document.querySelectorAll('.set-cat-show').forEach((b) =>
+            b.addEventListener('click', () => {
+                postForm('/settings/category/add', { name: b.dataset.name, tone: b.dataset.tone })
+                    .then((d) => { if (d && d.ok) location.reload(); });
+            }));
+
+        document.querySelectorAll('#set-behavior select').forEach((sel) => {
+            sel.addEventListener('change', () => {
+                const o = {}; o[sel.dataset.key] = sel.value;
+                postForm('/settings/save', o).then(() => toast('설정 저장'));
+            });
+        });
+
+        document.getElementById('set-backup-btn')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget; btn.disabled = true;
+            postForm('/settings/backup', {}).then((d) => {
+                toast(d && d.ok ? '백업 완료' : '백업 실패');
+                btn.disabled = false;
+            });
+        });
+        document.getElementById('set-csv-btn')?.addEventListener('click', () => {
+            const s = document.getElementById('set-csv-start').value;
+            const en = document.getElementById('set-csv-end').value;
+            if (!s || !en) { toast('기간을 선택하세요'); return; }
+            window.location.href = '/settings/export.csv?start=' + s + '&end=' + en;
+        });
+        const pc = document.getElementById('set-purge-confirm');
+        const pb = document.getElementById('set-purge-btn');
+        pc?.addEventListener('change', () => { if (pb) pb.disabled = !pc.checked; });
+        pb?.addEventListener('click', () => {
+            const s = document.getElementById('set-purge-start').value;
+            const en = document.getElementById('set-purge-end').value;
+            if (!s || !en) { toast('기간을 선택하세요'); return; }
+            if (!window.confirm(s + ' ~ ' + en + ' 기록을 삭제합니다. 되돌릴 수 없습니다.')) return;
+            postForm('/settings/purge', { start: s, end: en }).then((d) => {
+                if (d && d.ok) { toast('삭제 완료'); location.reload(); }
+                else toast('삭제 실패');
+            });
+        });
     }
 
     // ---- init ------------------------------------------------------------
@@ -810,6 +913,7 @@
 
         bindSlotChecks();
         bindBlockTools();
+        bindSettings();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set active = 'settings' %}
+{% block title %}설정 | 6block{% endblock %}
+{% block content %}
+<section class="hero">
+    <div class="hero-date">
+        <div class="hero-date-main">설정</div>
+        <div class="hero-date-sub mono">구분 · 동작 · 데이터 관리</div>
+    </div>
+</section>
+
+<section class="card">
+    <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
+    <div class="set-cat-list" id="set-cat-list">
+        {% for c in categories %}
+        <div class="set-cat-row{% if not c.is_active %} is-hidden{% endif %}" data-id="{{ c.id }}">
+            <span class="set-cat-dot" style="background: var(--tone-{{ c.tone }})"></span>
+            <input type="text" class="set-cat-name" value="{{ c.name }}" data-id="{{ c.id }}" autocomplete="off" aria-label="구분 이름">
+            <select class="set-cat-tone" data-id="{{ c.id }}" aria-label="색">
+                {% for key, label in tones %}
+                <option value="{{ key }}" {% if c.tone == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="set-mini-btn set-cat-up" data-id="{{ c.id }}" title="위로">↑</button>
+            <button type="button" class="set-mini-btn set-cat-down" data-id="{{ c.id }}" title="아래로">↓</button>
+            {% if c.is_active %}
+            <button type="button" class="set-mini-btn set-cat-del" data-id="{{ c.id }}" title="숨김">✕</button>
+            {% else %}
+            <button type="button" class="set-mini-btn set-cat-show" data-id="{{ c.id }}" data-name="{{ c.name }}" data-tone="{{ c.tone }}" title="다시 표시">↺</button>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    <div class="set-cat-add">
+        <input type="text" id="set-cat-new-name" placeholder="새 구분 이름" autocomplete="off">
+        <select id="set-cat-new-tone" aria-label="새 구분 색">
+            {% for key, label in tones %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="primary-btn" id="set-cat-add-btn">추가</button>
+    </div>
+</section>
+
+<section class="card">
+    <h2 class="card-title">동작 설정 <span class="card-sub">모든 기기에 같이 적용됩니다</span></h2>
+    <div class="set-grid" id="set-behavior">
+        <label class="set-field">
+            <span class="set-label">시작 화면</span>
+            <select data-key="start_view">
+                <option value="today" {% if settings.start_view == 'today' %}selected{% endif %}>오늘</option>
+                <option value="week" {% if settings.start_view == 'week' %}selected{% endif %}>주간</option>
+            </select>
+        </label>
+        <label class="set-field">
+            <span class="set-label">기본 테마</span>
+            <select data-key="default_theme">
+                <option value="light" {% if settings.default_theme == 'light' %}selected{% endif %}>라이트</option>
+                <option value="dark" {% if settings.default_theme == 'dark' %}selected{% endif %}>다크</option>
+            </select>
+        </label>
+        <label class="set-field">
+            <span class="set-label">포모도로 자동 모드</span>
+            <select data-key="pomo_auto">
+                <option value="0" {% if settings.pomo_auto == '0' %}selected{% endif %}>끔</option>
+                <option value="1" {% if settings.pomo_auto == '1' %}selected{% endif %}>켬</option>
+            </select>
+        </label>
+        <label class="set-field">
+            <span class="set-label">종료 5분 전 알람</span>
+            <select data-key="pomo_warn5">
+                <option value="1" {% if settings.pomo_warn5 == '1' %}selected{% endif %}>켬</option>
+                <option value="0" {% if settings.pomo_warn5 == '0' %}selected{% endif %}>끔</option>
+            </select>
+        </label>
+        <label class="set-field">
+            <span class="set-label">오늘 현재블록만 보기</span>
+            <select data-key="collapse_blocks">
+                <option value="1" {% if settings.collapse_blocks == '1' %}selected{% endif %}>켬</option>
+                <option value="0" {% if settings.collapse_blocks == '0' %}selected{% endif %}>끔</option>
+            </select>
+        </label>
+    </div>
+</section>
+
+<section class="card">
+    <h2 class="card-title">데이터 <span class="card-sub">백업 · 내보내기 · 삭제</span></h2>
+    <div class="set-summary">
+        <span><strong>{{ summary.rec_days }}</strong>일 기록</span>
+        <span><strong>{{ summary.slot_recs }}</strong>개 슬롯</span>
+        <span class="mono">{{ summary.first }} ~ {{ summary.last }}</span>
+        <span>미처리 수집함 <strong>{{ summary.inbox_open }}</strong></span>
+        <span>활성 구분 <strong>{{ summary.active_cats }}</strong></span>
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">수동 백업</span>
+        <button type="button" class="ghost-btn" id="set-backup-btn">지금 .sql 덤프</button>
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">CSV 내보내기</span>
+        <input type="date" id="set-csv-start" value="{{ summary.first if summary.first != '-' else today }}">
+        <input type="date" id="set-csv-end" value="{{ today }}">
+        <button type="button" class="ghost-btn" id="set-csv-btn">내보내기</button>
+    </div>
+    <div class="set-data-row set-danger">
+        <span class="set-label">기간 삭제 <em>되돌릴 수 없음</em></span>
+        <input type="date" id="set-purge-start">
+        <input type="date" id="set-purge-end">
+        <label class="set-confirm"><input type="checkbox" id="set-purge-confirm"> 확인</label>
+        <button type="button" class="danger-btn" id="set-purge-btn" disabled>삭제</button>
+    </div>
+</section>
+{% endblock %}

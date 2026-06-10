@@ -56,8 +56,26 @@ CAT_TONE = {
 
 
 def cat_tone(name: str) -> str:
-    """카테고리 이름의 색 톤(blue/green/red/black)을 돌려준다. 모르면 black."""
+    """카테고리 이름의 기본 색 톤을 돌려준다(신규 시드·폴백용). 모르면 black."""
     return CAT_TONE.get(name, "black")
+
+
+# 구분 색 팔레트(키 → 한글 이름). 각 키는 style.css의 --tone-* 토큰과 1:1로 대응한다.
+# 설정 탭에서 카테고리 색을 이 중 하나로 고른다.
+TONES = [
+    ("blue", "파랑"), ("green", "녹색"), ("red", "빨강"), ("black", "검정"),
+    ("yellow", "노랑"), ("orange", "주황"), ("purple", "보라"), ("teal", "청록"),
+]
+TONE_KEYS = {k for k, _name in TONES}
+
+# 동작 설정 기본값(app_settings 시드·폴백용). 키 → 기본값(문자열).
+DEFAULT_SETTINGS = {
+    "start_view": "today",      # 시작 화면: today | week
+    "default_theme": "light",   # 기본 테마: light | dark
+    "pomo_auto": "0",           # 포모도로 자동 모드 기본값(0/1)
+    "pomo_warn5": "1",          # 종료 5분 전 알람(0/1)
+    "collapse_blocks": "1",     # 오늘 화면 '현재 블록만 보기' 기본값(0/1)
+}
 
 
 def hhmm_to_min(hhmm: str) -> int:

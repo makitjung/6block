@@ -9,19 +9,21 @@ from fastapi.responses import (
     FileResponse,
     JSONResponse,
     RedirectResponse,
+    Response,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import (
     DAY_BLOCKS,
+    TONE_KEYS,
+    TONES,
     WEEK_CORE_BLOCKS,
     WEEK_TOTAL_HOURS,
-    cat_tone,
     hhmm_to_min,
     slots_for_day,
 )
-from app.db import get_conn, init_db
+from app.db import get_conn, get_settings, init_db, set_setting
 from app.integrations import gcal, things
 
 KST = ZoneInfo("Asia/Seoul")
@@ -93,6 +95,7 @@ def _asset_ver() -> str:
 
 
 templates.env.globals["asset_ver"] = _asset_ver
+templates.env.globals["get_settings"] = get_settings
 
 
 def today_str() -> str:
@@ -172,7 +175,8 @@ def ensure_day_skeleton(conn, date_str: str):
 
 @app.get("/")
 def root():
-    return RedirectResponse(url="/today")
+    view = get_settings().get("start_view", "today")
+    return RedirectResponse(url="/week" if view == "week" else "/today")
 
 
 @app.get("/today")
@@ -275,9 +279,9 @@ def _day_view(request: Request, date_str: str):
         ensure_day_skeleton(conn, date_str)
         categories = [
             {"id": r["id"], "name": r["name"], "color": r["color"],
-             "tone": cat_tone(r["name"])}
+             "tone": r["tone"]}
             for r in conn.execute(
-                "SELECT id, name, color FROM categories "
+                "SELECT id, name, color, tone FROM categories "
                 "WHERE is_active = 1 ORDER BY display_order"
             )
         ]
@@ -579,15 +583,15 @@ def _week_view(request: Request, monday: date):
         ).fetchall()
         categories = [
             {"id": r["id"], "name": r["name"], "color": r["color"],
-             "tone": cat_tone(r["name"])}
+             "tone": r["tone"]}
             for r in conn.execute(
-                "SELECT id, name, color FROM categories "
+                "SELECT id, name, color, tone FROM categories "
                 "WHERE is_active = 1 ORDER BY display_order"
             )
         ]
         cat_summary = conn.execute(
             f"""
-            SELECT c.name, c.color, COUNT(s.id) AS slot_count
+            SELECT c.name, c.color, c.tone, COUNT(s.id) AS slot_count
             FROM slots s
             JOIN categories c ON c.id = s.category_id
             WHERE s.date IN ({placeholders})
@@ -678,7 +682,7 @@ def _week_view(request: Request, monday: date):
         {
             "name": r["name"],
             "color": r["color"],
-            "tone": cat_tone(r["name"]),
+            "tone": r["tone"],
             "slot_count": r["slot_count"],
             "hours": r["slot_count"] * 0.5,
             "pct": round(r["slot_count"] / total_slots * 100, 1) if total_slots else 0,
@@ -783,6 +787,219 @@ async def save_week(week_start_str: str, request: Request):
                     (cid, now, sid),
                 )
     return RedirectResponse(url=f"/week/{week_start_str}", status_code=303)
+
+
+# -- 설정 -------------------------------------------------------------------
+
+
+@app.get("/settings")
+def settings_view(request: Request):
+    settings = get_settings()
+    with get_conn() as conn:
+        cats = conn.execute(
+            "SELECT id, name, tone, is_active FROM categories "
+            "ORDER BY is_active DESC, display_order"
+        ).fetchall()
+        rec_filter = "(do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1"
+        rec_days = conn.execute(
+            f"SELECT COUNT(DISTINCT date) FROM slots WHERE {rec_filter}"
+        ).fetchone()[0]
+        slot_recs = conn.execute(
+            f"SELECT COUNT(*) FROM slots WHERE {rec_filter}"
+        ).fetchone()[0]
+        span = conn.execute(
+            f"SELECT MIN(date), MAX(date) FROM slots WHERE {rec_filter}"
+        ).fetchone()
+        inbox_open = conn.execute(
+            "SELECT COUNT(*) FROM inbox WHERE done = 0"
+        ).fetchone()[0]
+    summary = {
+        "rec_days": rec_days,
+        "slot_recs": slot_recs,
+        "first": span[0] or "-",
+        "last": span[1] or "-",
+        "inbox_open": inbox_open,
+        "active_cats": sum(1 for c in cats if c["is_active"]),
+    }
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "categories": [dict(c) for c in cats],
+            "tones": TONES,
+            "settings": settings,
+            "summary": summary,
+            "today": today_str(),
+        },
+    )
+
+
+@app.post("/settings/category/add")
+async def settings_cat_add(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    tone = (form.get("tone") or "black").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    if tone not in TONE_KEYS:
+        tone = "black"
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
+        if row:  # 같은 이름이 있으면(비활성 포함) 다시 활성화하고 톤만 갱신
+            conn.execute(
+                "UPDATE categories SET is_active = 1, tone = ? WHERE id = ?",
+                (tone, row["id"]),
+            )
+            cid = row["id"]
+        else:
+            order = conn.execute(
+                "SELECT COALESCE(MAX(display_order), -1) + 1 FROM categories"
+            ).fetchone()[0]
+            cur = conn.execute(
+                "INSERT INTO categories (name, color, tone, display_order, is_active) "
+                "VALUES (?, '#202124', ?, ?, 1)",
+                (name, tone, order),
+            )
+            cid = cur.lastrowid
+    return JSONResponse({"ok": True, "id": cid, "name": name, "tone": tone})
+
+
+@app.post("/settings/category/update")
+async def settings_cat_update(request: Request):
+    form = await request.form()
+    try:
+        cid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    fields = {}
+    if form.get("name") is not None and (form.get("name") or "").strip():
+        fields["name"] = form.get("name").strip()
+    if form.get("tone") in TONE_KEYS:
+        fields["tone"] = form.get("tone")
+    if form.get("is_active") is not None:
+        fields["is_active"] = 1 if form.get("is_active") in ("1", "true", "on") else 0
+    if not fields:
+        return JSONResponse({"ok": False}, status_code=400)
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE categories SET {sets} WHERE id = ?", (*fields.values(), cid)
+        )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/category/move")
+async def settings_cat_move(request: Request):
+    form = await request.form()
+    try:
+        cid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    direction = form.get("dir")
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, display_order FROM categories WHERE is_active = 1 "
+            "ORDER BY display_order"
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if cid not in ids:
+            return JSONResponse({"ok": False}, status_code=404)
+        i = ids.index(cid)
+        j = i - 1 if direction == "up" else i + 1
+        if 0 <= j < len(rows):
+            a, b = rows[i], rows[j]
+            conn.execute(
+                "UPDATE categories SET display_order = ? WHERE id = ?",
+                (b["display_order"], a["id"]),
+            )
+            conn.execute(
+                "UPDATE categories SET display_order = ? WHERE id = ?",
+                (a["display_order"], b["id"]),
+            )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/category/delete")
+async def settings_cat_delete(request: Request):
+    """카테고리를 숨김 처리한다(소프트 삭제). 슬롯·블록의 기존 참조는 보존된다."""
+    form = await request.form()
+    try:
+        cid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("UPDATE categories SET is_active = 0 WHERE id = ?", (cid,))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/save")
+async def settings_save(request: Request):
+    form = await request.form()
+    allowed = {"start_view", "default_theme", "pomo_auto", "pomo_warn5", "collapse_blocks"}
+    for key in allowed:
+        if form.get(key) is not None:
+            set_setting(key, form.get(key))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/backup")
+def settings_backup():
+    """scripts/backup.py를 즉시 실행해 .sql 덤프를 만든다."""
+    try:
+        import importlib.util
+
+        path = BASE_DIR.parent / "scripts" / "backup.py"
+        spec = importlib.util.spec_from_file_location("backup", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.dump()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=500)
+
+
+@app.get("/settings/export.csv")
+def settings_export(start: str, end: str):
+    """기간 내 슬롯 기록을 CSV로 내보낸다(엑셀 호환 UTF-8 BOM)."""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["날짜", "블록", "시각", "구분", "DO(계획)", "한일(실제)", "완료"])
+    with get_conn() as conn:
+        for r in conn.execute(
+            "SELECT s.date, b.block_label, s.start_time, c.name AS cat, "
+            "       s.do_text, s.did_text, s.done "
+            "FROM slots s JOIN blocks b ON b.id = s.block_id "
+            "LEFT JOIN categories c ON c.id = s.category_id "
+            "WHERE s.date BETWEEN ? AND ? ORDER BY s.date, s.slot_index",
+            (start, end),
+        ):
+            w.writerow([
+                r["date"], r["block_label"], r["start_time"], r["cat"] or "",
+                r["do_text"] or "", r["did_text"] or "", r["done"],
+            ])
+    return Response(
+        "﻿" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=6block-{start}_{end}.csv"},
+    )
+
+
+@app.post("/settings/purge")
+async def settings_purge(request: Request):
+    """기간 내 기록(슬롯·블록·일 메타)을 삭제한다. 되돌릴 수 없다."""
+    form = await request.form()
+    start = (form.get("start") or "").strip()
+    end = (form.get("end") or "").strip()
+    if not start or not end:
+        return JSONResponse({"ok": False, "error": "기간 필요"}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM slots WHERE date BETWEEN ? AND ?", (start, end))
+        conn.execute("DELETE FROM blocks WHERE date BETWEEN ? AND ?", (start, end))
+        conn.execute("DELETE FROM daily_meta WHERE date BETWEEN ? AND ?", (start, end))
+    return JSONResponse({"ok": True})
 
 
 # -- PWA --------------------------------------------------------------------

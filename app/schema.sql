@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     color TEXT NOT NULL,
+    tone TEXT NOT NULL DEFAULT 'black',
     display_order INTEGER NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1
 );
@@ -79,3 +80,9 @@ CREATE TABLE IF NOT EXISTS inbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_inbox_done ON inbox(done, id);
+
+-- 앱 동작 설정(시작 화면·기본 테마·포모도로 기본값 등)을 담는 키-값 저장소
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
