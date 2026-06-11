@@ -152,6 +152,16 @@ button { font: inherit; cursor: pointer; }
 .topnav a:hover { color: var(--text); }
 .topnav a.is-active { color: var(--accent); background: var(--surface); box-shadow: var(--sh-1); }
 
+/* 주간 하위 탭(주간·분석·설정) */
+.subnav-wrap { max-width: 1180px; margin: 0 auto; padding: 14px 18px 0; }
+.subnav { display: inline-flex; gap: 2px; background: var(--surface-3); padding: 3px; border-radius: var(--r-pill); }
+.subnav a {
+    padding: 5px 16px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600;
+    color: var(--text-muted); transition: color .15s ease, background .15s ease;
+}
+.subnav a:hover { color: var(--text); }
+.subnav a.is-active { background: var(--surface); color: var(--accent); box-shadow: var(--sh-1); }
+
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 .now-clock { color: var(--text-muted); font-size: 12px; letter-spacing: 0.03em; }
 .theme-toggle {
@@ -740,6 +750,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 @media (max-width: 640px) {
     main { padding: 14px 12px 40px; }
+    .subnav-wrap { padding: 12px 12px 0; }
     .an-kpi { grid-template-columns: repeat(2, 1fr); }
     .topbar-inner { grid-template-columns: 1fr auto; gap: 10px; padding: 9px 13px; }
     .topnav { grid-column: 1 / -1; justify-content: center; }
