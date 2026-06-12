@@ -11,6 +11,25 @@ load_dotenv(PROJECT_ROOT / ".env")
 DB_PATH = Path.home() / "6block-data" / "blocks.db"
 BACKUP_DIR = Path.home() / "6block-data" / "backups"
 
+
+def _detect_cloud_dir() -> Path:
+    """OneDrive 오프사이트 백업 루트. SIXBLOCK_CLOUD_DIR 로 지정, 없으면 OneDrive 자동 탐지(맥 교체 대비)."""
+    env = os.environ.get("SIXBLOCK_CLOUD_DIR", "").strip()
+    if env:
+        return Path(env)
+    base = Path.home() / "Library" / "CloudStorage"
+    for name in ("OneDrive-개인", "OneDrive-Personal"):
+        if (base / name).exists():
+            return base / name / "AI_data" / "6block"
+    matches = sorted(base.glob("OneDrive-*"))
+    if matches:
+        return matches[0] / "AI_data" / "6block"
+    return Path.home() / "AI_data" / "6block"
+
+
+CLOUD_DIR = _detect_cloud_dir()
+CLOUD_BACKUP_DIR = CLOUD_DIR / "backups"
+
 # 구글 캘린더 iCal 주소. 계획=GCAL_ICAL_URL(노랑), 모임/여행=GCAL_ICAL_URL_2(빨강).
 GCAL_ICAL_URL = os.getenv("GCAL_ICAL_URL", "").strip()
 GCAL_ICAL_URL_2 = os.getenv("GCAL_ICAL_URL_2", "").strip()
