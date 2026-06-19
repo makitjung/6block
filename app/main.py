@@ -120,14 +120,18 @@ def _parse_anchor(anchor: str) -> date:
 
 
 def _plan_columns(level: str, anchor: date):
-    """(열 목록, 헤더 라벨). 열은 key·label·sub·current·week_link 를 가진다."""
+    """(열 목록, 헤더 라벨). 열은 key·label·sub·current·week_link·drill_* 를 가진다.
+
+    drill_level/drill_anchor: 그 열 머리글을 누르면 들어갈 다음(더 잘은) 단위와 anchor.
+    """
     today = datetime.now(KST).date()
     cols: list[dict] = []
     if level == "year":
         y0 = anchor.year
         for y in range(y0, y0 + 6):
             cols.append({"key": str(y), "label": str(y), "sub": "",
-                         "current": y == today.year, "week_link": None})
+                         "current": y == today.year, "week_link": None,
+                         "drill_level": "quarter", "drill_anchor": f"{y}-01-01"})
         header = f"{y0}–{y0 + 5}"
     elif level == "quarter":
         y = anchor.year
@@ -135,14 +139,17 @@ def _plan_columns(level: str, anchor: date):
             cols.append({"key": f"{y}-Q{q}", "label": f"{q}분기",
                          "sub": f"{(q - 1) * 3 + 1}~{q * 3}월",
                          "current": y == today.year and (today.month - 1) // 3 + 1 == q,
-                         "week_link": None})
+                         "week_link": None,
+                         "drill_level": "month",
+                         "drill_anchor": f"{y}-{(q - 1) * 3 + 1:02d}-01"})
         header = f"{y}년"
     elif level == "month":
         y = anchor.year
         for m in range(1, 13):
             cols.append({"key": f"{y}-{m:02d}", "label": f"{m}월", "sub": "",
                          "current": y == today.year and m == today.month,
-                         "week_link": None})
+                         "week_link": None,
+                         "drill_level": "week", "drill_anchor": f"{y}-{m:02d}-01"})
         header = f"{y}년"
     else:  # week
         y, m = anchor.year, anchor.month
@@ -156,7 +163,8 @@ def _plan_columns(level: str, anchor: date):
             end = monday + timedelta(days=6)
             cols.append({"key": key, "label": f"{monday.month}/{monday.day}",
                          "sub": f"~{end.month}/{end.day}",
-                         "current": monday == cur_monday, "week_link": key})
+                         "current": monday == cur_monday, "week_link": key,
+                         "drill_level": None, "drill_anchor": None})
             monday += timedelta(days=7)
         header = f"{y}년 {m}월"
     return cols, header
@@ -172,6 +180,41 @@ def _plan_nav(level: str, anchor: date):
     prev_last = date(y, m, 1) - timedelta(days=1)          # 지난달 말일
     next_first = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
     return prev_last.strftime("%Y-%m-01"), next_first.strftime("%Y-%m-%d")
+
+
+def _plan_ancestors(level: str, anchor: date):
+    """현재 anchor가 속한 상위 단위들의 (level, label, key). 현재보다 굵은 단위만."""
+    q = (anchor.month - 1) // 3 + 1
+    coarser = [
+        ("year", str(anchor.year), str(anchor.year)),
+        ("quarter", f"{q}분기", f"{anchor.year}-Q{q}"),
+        ("month", f"{anchor.month}월", f"{anchor.year}-{anchor.month:02d}"),
+    ]
+    idx = PLAN_LEVELS.index(level)
+    return [
+        {"level": lv, "label": label, "key": key}
+        for lv, label, key in coarser
+        if PLAN_LEVELS.index(lv) < idx
+    ]
+
+
+def _plan_breadcrumb(level: str, anchor: date):
+    """연>분기>월>주 경로. 각 단위는 anchor가 속한 기간 라벨 + 그 단위로 가는 링크."""
+    q = (anchor.month - 1) // 3 + 1
+    monday = anchor - timedelta(days=anchor.weekday())
+    labels = {
+        "year": str(anchor.year),
+        "quarter": f"{q}분기",
+        "month": f"{anchor.month}월",
+        "week": f"{monday.month}/{monday.day} 주",
+    }
+    a = anchor.strftime("%Y-%m-%d")
+    idx = PLAN_LEVELS.index(level)
+    return [
+        {"level": lv, "label": labels[lv], "anchor": a, "current": lv == level}
+        for i, lv in enumerate(PLAN_LEVELS)
+        if i <= idx
+    ]
 
 
 def _skeleton_matches_config(conn, date_str: str) -> bool:
@@ -867,10 +910,15 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
     a = _parse_anchor(anchor)
     cols, header = _plan_columns(level, a)
     keys = [c["key"] for c in cols]
+    ancestors = _plan_ancestors(level, a)
+    anc_keys = [x["key"] for x in ancestors]
     with get_conn() as conn:
-        areas = conn.execute(
-            "SELECT id, name FROM lt_area WHERE is_active = 1 ORDER BY display_order"
-        ).fetchall()
+        areas = [
+            dict(x)
+            for x in conn.execute(
+                "SELECT id, name FROM lt_area WHERE is_active = 1 ORDER BY display_order"
+            )
+        ]
         all_areas = conn.execute(
             "SELECT id, name, is_active FROM lt_area "
             "ORDER BY is_active DESC, display_order"
@@ -884,6 +932,25 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
                 (level, *keys),
             ):
                 grid.setdefault(r["area_id"], {})[r["period_key"]] = r["content"]
+        # 상위 맥락: 조상 단위(연·분기·월)의 영역별 계획을 모은다.
+        anc_map: dict[tuple, str] = {}
+        if anc_keys:
+            aph = ",".join("?" * len(anc_keys))
+            for r in conn.execute(
+                f"SELECT area_id, period_key, content FROM lt_plan "
+                f"WHERE period_key IN ({aph})",
+                anc_keys,
+            ):
+                anc_map[(r["area_id"], r["period_key"])] = r["content"]
+    parent_ctx = []
+    for ar in areas:
+        rows = [
+            {"label": anc["label"], "content": anc_map[(ar["id"], anc["key"])]}
+            for anc in ancestors
+            if anc_map.get((ar["id"], anc["key"]))
+        ]
+        if rows:
+            parent_ctx.append({"name": ar["name"], "rows": rows})
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -896,9 +963,11 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
             "anchor": a.strftime("%Y-%m-%d"),
             "columns": cols,
             "header": header,
-            "areas": [dict(x) for x in areas],
+            "areas": areas,
             "all_areas": [dict(x) for x in all_areas],
             "grid": grid,
+            "breadcrumb": _plan_breadcrumb(level, a),
+            "parent_ctx": parent_ctx,
             "prev_anchor": prev_anchor,
             "next_anchor": next_anchor,
             "zoom_in": order[i + 1] if i + 1 < len(order) else None,

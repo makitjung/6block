@@ -17,6 +17,14 @@
     </div>
 </section>
 
+<nav class="plan-crumb" aria-label="기간 경로">
+    {% for c in breadcrumb %}
+    {% if c.current %}<span class="crumb cur">{{ c.label }}</span>
+    {% else %}<a class="crumb" href="/plan?level={{ c.level }}&anchor={{ c.anchor }}">{{ c.label }}</a>{% endif %}
+    {% if not loop.last %}<span class="crumb-sep">›</span>{% endif %}
+    {% endfor %}
+</nav>
+
 <div class="plan-bar">
     <nav class="plan-levels" aria-label="단위 선택">
         {% for lv in levels %}
@@ -54,6 +62,22 @@
     </div>
 </details>
 
+{% if parent_ctx %}
+<details class="card theme-fold plan-context" open>
+    <summary class="card-title">상위 맥락 <span class="card-sub">이 기간이 속한 상위 계획(연·분기·월)을 참고로</span></summary>
+    <div class="pctx-grid">
+        {% for a in parent_ctx %}
+        <div class="pctx-area">
+            <div class="pctx-name">{{ a.name }}</div>
+            {% for r in a.rows %}
+            <div class="pctx-row"><span class="pctx-lv">{{ r.label }}</span><span class="pctx-text">{{ r.content }}</span></div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</details>
+{% endif %}
+
 {% if areas %}
 <div class="plan-scroll">
     <div class="plan-grid" data-zoom="1" style="--cols: {{ columns | length }}">
@@ -61,7 +85,7 @@
         {% for col in columns %}
         <div class="pg-head {% if col.current %}is-now{% endif %}">
             <span class="pg-head-label">
-                {{ col.label }}
+                {% if col.drill_level %}<a class="pg-drill" href="/plan?level={{ col.drill_level }}&anchor={{ col.drill_anchor }}" title="{{ col.label }} 펼치기">{{ col.label }}</a>{% else %}{{ col.label }}{% endif %}
                 {% if col.week_link %}<a class="pg-week" href="/week/{{ col.week_link }}" title="이 주의 주간 화면">↗</a>{% endif %}
             </span>
             {% if col.sub %}<span class="pg-head-sub mono">{{ col.sub }}</span>{% endif %}
