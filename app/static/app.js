@@ -890,12 +890,14 @@
             z = Math.max(0, z - 1); localStorage.setItem(ZKEY, z); applyZoom();
         });
 
-        // 현재 기간 열을 가로 스크롤로 보이게 맞춘다
+        // 현재 기간 열을 고정된 영역 열 바로 오른쪽으로 가로 스크롤(가려지지 않게)
         const nowCol = grid.querySelector('.pg-head.is-now');
         const scroller = grid.closest('.plan-scroll');
         if (nowCol && scroller) {
-            const left = nowCol.offsetLeft - scroller.clientWidth / 2;
-            scroller.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
+            const areaW = grid.querySelector('.pg-area')?.getBoundingClientRect().width || 0;
+            const delta = nowCol.getBoundingClientRect().left
+                        - scroller.getBoundingClientRect().left - areaW - 12;
+            scroller.scrollLeft += delta;
         }
     }
 
@@ -1000,6 +1002,8 @@
         bindSlotChecks();
         bindBlockTools();
         bindSettings();
+        bindPlan();
+        bindPlanAreas();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {
