@@ -975,10 +975,10 @@
             if (!text) { toast('내용을 입력하세요'); return; }
             const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
             const tags = (document.getElementById('rf-tags').value || '').trim();
-            const event_date = document.getElementById('rf-date').value || '';
+            const review_date = document.getElementById('rf-review')?.value || '';
             const op = {
                 id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind: kind, text: text, tags: tags, event_date: event_date }).toString(),
+                body: new URLSearchParams({ kind: kind, text: text, tags: tags, review_date: review_date }).toString(),
             };
             fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
                 .then((r) => r.json())

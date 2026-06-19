@@ -101,6 +101,21 @@
         </div>
     </section>
 
+    {% if due_reflections %}
+    <section class="card due-reflect">
+        <h2 class="card-title">오늘 다시 볼 고민 · 감상 <span class="card-sub">예전에 다시 볼 날짜로 잡아둔 것 · <a href="/reflect">고민 탭</a></span></h2>
+        <div class="due-list">
+            {% for r in due_reflections %}
+            <div class="due-item">
+                <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
+                <span class="due-text">{{ r.text }}</span>
+                {% if r.tags %}<span class="due-tags">{{ r.tags }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
     {% if is_today %}
     <div class="block-stack-bar">
         <button type="button" id="blocks-toggle" class="ghost-btn">전체 블록 보기</button>

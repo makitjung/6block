@@ -1033,3 +1033,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 @media (max-width: 720px) {
     .reflect-filter, .reflect-list { padding: 0 12px; }
 }
+
+/* 오늘 다시 볼 고민·감상(today) + 다시 볼 날짜 표시 */
+.due-list { display: flex; flex-direction: column; gap: 6px; }
+.due-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.due-text { color: var(--text); }
+.due-tags { font-size: 12px; color: var(--accent-soft-text); }
+.rf-review { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); flex: 0 0 auto; white-space: nowrap; }
+.rf-review input { width: auto; }
+.rf-review-badge { color: var(--warm); font-size: 12px; }

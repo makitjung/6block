@@ -100,6 +100,10 @@ def _migrate(conn: sqlite3.Connection):
     )
     conn.execute("UPDATE blocks SET end_time = '16:30' WHERE block_label = 'B4' AND end_time = '17:00'")
     conn.execute("UPDATE blocks SET start_time = '16:30' WHERE block_label = '저녁' AND start_time = '17:00'")
+    # 고민·감상 '다시 볼 날짜'(입력할 때만 저장). 없으면 기록일 기준으로만 동작.
+    refl_cols = {r[1] for r in conn.execute("PRAGMA table_info(reflection)").fetchall()}
+    if refl_cols and "review_date" not in refl_cols:
+        conn.execute("ALTER TABLE reflection ADD COLUMN review_date TEXT")
 
 
 @contextmanager

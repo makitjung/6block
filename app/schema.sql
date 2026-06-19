@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS reflection (
     kind TEXT NOT NULL,                  -- 고민 | 감상 | 결심
     text TEXT NOT NULL,
     tags TEXT,                           -- 공백/쉼표로 구분한 태그(나중에 찾기 쉽게)
-    event_date TEXT NOT NULL,            -- 캘린더에 올릴 날짜 YYYY-MM-DD
+    event_date TEXT NOT NULL,            -- 기록일 YYYY-MM-DD (자동 입력)
+    review_date TEXT,                    -- 다시 볼 날짜 YYYY-MM-DD (입력할 때만 저장)
     created_at TEXT NOT NULL,
     gcal_event_id TEXT,                  -- 생성된 구글 캘린더 이벤트 id(삭제·중복방지용)
     synced INTEGER NOT NULL DEFAULT 0    -- 캘린더 반영 성공 여부

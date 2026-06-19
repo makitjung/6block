@@ -23,7 +23,7 @@
     <textarea id="rf-text" class="rf-text" rows="3" placeholder="반복되는 고민, 떠오른 감상, 다짐을 적어두세요"></textarea>
     <div class="rf-row">
         <input type="text" id="rf-tags" class="rf-tags" placeholder="태그 (예: 진로, 건강) — 나중에 찾기 쉽게" autocomplete="off">
-        <input type="date" id="rf-date" class="rf-date" value="{{ today }}">
+        <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rf-review" value=""></label>
         <button type="button" id="rf-add" class="primary-btn">기록</button>
     </div>
 </section>
@@ -49,6 +49,7 @@
         <div class="rf-meta">
             <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
             <span class="rf-date mono">{{ it.event_date }}</span>
+            {% if it.review_date %}<span class="rf-review-badge mono" title="다시 볼 날짜">↻ {{ it.review_date }}</span>{% endif %}
             {% if it.synced %}
             <span class="rf-sync ok" title="구글 캘린더에 반영됨">✓ 캘린더</span>
             {% else %}

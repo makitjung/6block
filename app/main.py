@@ -417,6 +417,12 @@ def _day_view(request: Request, date_str: str):
         inbox = conn.execute(
             "SELECT id, text FROM inbox WHERE done = 0 ORDER BY id DESC"
         ).fetchall()
+        # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
+        due_reflections = conn.execute(
+            "SELECT id, kind, text, tags FROM reflection "
+            "WHERE review_date = ? ORDER BY id DESC",
+            (date_str,),
+        ).fetchall()
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     # 일간 블록 이름 = 일간 덮어쓰기(blocks.name)가 있으면 그것, 없으면 주간 이름.
@@ -457,6 +463,7 @@ def _day_view(request: Request, date_str: str):
             "cal_events": cal_events,
             "task_list": task_list,
             "inbox": inbox,
+            "due_reflections": [dict(r) for r in due_reflections],
             "cal_enabled": gcal.enabled(),
         },
     )
@@ -1447,20 +1454,24 @@ async def reflect_add(request: Request):
     kind = form.get("kind") if form.get("kind") in REFLECT_KINDS else "고민"
     text = (form.get("text") or "").strip()
     tags = (form.get("tags") or "").strip()
-    event_date = (form.get("event_date") or "").strip() or today_str()
+    event_date = today_str()                                    # 기록일은 자동(오늘)
+    review_date = (form.get("review_date") or "").strip() or None  # 입력할 때만 저장
     if not text:
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
-    # 캘린더 반영을 시도하되, 실패해도 DB에는 저장해 나중에 재시도할 수 있게 한다.
+    # 캘린더 일정은 다시 볼 날짜가 있으면 그날, 없으면 기록일에 올린다.
+    cal_date = review_date or event_date
+    # 반영을 시도하되, 실패해도 DB에는 저장해 나중에 재시도할 수 있게 한다.
     try:
-        event_id = gcal_write.create_event(kind, text, tags, event_date)
+        event_id = gcal_write.create_event(kind, text, tags, cal_date)
     except Exception:
         event_id = None
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO reflection (kind, text, tags, event_date, created_at, "
-            "gcal_event_id, synced) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (kind, text, tags, event_date, now, event_id, 1 if event_id else 0),
+            "INSERT INTO reflection (kind, text, tags, event_date, review_date, "
+            "created_at, gcal_event_id, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, text, tags, event_date, review_date, now, event_id,
+             1 if event_id else 0),
         )
         new_id = cur.lastrowid
     return JSONResponse({"ok": True, "id": new_id, "synced": bool(event_id)})
@@ -1476,9 +1487,10 @@ def reflect_sync(item_id: int):
             return JSONResponse({"ok": False}, status_code=404)
         if r["synced"] and r["gcal_event_id"]:
             return JSONResponse({"ok": True, "synced": True})
+        cal_date = r["review_date"] or r["event_date"]
         try:
             event_id = gcal_write.create_event(
-                r["kind"], r["text"], r["tags"] or "", r["event_date"]
+                r["kind"], r["text"], r["tags"] or "", cal_date
             )
         except Exception:
             event_id = None
