@@ -402,6 +402,28 @@
         }
     }
 
+    // ---- 오프라인·지난 날짜 감지 (테일스케일/와이파이 꺼짐 대응) ---------
+    // 서버에 못 닿으면 서비스워커가 마지막에 받은 '오늘' 화면(지난 날짜)을 보여준다.
+    // 기기(폰) 로컬 날짜와 화면 날짜가 어긋나면 안내 배너를 띄우고,
+    // 연결이 돌아오면(서버 도달) /today로 자동 이동해 오늘·현재 블록으로 포커스한다.
+    function localDateStr(d) {
+        d = d || new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    function isStaleToday() {
+        const f = document.querySelector('.day-form');
+        return !!(f && f.dataset.today === '1' && f.dataset.date !== localDateStr());
+    }
+    function checkStale() {
+        const banner = document.getElementById('stale-banner');
+        if (!isStaleToday()) { if (banner) banner.hidden = true; return; }
+        if (banner) banner.hidden = false;
+        // 서버에 닿으면 오늘 날짜로 새로 렌더해 자동 이동(닿지 않으면 조용히 대기)
+        fetch('/api/now', { cache: 'no-store' })
+            .then((r) => { if (r.ok) location.replace('/today'); })
+            .catch(() => {});
+    }
+
     // ---- form save (저장 버튼 → 백그라운드 저장 + 오프라인 대기열) -------
     function saveDayForm(form) {
         const op = {
@@ -1013,10 +1035,11 @@
                 if (document.hidden) { hiddenAt = Date.now(); return; }
                 pollDay();
                 flushQueue();
+                checkStale();
                 // 한동안 닫았다 다시 열면(폰 PWA 복귀 포함) 현재 블록으로 재포커스
                 if (Date.now() - hiddenAt > 90000) setTimeout(initialScroll, 220);
             });
-            window.addEventListener('focus', () => { pollDay(); flushQueue(); });
+            window.addEventListener('focus', () => { pollDay(); flushQueue(); checkStale(); });
         }
 
         bindForm();
@@ -1025,7 +1048,11 @@
         updateNetStatus();
         flushQueue();
         setInterval(flushQueue, 30000);
-        window.addEventListener('online', () => { updateNetStatus(); flushQueue(); });
+        window.addEventListener('online', () => { updateNetStatus(); flushQueue(); checkStale(); });
+
+        // 오프라인·지난 날짜 감지: 로드 직후 + 주기적 재시도(연결되면 오늘로 자동 이동)
+        checkStale();
+        setInterval(checkStale, 30000);
 
         // 사용자가 직접 스크롤·터치 중이면 자동 슬롯 추적을 잠시 멈춤
         ['wheel', 'touchstart', 'touchmove', 'pointerdown'].forEach((ev) => {

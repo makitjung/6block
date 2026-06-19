@@ -959,3 +959,20 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .plan-bar { padding: 4px 12px 0; }
     .plan-scroll { padding: 4px 12px 24px; }
 }
+
+/* -- 오프라인·지난 날짜 안내 배너 -- */
+.stale-banner {
+    max-width: 1180px; margin: 8px auto 0; padding: 8px 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--warm-soft); color: var(--warm);
+    border: 1px solid var(--warm); border-radius: var(--r-md);
+    font-size: 13px; font-weight: 600;
+}
+.stale-banner[hidden] { display: none; }
+.stale-text { line-height: 1.35; }
+.stale-go {
+    flex: 0 0 auto; color: var(--warm); text-decoration: none;
+    border: 1px solid var(--warm); border-radius: var(--r-pill);
+    padding: 3px 12px; font-weight: 700;
+}
+@media (max-width: 720px) { .stale-banner { margin: 8px 12px 0; } }

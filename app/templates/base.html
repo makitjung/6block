@@ -43,6 +43,10 @@
             </div>
         </div>
     </header>
+    <div id="stale-banner" class="stale-banner" hidden>
+        <span class="stale-text">오프라인 · 지난 날짜를 보고 있어요. 연결되면 오늘로 자동 이동합니다.</span>
+        <a href="/today" class="stale-go">오늘로</a>
+    </div>
     {% if active in ['week', 'analytics', 'settings'] %}
     <div class="subnav-wrap">
         <nav class="subnav">
