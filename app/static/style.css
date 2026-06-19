@@ -976,3 +976,43 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     padding: 3px 12px; font-weight: 700;
 }
 @media (max-width: 720px) { .stale-banner { margin: 8px 12px 0; } }
+
+/* -- 고민·감상 (/reflect) -- */
+.reflect-add { display: flex; flex-direction: column; gap: 10px; }
+.reflect-kind { display: inline-flex; gap: 2px; background: var(--surface-3); padding: 3px; border-radius: var(--r-pill); align-self: flex-start; }
+.rk-opt { position: relative; }
+.rk-opt input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.rk-opt span { display: inline-block; padding: 6px 16px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.rk-opt input:checked + span { background: var(--surface); color: var(--accent); box-shadow: var(--sh-1); }
+.rf-text { width: 100%; resize: vertical; }
+.rf-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rf-tags { flex: 1 1 200px; }
+.rf-date { flex: 0 0 auto; }
+
+.reflect-filter { max-width: 1180px; margin: 14px auto 0; padding: 0 18px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.rf-search { display: flex; gap: 8px; align-items: center; flex: 1 1 240px; }
+.rf-search input[type="search"] { flex: 1; }
+.rf-kinds { display: inline-flex; gap: 2px; background: var(--surface-3); padding: 3px; border-radius: var(--r-pill); }
+.rf-kinds a { padding: 6px 14px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--text-muted); text-decoration: none; }
+.rf-kinds a:hover { color: var(--text); }
+.rf-kinds a.is-active { background: var(--surface); color: var(--accent); box-shadow: var(--sh-1); }
+
+.reflect-list { max-width: 1180px; margin: 12px auto 28px; padding: 0 18px; display: flex; flex-direction: column; gap: 10px; }
+.rf-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--sh-1); }
+.rf-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rf-badge { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: var(--r-pill); background: var(--surface-3); }
+.rf-badge[data-kind="고민"] { color: var(--tone-orange); }
+.rf-badge[data-kind="감상"] { color: var(--tone-teal); }
+.rf-badge[data-kind="결심"] { color: var(--tone-purple); }
+.rf-meta .rf-date { color: var(--text-muted); font-size: 12px; }
+.rf-sync { font-size: 12px; background: none; }
+.rf-sync.ok { color: var(--success); font-weight: 600; border: none; }
+.rf-sync.retry { color: var(--warm); font-weight: 600; cursor: pointer; border: 1px solid var(--warm); border-radius: var(--r-pill); padding: 1px 8px; }
+.rf-del { margin-left: auto; border: none; background: none; color: var(--text-subtle); cursor: pointer; font-size: 14px; }
+.rf-del:hover { color: var(--danger); }
+.rf-body { white-space: pre-wrap; color: var(--text); line-height: 1.5; }
+.rf-tags-row { margin-top: 6px; font-size: 12px; color: var(--accent-soft-text); }
+
+@media (max-width: 720px) {
+    .reflect-filter, .reflect-list { padding: 0 12px; }
+}

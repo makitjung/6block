@@ -964,6 +964,50 @@
             }));
     }
 
+    // ---- 고민·감상 (/reflect) --------------------------------------------
+    function bindReflect() {
+        const addBtn = document.getElementById('rf-add');
+        const list = document.getElementById('reflect-list');
+        if (!addBtn && !list) return;
+        addBtn?.addEventListener('click', () => {
+            const ta = document.getElementById('rf-text');
+            const text = (ta.value || '').trim();
+            if (!text) { toast('내용을 입력하세요'); return; }
+            const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
+            const tags = (document.getElementById('rf-tags').value || '').trim();
+            const event_date = document.getElementById('rf-date').value || '';
+            const op = {
+                id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind: kind, text: text, tags: tags, event_date: event_date }).toString(),
+            };
+            fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
+                .then((r) => r.json())
+                .then((d) => {
+                    if (!d.ok) { toast('저장 실패'); return; }
+                    toast(d.synced ? '기록 · 캘린더 반영' : '기록함 (캘린더 미반영)');
+                    location.reload();
+                })
+                .catch(() => {
+                    enqueue(op); ta.value = '';
+                    toast('저장 대기 · 연결되면 전송');
+                });
+        });
+        list?.querySelectorAll('.rf-del').forEach((b) =>
+            b.addEventListener('click', () => {
+                if (!window.confirm('이 기록을 삭제합니다. 캘린더 이벤트도 함께 지웁니다.')) return;
+                postForm('/reflect/delete/' + b.dataset.id, {}).then((d) => {
+                    if (d && d.ok) { b.closest('.rf-item')?.remove(); toast('삭제'); }
+                });
+            }));
+        list?.querySelectorAll('.rf-sync.retry').forEach((b) =>
+            b.addEventListener('click', () => {
+                postForm('/reflect/sync/' + b.dataset.id, {}).then((d) => {
+                    if (d && d.synced) { toast('캘린더 반영'); location.reload(); }
+                    else toast('캘린더 연동이 아직 설정되지 않았습니다');
+                });
+            }));
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();
@@ -1026,6 +1070,7 @@
         bindSettings();
         bindPlan();
         bindPlanAreas();
+        bindReflect();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

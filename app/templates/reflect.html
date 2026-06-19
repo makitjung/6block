@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set active = 'reflect' %}
+{% block title %}고민 · 감상 | 6block{% endblock %}
+{% block content %}
+<section class="hero">
+    <div class="hero-date">
+        <div class="hero-date-main">고민 · 감상</div>
+        <div class="hero-date-sub mono">
+            {% if gcal_write_on %}구글 캘린더 '고민/결심'에 자동 기록{% else %}로컬 저장 · 캘린더 연동 꺼짐{% endif %}
+        </div>
+    </div>
+</section>
+
+<section class="card reflect-add">
+    <div class="reflect-kind" role="group" aria-label="종류">
+        {% for k in kinds %}
+        <label class="rk-opt">
+            <input type="radio" name="rk" value="{{ k }}" {% if loop.first %}checked{% endif %}>
+            <span>{{ k }}</span>
+        </label>
+        {% endfor %}
+    </div>
+    <textarea id="rf-text" class="rf-text" rows="3" placeholder="반복되는 고민, 떠오른 감상, 다짐을 적어두세요"></textarea>
+    <div class="rf-row">
+        <input type="text" id="rf-tags" class="rf-tags" placeholder="태그 (예: 진로, 건강) — 나중에 찾기 쉽게" autocomplete="off">
+        <input type="date" id="rf-date" class="rf-date" value="{{ today }}">
+        <button type="button" id="rf-add" class="primary-btn">기록</button>
+    </div>
+</section>
+
+<section class="reflect-filter">
+    <form method="get" action="/reflect" class="rf-search">
+        <input type="search" name="q" value="{{ q }}" placeholder="고민·감상·태그 검색" autocomplete="off">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <button type="submit" class="ghost-btn">검색</button>
+    </form>
+    <nav class="rf-kinds" aria-label="종류 필터">
+        <a href="/reflect?kind=&q={{ q }}" class="{% if not kind %}is-active{% endif %}">전체</a>
+        {% for k in kinds %}
+        <a href="/reflect?kind={{ k }}&q={{ q }}" class="{% if kind == k %}is-active{% endif %}">{{ k }}</a>
+        {% endfor %}
+    </nav>
+</section>
+
+<section class="reflect-list" id="reflect-list">
+    {% if items %}
+    {% for it in items %}
+    <article class="rf-item" data-id="{{ it.id }}">
+        <div class="rf-meta">
+            <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
+            <span class="rf-date mono">{{ it.event_date }}</span>
+            {% if it.synced %}
+            <span class="rf-sync ok" title="구글 캘린더에 반영됨">✓ 캘린더</span>
+            {% else %}
+            <button type="button" class="rf-sync retry" data-id="{{ it.id }}" title="캘린더에 다시 반영">⟳ 동기화</button>
+            {% endif %}
+            <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
+        </div>
+        <div class="rf-body">{{ it.text }}</div>
+        {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
+    </article>
+    {% endfor %}
+    {% else %}
+    <div class="card ctx-empty">기록이 없습니다. 위에서 첫 고민이나 감상을 적어보세요.</div>
+    {% endif %}
+</section>
+{% endblock %}

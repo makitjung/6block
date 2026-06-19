@@ -24,7 +24,7 @@ from app.config import (
     slots_for_day,
 )
 from app.db import get_conn, get_settings, init_db, set_setting
-from app.integrations import gcal, things
+from app.integrations import gcal, gcal_write, things
 
 KST = ZoneInfo("Asia/Seoul")
 BASE_DIR = Path(__file__).parent
@@ -1335,6 +1335,108 @@ def analytics_view(request: Request, rng: str = "7"):
     )
 
 
+# -- 고민·감상 (반복 고민/감상/결심) ----------------------------------------
+
+REFLECT_KINDS = ("고민", "감상", "결심")
+
+
+@app.get("/reflect")
+def reflect_view(request: Request, q: str = "", kind: str = ""):
+    q = (q or "").strip()
+    kind = kind if kind in REFLECT_KINDS else ""
+    where: list[str] = []
+    params: list = []
+    if kind:
+        where.append("kind = ?")
+        params.append(kind)
+    if q:
+        where.append("(text LIKE ? OR tags LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    sql = "SELECT * FROM reflection"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY event_date DESC, id DESC LIMIT 500"
+    with get_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return templates.TemplateResponse(
+        "reflect.html",
+        {
+            "request": request,
+            "items": [dict(r) for r in rows],
+            "kinds": REFLECT_KINDS,
+            "q": q,
+            "kind": kind,
+            "today": today_str(),
+            "gcal_write_on": gcal_write.enabled(),
+        },
+    )
+
+
+@app.post("/reflect/add")
+async def reflect_add(request: Request):
+    form = await request.form()
+    kind = form.get("kind") if form.get("kind") in REFLECT_KINDS else "고민"
+    text = (form.get("text") or "").strip()
+    tags = (form.get("tags") or "").strip()
+    event_date = (form.get("event_date") or "").strip() or today_str()
+    if not text:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    # 캘린더 반영을 시도하되, 실패해도 DB에는 저장해 나중에 재시도할 수 있게 한다.
+    try:
+        event_id = gcal_write.create_event(kind, text, tags, event_date)
+    except Exception:
+        event_id = None
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO reflection (kind, text, tags, event_date, created_at, "
+            "gcal_event_id, synced) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (kind, text, tags, event_date, now, event_id, 1 if event_id else 0),
+        )
+        new_id = cur.lastrowid
+    return JSONResponse({"ok": True, "id": new_id, "synced": bool(event_id)})
+
+
+@app.post("/reflect/sync/{item_id}")
+def reflect_sync(item_id: int):
+    """캘린더 반영에 실패했던 항목을 다시 시도한다."""
+    event_id = None
+    with get_conn() as conn:
+        r = conn.execute("SELECT * FROM reflection WHERE id = ?", (item_id,)).fetchone()
+        if not r:
+            return JSONResponse({"ok": False}, status_code=404)
+        if r["synced"] and r["gcal_event_id"]:
+            return JSONResponse({"ok": True, "synced": True})
+        try:
+            event_id = gcal_write.create_event(
+                r["kind"], r["text"], r["tags"] or "", r["event_date"]
+            )
+        except Exception:
+            event_id = None
+        if event_id:
+            conn.execute(
+                "UPDATE reflection SET gcal_event_id = ?, synced = 1 WHERE id = ?",
+                (event_id, item_id),
+            )
+    return JSONResponse({"ok": bool(event_id), "synced": bool(event_id)})
+
+
+@app.post("/reflect/delete/{item_id}")
+def reflect_delete(item_id: int):
+    """기록을 삭제하고, 캘린더 이벤트가 있으면 함께 지운다."""
+    with get_conn() as conn:
+        r = conn.execute(
+            "SELECT gcal_event_id FROM reflection WHERE id = ?", (item_id,)
+        ).fetchone()
+        if r and r["gcal_event_id"]:
+            try:
+                gcal_write.delete_event(r["gcal_event_id"])
+            except Exception:
+                pass
+        conn.execute("DELETE FROM reflection WHERE id = ?", (item_id,))
+    return JSONResponse({"ok": True})
+
+
 # -- PWA --------------------------------------------------------------------
 
 
@@ -1361,7 +1463,11 @@ def manifest():
 @app.get("/api/health")
 def api_health():
     """연동 상태 점검. 브라우저에서 /api/health로 캘린더·Things 연결 확인."""
-    return {"gcal": gcal.status(), "things": things.status()}
+    return {
+        "gcal": gcal.status(),
+        "gcal_write": gcal_write.status(),
+        "things": things.status(),
+    }
 
 
 @app.get("/api/now")

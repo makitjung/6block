@@ -9,3 +9,7 @@ __pycache__/
 *.key
 *.crt
 .omc/
+# 구글 서비스계정 키(절대 커밋 금지)
+secrets/
+*-sa.json
+gcal-sa*.json

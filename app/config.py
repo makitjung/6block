@@ -34,6 +34,12 @@ CLOUD_BACKUP_DIR = CLOUD_DIR / "backups"
 GCAL_ICAL_URL = os.getenv("GCAL_ICAL_URL", "").strip()
 GCAL_ICAL_URL_2 = os.getenv("GCAL_ICAL_URL_2", "").strip()
 
+# 고민/감상을 쓰는 구글 캘린더('고민/결심'). 서비스계정 키로 이벤트를 생성한다.
+# GCAL_WRITE_CALENDAR_ID = 그 캘린더 ID(...@group.calendar.google.com),
+# GCAL_SA_KEYFILE = 서비스계정 JSON 키 경로. 둘 다 비우면 캘린더 쓰기만 비활성.
+GCAL_WRITE_CALENDAR_ID = os.getenv("GCAL_WRITE_CALENDAR_ID", "").strip()
+GCAL_SA_KEYFILE = os.getenv("GCAL_SA_KEYFILE", "").strip()
+
 # 캘린더별 이름·색. url이 빈 것은 제외한다. color는 style.css의 --cal-* 토큰과 일치.
 GCAL_CALENDARS = [
     c

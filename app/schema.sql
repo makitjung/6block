@@ -108,3 +108,17 @@ CREATE TABLE IF NOT EXISTS lt_plan (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lt_plan_lookup ON lt_plan(level, period_key);
+
+-- 반복되는 고민·감상·결심을 기록하고 구글 캘린더 '고민/결심'에 반영한다.
+CREATE TABLE IF NOT EXISTS reflection (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,                  -- 고민 | 감상 | 결심
+    text TEXT NOT NULL,
+    tags TEXT,                           -- 공백/쉼표로 구분한 태그(나중에 찾기 쉽게)
+    event_date TEXT NOT NULL,            -- 캘린더에 올릴 날짜 YYYY-MM-DD
+    created_at TEXT NOT NULL,
+    gcal_event_id TEXT,                  -- 생성된 구글 캘린더 이벤트 id(삭제·중복방지용)
+    synced INTEGER NOT NULL DEFAULT 0    -- 캘린더 반영 성공 여부
+);
+
+CREATE INDEX IF NOT EXISTS idx_reflection_kind ON reflection(kind, id);
