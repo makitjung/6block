@@ -197,14 +197,20 @@
                         </div>
                     </div>
                 </div>
-                <label class="field">
-                    <span class="field-label">PLAN</span>
-                    <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
-                </label>
-                <label class="field">
-                    <span class="field-label">SEE</span>
-                    <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
-                </label>
+                <div class="ps-cols">
+                    <label class="field ps-plan">
+                        <span class="field-label">PLAN</span>
+                        <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
+                    </label>
+                    <label class="field ps-see">
+                        <span class="field-label">SEE</span>
+                        <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
+                    </label>
+                    <div class="field ps-weekday">
+                        <span class="field-label">{{ weekday_label }} 컨셉</span>
+                        <div class="ps-wd-text{% if not weekday_concept %} empty{% endif %}">{{ weekday_concept or '설정 탭에서 요일 컨셉을 적어두세요' }}</div>
+                    </div>
+                </div>
             </div>
             {% endif %}
 

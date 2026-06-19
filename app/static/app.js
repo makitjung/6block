@@ -848,6 +848,14 @@
             });
         });
 
+        // 요일별 컨셉 자동 저장
+        document.querySelectorAll('.set-wd-input').forEach((inp) => {
+            inp.addEventListener('change', () => {
+                postForm('/settings/weekday', { weekday: inp.dataset.weekday, text: inp.value })
+                    .then((d) => { if (d && d.ok) toast('요일 컨셉 저장'); });
+            });
+        });
+
         document.getElementById('set-backup-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget; btn.disabled = true;
             postForm('/settings/backup', {}).then((d) => {

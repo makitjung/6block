@@ -84,6 +84,18 @@
 </section>
 
 <section class="card">
+    <h2 class="card-title">요일별 컨셉 <span class="card-sub">그 요일을 어떤 컨셉으로 보낼지 · 오늘 각 블록 오른쪽에 표시됩니다</span></h2>
+    <div class="set-weekday-grid" id="set-weekday">
+        {% for w in weekday_concepts %}
+        <label class="set-wd-row">
+            <span class="set-wd-label">{{ w.label }}</span>
+            <input type="text" class="set-wd-input" data-weekday="{{ w.weekday }}" value="{{ w.text }}" placeholder="{{ w.label }}요일 컨셉" autocomplete="off">
+        </label>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
     <h2 class="card-title">데이터 <span class="card-sub">백업 · 내보내기 · 삭제</span></h2>
     <div class="set-summary">
         <span><strong>{{ summary.rec_days }}</strong>일 기록</span>

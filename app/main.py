@@ -423,7 +423,13 @@ def _day_view(request: Request, date_str: str):
             "WHERE review_date = ? ORDER BY id DESC",
             (date_str,),
         ).fetchall()
+        # 이 날짜 요일의 컨셉(오늘 각 블록 오른쪽에 표시)
+        wc = conn.execute(
+            "SELECT text FROM weekday_concept WHERE weekday = ?", (d.weekday(),)
+        ).fetchone()
 
+    weekday_concept = (wc["text"] if wc else "") or ""
+    weekday_label = KO_WEEKDAYS[d.weekday()]
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     # 일간 블록 이름 = 일간 덮어쓰기(blocks.name)가 있으면 그것, 없으면 주간 이름.
     block_name_by_id = {
@@ -464,6 +470,8 @@ def _day_view(request: Request, date_str: str):
             "task_list": task_list,
             "inbox": inbox,
             "due_reflections": [dict(r) for r in due_reflections],
+            "weekday_concept": weekday_concept,
+            "weekday_label": weekday_label,
             "cal_enabled": gcal.enabled(),
         },
     )
@@ -1118,6 +1126,14 @@ def settings_view(request: Request):
         inbox_open = conn.execute(
             "SELECT COUNT(*) FROM inbox WHERE done = 0"
         ).fetchone()[0]
+        wc_map = {
+            r["weekday"]: (r["text"] or "")
+            for r in conn.execute("SELECT weekday, text FROM weekday_concept")
+        }
+    weekday_concepts = [
+        {"weekday": i, "label": KO_WEEKDAYS[i], "text": wc_map.get(i, "")}
+        for i in range(7)
+    ]
     summary = {
         "rec_days": rec_days,
         "slot_recs": slot_recs,
@@ -1134,6 +1150,7 @@ def settings_view(request: Request):
             "tones": TONES,
             "settings": settings,
             "summary": summary,
+            "weekday_concepts": weekday_concepts,
             "today": today_str(),
         },
     )
@@ -1244,6 +1261,28 @@ async def settings_save(request: Request):
     for key in allowed:
         if form.get(key) is not None:
             set_setting(key, form.get(key))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/weekday")
+async def settings_weekday(request: Request):
+    """요일별 컨셉(0=월~6=일) 한 칸을 저장한다."""
+    form = await request.form()
+    try:
+        wd = int(form.get("weekday"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    if not 0 <= wd <= 6:
+        return JSONResponse({"ok": False}, status_code=400)
+    text = (form.get("text") or "").strip()
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO weekday_concept (weekday, text, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(weekday) DO UPDATE SET text = excluded.text, "
+            "updated_at = excluded.updated_at",
+            (wd, text, now),
+        )
     return JSONResponse({"ok": True})
 
 
