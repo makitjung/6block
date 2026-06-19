@@ -3,7 +3,14 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.config import CAT_TONE, CATEGORIES, DEFAULT_SETTINGS, DB_PATH, cat_tone
+from app.config import (
+    CAT_TONE,
+    CATEGORIES,
+    DEFAULT_SETTINGS,
+    DB_PATH,
+    LT_AREAS,
+    cat_tone,
+)
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
@@ -14,6 +21,7 @@ def init_db():
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         _migrate(conn)
         _seed_categories(conn)
+        _seed_areas(conn)
         _seed_settings(conn)
         conn.commit()
 
@@ -27,6 +35,17 @@ def _seed_categories(conn: sqlite3.Connection):
             "INSERT INTO categories (name, color, tone, display_order, is_active) "
             "VALUES (?, ?, ?, ?, 1)",
             (name, color, cat_tone(name), order),
+        )
+
+
+def _seed_areas(conn: sqlite3.Connection):
+    """장기플랜 영역이 비어 있으면 기본 영역을 넣는다(기존 데이터는 건드리지 않음)."""
+    if conn.execute("SELECT COUNT(*) FROM lt_area").fetchone()[0]:
+        return
+    for order, name in enumerate(LT_AREAS):
+        conn.execute(
+            "INSERT INTO lt_area (name, display_order, is_active) VALUES (?, ?, 1)",
+            (name, order),
         )
 
 

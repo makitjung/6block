@@ -87,6 +87,9 @@ TONES = [
 ]
 TONE_KEYS = {k for k, _name in TONES}
 
+# 장기플랜 영역 행 기본값(lt_area 시드용). 첨부 엑셀의 중장기계획 영역을 따른다.
+LT_AREAS = ["프로젝트", "투자", "학습", "여가", "기타"]
+
 # 동작 설정 기본값(app_settings 시드·폴백용). 키 → 기본값(문자열).
 DEFAULT_SETTINGS = {
     "start_view": "today",      # 시작 화면: today | week

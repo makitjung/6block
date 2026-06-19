@@ -854,6 +854,92 @@
         });
     }
 
+    // ---- 장기플랜 (/plan) ------------------------------------------------
+    function bindPlan() {
+        const grid = document.querySelector('.plan-grid');
+        if (!grid) return;
+
+        // 칸 자동저장: blur 시 변경분 전송, 오프라인이면 대기열에 쌓고 자동 재시도
+        grid.querySelectorAll('.pg-input').forEach((ta) => {
+            ta.addEventListener('change', () => {
+                const body = new URLSearchParams({
+                    level: ta.dataset.level,
+                    period_key: ta.dataset.period,
+                    area_id: ta.dataset.area,
+                    content: ta.value,
+                }).toString();
+                sendOrQueue(
+                    { id: genId(), kind: 'plan-cell', url: '/plan/cell/save',
+                      headers: FORM_HEADERS, body },
+                    () => toast('저장'),
+                    () => toast('저장 대기 · 자동 재시도'),
+                );
+            });
+        });
+
+        // 화면 밀도(축소/확대): data-zoom 0..3을 localStorage에 보존
+        const ZKEY = '6block-plan-zoom';
+        let z = parseInt(localStorage.getItem(ZKEY), 10);
+        if (isNaN(z)) z = 1;
+        const applyZoom = () => grid.setAttribute('data-zoom', String(z));
+        applyZoom();
+        document.getElementById('pg-zoom-in')?.addEventListener('click', () => {
+            z = Math.min(3, z + 1); localStorage.setItem(ZKEY, z); applyZoom();
+        });
+        document.getElementById('pg-zoom-out')?.addEventListener('click', () => {
+            z = Math.max(0, z - 1); localStorage.setItem(ZKEY, z); applyZoom();
+        });
+
+        // 현재 기간 열을 가로 스크롤로 보이게 맞춘다
+        const nowCol = grid.querySelector('.pg-head.is-now');
+        const scroller = grid.closest('.plan-scroll');
+        if (nowCol && scroller) {
+            const left = nowCol.offsetLeft - scroller.clientWidth / 2;
+            scroller.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
+        }
+    }
+
+    function bindPlanAreas() {
+        const addBtn = document.getElementById('pg-area-add');
+        if (!addBtn && !document.querySelector('.pg-area-name')) return;
+        const addArea = () => {
+            const inp = document.getElementById('pg-area-new');
+            const name = (inp.value || '').trim();
+            if (!name) { toast('이름을 입력하세요'); return; }
+            postForm('/plan/area/add', { name: name })
+                .then((d) => { if (d && d.ok) location.reload(); else toast('추가 실패'); });
+        };
+        addBtn?.addEventListener('click', addArea);
+        document.getElementById('pg-area-new')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addArea(); }
+        });
+        document.querySelectorAll('.pg-area-name').forEach((inp) => {
+            inp.addEventListener('change', () => {
+                const v = (inp.value || '').trim();
+                if (!v) return;
+                postForm('/plan/area/update', { id: inp.dataset.id, name: v })
+                    .then(() => toast('이름 저장'));
+            });
+        });
+        const move = (id, dir) =>
+            postForm('/plan/area/move', { id: id, dir: dir })
+                .then((d) => { if (d && d.ok) location.reload(); });
+        document.querySelectorAll('.pg-area-up').forEach((b) =>
+            b.addEventListener('click', () => move(b.dataset.id, 'up')));
+        document.querySelectorAll('.pg-area-down').forEach((b) =>
+            b.addEventListener('click', () => move(b.dataset.id, 'down')));
+        document.querySelectorAll('.pg-area-del').forEach((b) =>
+            b.addEventListener('click', () => {
+                postForm('/plan/area/delete', { id: b.dataset.id })
+                    .then((d) => { if (d && d.ok) location.reload(); });
+            }));
+        document.querySelectorAll('.pg-area-show').forEach((b) =>
+            b.addEventListener('click', () => {
+                postForm('/plan/area/add', { name: b.dataset.name })
+                    .then((d) => { if (d && d.ok) location.reload(); });
+            }));
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();

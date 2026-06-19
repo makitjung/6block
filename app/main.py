@@ -106,6 +106,74 @@ def week_start(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
+# -- 장기플랜 기간 계산 ------------------------------------------------------
+PLAN_LEVELS = ("year", "quarter", "month", "week")
+PLAN_LEVEL_LABELS = {"year": "연", "quarter": "분기", "month": "월", "week": "주"}
+
+
+def _parse_anchor(anchor: str) -> date:
+    """anchor 쿼리(YYYY-MM-DD)를 date로. 비었거나 잘못되면 오늘(KST)."""
+    try:
+        return datetime.strptime(anchor, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return datetime.now(KST).date()
+
+
+def _plan_columns(level: str, anchor: date):
+    """(열 목록, 헤더 라벨). 열은 key·label·sub·current·week_link 를 가진다."""
+    today = datetime.now(KST).date()
+    cols: list[dict] = []
+    if level == "year":
+        y0 = anchor.year
+        for y in range(y0, y0 + 6):
+            cols.append({"key": str(y), "label": str(y), "sub": "",
+                         "current": y == today.year, "week_link": None})
+        header = f"{y0}–{y0 + 5}"
+    elif level == "quarter":
+        y = anchor.year
+        for q in range(1, 5):
+            cols.append({"key": f"{y}-Q{q}", "label": f"{q}분기",
+                         "sub": f"{(q - 1) * 3 + 1}~{q * 3}월",
+                         "current": y == today.year and (today.month - 1) // 3 + 1 == q,
+                         "week_link": None})
+        header = f"{y}년"
+    elif level == "month":
+        y = anchor.year
+        for m in range(1, 13):
+            cols.append({"key": f"{y}-{m:02d}", "label": f"{m}월", "sub": "",
+                         "current": y == today.year and m == today.month,
+                         "week_link": None})
+        header = f"{y}년"
+    else:  # week
+        y, m = anchor.year, anchor.month
+        first = date(y, m, 1)
+        nextm = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+        last = nextm - timedelta(days=1)
+        monday = first - timedelta(days=first.weekday())
+        cur_monday = today - timedelta(days=today.weekday())
+        while monday <= last:
+            key = monday.strftime("%Y-%m-%d")
+            end = monday + timedelta(days=6)
+            cols.append({"key": key, "label": f"{monday.month}/{monday.day}",
+                         "sub": f"~{end.month}/{end.day}",
+                         "current": monday == cur_monday, "week_link": key})
+            monday += timedelta(days=7)
+        header = f"{y}년 {m}월"
+    return cols, header
+
+
+def _plan_nav(level: str, anchor: date):
+    """현재 단위에서 이전/다음 기간으로 이동할 anchor(YYYY-MM-DD 문자열) 쌍."""
+    if level == "year":
+        return f"{anchor.year - 6:04d}-01-01", f"{anchor.year + 6:04d}-01-01"
+    if level in ("quarter", "month"):
+        return f"{anchor.year - 1:04d}-01-01", f"{anchor.year + 1:04d}-01-01"
+    y, m = anchor.year, anchor.month
+    prev_last = date(y, m, 1) - timedelta(days=1)          # 지난달 말일
+    next_first = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+    return prev_last.strftime("%Y-%m-01"), next_first.strftime("%Y-%m-%d")
+
+
 def _skeleton_matches_config(conn, date_str: str) -> bool:
     """DB의 그날 블록 골격이 현재 설정(DAY_BLOCKS)과 정확히 같은지."""
     have = [
@@ -787,6 +855,167 @@ async def save_week(week_start_str: str, request: Request):
                     (cid, now, sid),
                 )
     return RedirectResponse(url=f"/week/{week_start_str}", status_code=303)
+
+
+# -- 장기플랜 ---------------------------------------------------------------
+
+
+@app.get("/plan")
+def plan_view(request: Request, level: str = "year", anchor: str = ""):
+    if level not in PLAN_LEVELS:
+        level = "year"
+    a = _parse_anchor(anchor)
+    cols, header = _plan_columns(level, a)
+    keys = [c["key"] for c in cols]
+    with get_conn() as conn:
+        areas = conn.execute(
+            "SELECT id, name FROM lt_area WHERE is_active = 1 ORDER BY display_order"
+        ).fetchall()
+        all_areas = conn.execute(
+            "SELECT id, name, is_active FROM lt_area "
+            "ORDER BY is_active DESC, display_order"
+        ).fetchall()
+        grid: dict[int, dict[str, str]] = {}
+        if keys:
+            ph = ",".join("?" * len(keys))
+            for r in conn.execute(
+                f"SELECT area_id, period_key, content FROM lt_plan "
+                f"WHERE level = ? AND period_key IN ({ph})",
+                (level, *keys),
+            ):
+                grid.setdefault(r["area_id"], {})[r["period_key"]] = r["content"]
+    prev_anchor, next_anchor = _plan_nav(level, a)
+    order = list(PLAN_LEVELS)
+    i = order.index(level)
+    return templates.TemplateResponse(
+        "plan.html",
+        {
+            "request": request,
+            "level": level,
+            "level_label": PLAN_LEVEL_LABELS[level],
+            "anchor": a.strftime("%Y-%m-%d"),
+            "columns": cols,
+            "header": header,
+            "areas": [dict(x) for x in areas],
+            "all_areas": [dict(x) for x in all_areas],
+            "grid": grid,
+            "prev_anchor": prev_anchor,
+            "next_anchor": next_anchor,
+            "zoom_in": order[i + 1] if i + 1 < len(order) else None,
+            "zoom_out": order[i - 1] if i - 1 >= 0 else None,
+            "levels": PLAN_LEVELS,
+            "level_labels": PLAN_LEVEL_LABELS,
+        },
+    )
+
+
+@app.post("/plan/cell/save")
+async def plan_cell_save(request: Request):
+    """장기플랜 칸 한 개를 자동저장. 내용이 비면 행을 지워 깔끔하게 유지한다."""
+    form = await request.form()
+    level = (form.get("level") or "").strip()
+    period_key = (form.get("period_key") or "").strip()
+    try:
+        area_id = int(form.get("area_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    if level not in PLAN_LEVELS or not period_key:
+        return JSONResponse({"ok": False}, status_code=400)
+    content = (form.get("content") or "").strip()
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        if content:
+            conn.execute(
+                "INSERT INTO lt_plan (level, period_key, area_id, content, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(level, period_key, area_id) DO UPDATE SET "
+                "content = excluded.content, updated_at = excluded.updated_at",
+                (level, period_key, area_id, content, now),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM lt_plan WHERE level = ? AND period_key = ? AND area_id = ?",
+                (level, period_key, area_id),
+            )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/plan/area/add")
+async def plan_area_add(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM lt_area WHERE name = ?", (name,)).fetchone()
+        if row:  # 같은 이름이 있으면(숨김 포함) 다시 활성화
+            conn.execute("UPDATE lt_area SET is_active = 1 WHERE id = ?", (row["id"],))
+            cid = row["id"]
+        else:
+            order = conn.execute(
+                "SELECT COALESCE(MAX(display_order), -1) + 1 FROM lt_area"
+            ).fetchone()[0]
+            cur = conn.execute(
+                "INSERT INTO lt_area (name, display_order, is_active) VALUES (?, ?, 1)",
+                (name, order),
+            )
+            cid = cur.lastrowid
+    return JSONResponse({"ok": True, "id": cid, "name": name})
+
+
+@app.post("/plan/area/update")
+async def plan_area_update(request: Request):
+    form = await request.form()
+    try:
+        cid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    name = (form.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"ok": False}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("UPDATE lt_area SET name = ? WHERE id = ?", (name, cid))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/plan/area/move")
+async def plan_area_move(request: Request):
+    form = await request.form()
+    try:
+        cid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    direction = form.get("dir")
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, display_order FROM lt_area WHERE is_active = 1 "
+            "ORDER BY display_order"
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if cid not in ids:
+            return JSONResponse({"ok": False}, status_code=404)
+        i = ids.index(cid)
+        j = i - 1 if direction == "up" else i + 1
+        if 0 <= j < len(rows):
+            a, b = rows[i], rows[j]
+            conn.execute("UPDATE lt_area SET display_order = ? WHERE id = ?",
+                         (b["display_order"], a["id"]))
+            conn.execute("UPDATE lt_area SET display_order = ? WHERE id = ?",
+                         (a["display_order"], b["id"]))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/plan/area/delete")
+async def plan_area_delete(request: Request):
+    """영역을 숨김 처리(소프트 삭제)한다. 그 영역의 계획 내용은 보존된다."""
+    form = await request.form()
+    try:
+        cid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("UPDATE lt_area SET is_active = 0 WHERE id = ?", (cid,))
+    return JSONResponse({"ok": True})
 
 
 # -- 설정 -------------------------------------------------------------------

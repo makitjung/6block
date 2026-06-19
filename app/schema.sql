@@ -86,3 +86,25 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- 장기플랜 영역 행(프로젝트·투자·학습·여가·기타). 설정처럼 추가·순서변경·숨김 가능.
+CREATE TABLE IF NOT EXISTS lt_area (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    display_order INTEGER NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+-- 장기플랜 칸. 단위(연/분기/월/주) × 기간키 × 영역에 계획 텍스트를 저장한다.
+-- period_key: 연 '2026', 분기 '2026-Q2', 월 '2026-06', 주 '2026-06-15'(그 주 월요일).
+CREATE TABLE IF NOT EXISTS lt_plan (
+    id INTEGER PRIMARY KEY,
+    level TEXT NOT NULL,
+    period_key TEXT NOT NULL,
+    area_id INTEGER NOT NULL REFERENCES lt_area(id) ON DELETE CASCADE,
+    content TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(level, period_key, area_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lt_plan_lookup ON lt_plan(level, period_key);

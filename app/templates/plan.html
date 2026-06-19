@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active = 'plan' %}
+{% block title %}장기플랜 | 6block{% endblock %}
+{% block content %}
+<section class="hero">
+    <div class="hero-nav">
+        <a href="/plan?level={{ level }}&anchor={{ prev_anchor }}" class="icon-btn" aria-label="이전 기간">‹</a>
+        <a href="/plan?level={{ level }}&anchor={{ next_anchor }}" class="icon-btn" aria-label="다음 기간">›</a>
+    </div>
+    <div class="hero-date">
+        <div class="hero-date-main">{{ header }}</div>
+        <div class="hero-date-sub mono">{{ level_label }} 단위 · <a href="/plan?level={{ level }}">오늘로</a></div>
+    </div>
+    <div class="hero-actions">
+        {% if zoom_out %}<a href="/plan?level={{ zoom_out }}&anchor={{ anchor }}" class="ghost-btn" title="더 넓게 ({{ level_labels[zoom_out] }})">− 축소</a>{% endif %}
+        {% if zoom_in %}<a href="/plan?level={{ zoom_in }}&anchor={{ anchor }}" class="ghost-btn" title="더 잘게 ({{ level_labels[zoom_in] }})">+ 확대</a>{% endif %}
+    </div>
+</section>
+
+<div class="plan-bar">
+    <nav class="plan-levels" aria-label="단위 선택">
+        {% for lv in levels %}
+        <a href="/plan?level={{ lv }}&anchor={{ anchor }}" class="{% if lv == level %}is-active{% endif %}">{{ level_labels[lv] }}</a>
+        {% endfor %}
+    </nav>
+    <div class="plan-density" aria-label="화면 밀도">
+        <button type="button" id="pg-zoom-out" class="icon-btn" title="작게">−</button>
+        <button type="button" id="pg-zoom-in" class="icon-btn" title="크게">+</button>
+    </div>
+</div>
+
+<details class="card theme-fold">
+    <summary class="card-title">영역 관리 <span class="card-sub">행으로 쓸 영역을 추가·이름변경·순서변경·숨김</span></summary>
+    <div class="set-cat-list">
+        {% for ar in all_areas %}
+        <div class="set-cat-row {% if not ar.is_active %}is-hidden{% endif %}" data-id="{{ ar.id }}">
+            {% if ar.is_active %}
+            <input type="text" class="set-cat-name pg-area-name" data-id="{{ ar.id }}" value="{{ ar.name }}" autocomplete="off" aria-label="영역 이름">
+            <div class="set-cat-actions">
+                <button type="button" class="set-cat-up pg-area-up" data-id="{{ ar.id }}" title="위로">↑</button>
+                <button type="button" class="set-cat-down pg-area-down" data-id="{{ ar.id }}" title="아래로">↓</button>
+                <button type="button" class="set-cat-del pg-area-del" data-id="{{ ar.id }}" title="숨김">숨김</button>
+            </div>
+            {% else %}
+            <span class="set-cat-name muted">{{ ar.name }}</span>
+            <button type="button" class="set-cat-show pg-area-show" data-name="{{ ar.name }}" title="다시 표시">표시</button>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    <div class="set-cat-add">
+        <input type="text" id="pg-area-new" placeholder="새 영역 이름" autocomplete="off">
+        <button type="button" id="pg-area-add" class="primary-btn">추가</button>
+    </div>
+</details>
+
+{% if areas %}
+<div class="plan-scroll">
+    <div class="plan-grid" data-zoom="1" style="--cols: {{ columns | length }}">
+        <div class="pg-corner"></div>
+        {% for col in columns %}
+        <div class="pg-head {% if col.current %}is-now{% endif %}">
+            <span class="pg-head-label">
+                {{ col.label }}
+                {% if col.week_link %}<a class="pg-week" href="/week/{{ col.week_link }}" title="이 주의 주간 화면">↗</a>{% endif %}
+            </span>
+            {% if col.sub %}<span class="pg-head-sub mono">{{ col.sub }}</span>{% endif %}
+        </div>
+        {% endfor %}
+
+        {% for area in areas %}
+        <div class="pg-area">{{ area.name }}</div>
+        {% for col in columns %}
+        <div class="pg-cell {% if col.current %}is-now{% endif %}">
+            <textarea class="pg-input" rows="2"
+                      data-level="{{ level }}" data-period="{{ col.key }}" data-area="{{ area.id }}"
+                      placeholder="">{{ grid.get(area.id, {}).get(col.key, '') or '' }}</textarea>
+        </div>
+        {% endfor %}
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card ctx-empty">표시할 영역이 없습니다. 위의 영역 관리에서 추가하세요.</div>
+{% endif %}
+{% endblock %}
