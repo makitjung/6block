@@ -49,9 +49,12 @@ def status() -> dict:
         return {"enabled": False, "reason": "GCAL_WRITE_CALENDAR_ID 미설정"}
     if not GCAL_SA_KEYFILE or not os.path.exists(GCAL_SA_KEYFILE):
         return {"enabled": False, "reason": "서비스계정 키파일 없음"}
+    # events 범위로 접근 확인(calendars.get은 더 넓은 scope가 필요해 events.list로 점검).
     try:
-        cal = _svc().calendars().get(calendarId=GCAL_WRITE_CALENDAR_ID).execute()
-        return {"enabled": True, "calendar": cal.get("summary", "")}
+        _svc().events().list(
+            calendarId=GCAL_WRITE_CALENDAR_ID, maxResults=1
+        ).execute()
+        return {"enabled": True, "calendar": GCAL_WRITE_CALENDAR_ID}
     except Exception as e:
         return {"enabled": False, "reason": str(e)[:160]}
 
