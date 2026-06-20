@@ -1014,6 +1014,89 @@
                     else toast('캘린더 연동이 아직 설정되지 않았습니다');
                 });
             }));
+
+        // 유사검색: 입력 즉시 클라이언트에서 점수(부분일치·부분수열)로 필터·정렬
+        const searchInput = document.getElementById('rf-search-input');
+        if (searchInput && list) {
+            const items = Array.from(list.querySelectorAll('.rf-item'));
+            const noMatch = list.querySelector('.rf-no-match');
+            const norm = (s) => (s || '').normalize('NFC').toLowerCase();
+            const subseq = (n, h) => {
+                let i = 0;
+                for (let k = 0; k < h.length && i < n.length; k++) if (h[k] === n[i]) i++;
+                return i >= n.length;
+            };
+            const score = (toks, hay) => {
+                let sc = 0;
+                for (const t of toks) {
+                    if (hay.indexOf(t) >= 0) sc += 2;
+                    else if (subseq(t, hay)) sc += 1;
+                    else return 0;
+                }
+                return sc;
+            };
+            const apply = () => {
+                const q = norm(searchInput.value.trim());
+                const toks = q ? q.split(/\s+/).filter(Boolean) : [];
+                let shown = 0;
+                if (!toks.length) {
+                    items.forEach((el) => { el.hidden = false; list.appendChild(el); });
+                    shown = items.length;
+                } else {
+                    const scored = items.map((el, idx) => ({
+                        el, idx, s: score(toks, el.dataset.search || norm(el.textContent)),
+                    }));
+                    scored.forEach((o) => { o.el.hidden = o.s === 0; });
+                    scored.filter((o) => o.s > 0).sort((a, b) => b.s - a.s || a.idx - b.idx)
+                        .forEach((o) => { list.appendChild(o.el); shown += 1; });
+                }
+                if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
+            };
+            searchInput.addEventListener('input', apply);
+            if (searchInput.value.trim()) apply();   // 딥링크 q 반영
+        }
+    }
+
+    // 슬롯 DO 옆 '고민' 버튼으로 여는 공용 작성창(오늘 화면)
+    function bindReflectModal() {
+        const modal = document.getElementById('reflect-modal');
+        if (!modal) return;
+        const close = () => { modal.hidden = true; };
+        const open = () => {
+            modal.hidden = false;
+            setTimeout(() => document.getElementById('rm-text')?.focus(), 30);
+        };
+        document.querySelectorAll('.slot-reflect').forEach((btn) => {
+            btn.addEventListener('click', (e) => { e.preventDefault(); open(); });
+        });
+        modal.querySelector('.rm-close')?.addEventListener('click', close);
+        modal.querySelector('.rm-backdrop')?.addEventListener('click', close);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !modal.hidden) close();
+        });
+        document.getElementById('rm-save')?.addEventListener('click', () => {
+            const ta = document.getElementById('rm-text');
+            const text = (ta.value || '').trim();
+            if (!text) { toast('내용을 입력하세요'); return; }
+            const kind = (modal.querySelector('input[name="rmk"]:checked') || {}).value || '고민';
+            const tags = (document.getElementById('rm-tags').value || '').trim();
+            const review_date = document.getElementById('rm-review')?.value || '';
+            const op = {
+                id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind: kind, text: text, tags: tags, review_date: review_date }).toString(),
+            };
+            fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
+                .then((r) => r.json())
+                .then((d) => {
+                    if (!d.ok) { toast('저장 실패'); return; }
+                    toast(d.synced ? '기록 · 캘린더 반영' : '기록함');
+                    ta.value = '';
+                    document.getElementById('rm-tags').value = '';
+                    document.getElementById('rm-review').value = '';
+                    close();
+                })
+                .catch(() => { enqueue(op); toast('저장 대기 · 연결되면 전송'); close(); });
+        });
     }
 
     // ---- init ------------------------------------------------------------
@@ -1079,6 +1162,7 @@
         bindPlan();
         bindPlanAreas();
         bindReflect();
+        bindReflectModal();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

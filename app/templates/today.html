@@ -227,6 +227,7 @@
                         </select>
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    <button type="button" class="slot-reflect" data-time="{{ s.start_time }}" title="고민·감상 기록" aria-label="고민·감상 기록">고민</button>
                     <div class="hover-wrap slot-did">
                         <button type="button" class="slot-did-btn{% if s.did_text %} has-did{% endif %}" aria-label="실제로 한 일" title="실제로 한 일">한</button>
                         <div class="hover-pop did-pop">
@@ -247,4 +248,23 @@
         <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
     </div>
 </form>
+
+<!-- 슬롯 DO 옆 '고민' 버튼으로 여는 공용 작성창 -->
+<div id="reflect-modal" class="reflect-modal" hidden>
+    <div class="rm-backdrop"></div>
+    <div class="rm-box" role="dialog" aria-label="고민·감상 기록">
+        <div class="rm-head">고민 · 감상 기록 <button type="button" class="rm-close" aria-label="닫기">✕</button></div>
+        <div class="reflect-kind rm-kind">
+            <label class="rk-opt"><input type="radio" name="rmk" value="고민" checked><span>고민</span></label>
+            <label class="rk-opt"><input type="radio" name="rmk" value="감상"><span>감상</span></label>
+            <label class="rk-opt"><input type="radio" name="rmk" value="결심"><span>결심</span></label>
+        </div>
+        <textarea id="rm-text" class="rf-text" rows="3" placeholder="지금 떠오른 고민·감상·다짐"></textarea>
+        <div class="rf-row">
+            <input type="text" id="rm-tags" class="rf-tags" placeholder="태그 (선택)" autocomplete="off">
+            <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rm-review" value=""></label>
+            <button type="button" id="rm-save" class="primary-btn">기록</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
