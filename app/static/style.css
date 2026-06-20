@@ -1042,3 +1042,17 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-review { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); flex: 0 0 auto; white-space: nowrap; }
 .rf-review input { width: auto; }
 .rf-review-badge { color: var(--warm); font-size: 12px; }
+
+/* 요일 컨셉: 블록 PLAN·SEE 왼쪽, 요일 컨셉 오른쪽 (PLAN+SEE 폭 합 = 요일 폭) */
+.ps-cols { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 10px; align-items: start; }
+.ps-weekday { min-width: 0; }
+.ps-wd-text {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 8px 10px; min-height: 46px; white-space: pre-wrap; color: var(--text-soft); line-height: 1.45;
+}
+.ps-wd-text.empty { color: var(--text-subtle); font-style: italic; }
+/* 설정: 요일별 컨셉 입력 */
+.set-weekday-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.set-wd-row { display: flex; align-items: center; gap: 8px; }
+.set-wd-label { flex: 0 0 28px; font-weight: 700; color: var(--text-soft); }
+.set-wd-input { flex: 1; }
