@@ -227,7 +227,6 @@
                         </select>
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
-                    <button type="button" class="slot-reflect" data-time="{{ s.start_time }}" title="고민·감상 기록" aria-label="고민·감상 기록">고민</button>
                     <div class="hover-wrap slot-did">
                         <button type="button" class="slot-did-btn{% if s.did_text %} has-did{% endif %}" aria-label="실제로 한 일" title="실제로 한 일">한</button>
                         <div class="hover-pop did-pop">
