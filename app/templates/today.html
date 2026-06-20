@@ -198,14 +198,16 @@
                     </div>
                 </div>
                 <div class="ps-cols">
-                    <label class="field ps-plan">
-                        <span class="field-label">PLAN</span>
-                        <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
-                    </label>
-                    <label class="field ps-see">
-                        <span class="field-label">SEE</span>
-                        <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
-                    </label>
+                    <div class="ps-left">
+                        <label class="field ps-plan">
+                            <span class="field-label">PLAN</span>
+                            <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
+                        </label>
+                        <label class="field ps-see">
+                            <span class="field-label">SEE</span>
+                            <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
+                        </label>
+                    </div>
                     <div class="field ps-weekday">
                         <span class="field-label">{{ weekday_label }} 컨셉</span>
                         <div class="ps-wd-text{% if not weekday_concept %} empty{% endif %}">{{ weekday_concept or '설정 탭에서 요일 컨셉을 적어두세요' }}</div>
@@ -234,6 +236,7 @@
                             <textarea name="did_{{ s.id }}" rows="3" class="slot-did-input" placeholder="이 슬롯에 실제로 한 일">{{ s.did_text or '' }}</textarea>
                         </div>
                     </div>
+                    <button type="button" class="slot-reflect" data-time="{{ s.start_time }}" title="고민·감상 기록" aria-label="고민·감상 기록">고민</button>
                     <input type="checkbox" class="slot-check" data-slot="{{ s.id }}" {% if s.done %}checked{% endif %} title="실제로 했는지 체크" aria-label="실행 완료">
                     <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯 끝까지 집중">▶</button>
                 </div>
