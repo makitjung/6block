@@ -1,4 +1,5 @@
 # 오늘/주간 입력과 PWA 서빙, 포모도로 정적 자원을 제공하는 FastAPI 메인 애플리케이션
+import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import (
+    BACKUP_DIR,
+    CLOUD_BACKUP_DIR,
     DAY_BLOCKS,
     TONE_KEYS,
     TONES,
@@ -1110,6 +1113,29 @@ async def plan_area_delete(request: Request):
 # -- 설정 -------------------------------------------------------------------
 
 
+def _backup_status() -> list[dict]:
+    """로컬·클라우드 백업 폴더의 최신 .sql 덤프 상태(파일명·크기KB·경과일)를 돌려준다."""
+    today = datetime.now(KST).date()
+    out = []
+    for label, d in (("로컬", BACKUP_DIR), ("클라우드", CLOUD_BACKUP_DIR)):
+        info = {"label": label, "ok": False, "name": "없음", "kb": 0, "age": None}
+        try:
+            files = sorted(d.glob("blocks-*.sql"))  # 파일명이 YYYYMMDD라 사전식=시간순
+            if files:
+                latest = files[-1]
+                info["ok"] = True
+                info["name"] = latest.name
+                info["kb"] = round(latest.stat().st_size / 1024)
+                m = re.match(r"blocks-(\d{8})\.sql", latest.name)
+                if m:
+                    fd = datetime.strptime(m.group(1), "%Y%m%d").date()
+                    info["age"] = (today - fd).days
+        except Exception:
+            pass
+        out.append(info)
+    return out
+
+
 @app.get("/settings")
 def settings_view(request: Request):
     settings = get_settings()
@@ -1156,6 +1182,7 @@ def settings_view(request: Request):
             "settings": settings,
             "summary": summary,
             "weekday_concepts": weekday_concepts,
+            "backup_status": _backup_status(),
             "today": today_str(),
         },
     )
@@ -1316,19 +1343,21 @@ def settings_export(start: str, end: str):
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["날짜", "블록", "시각", "구분", "DO(계획)", "한일(실제)", "완료"])
+    w.writerow(["날짜", "블록", "블록이름", "시각", "구분", "DO(계획)", "한일(실제)",
+                "완료", "블록PLAN", "블록SEE"])
     with get_conn() as conn:
         for r in conn.execute(
-            "SELECT s.date, b.block_label, s.start_time, c.name AS cat, "
-            "       s.do_text, s.did_text, s.done "
+            "SELECT s.date, b.block_label, b.name AS bname, s.start_time, c.name AS cat, "
+            "       s.do_text, s.did_text, s.done, b.plan_text, b.see_text "
             "FROM slots s JOIN blocks b ON b.id = s.block_id "
             "LEFT JOIN categories c ON c.id = s.category_id "
             "WHERE s.date BETWEEN ? AND ? ORDER BY s.date, s.slot_index",
             (start, end),
         ):
             w.writerow([
-                r["date"], r["block_label"], r["start_time"], r["cat"] or "",
-                r["do_text"] or "", r["did_text"] or "", r["done"],
+                r["date"], r["block_label"], r["bname"] or "", r["start_time"],
+                r["cat"] or "", r["do_text"] or "", r["did_text"] or "", r["done"],
+                r["plan_text"] or "", r["see_text"] or "",
             ])
     return Response(
         "﻿" + buf.getvalue(),
@@ -1453,6 +1482,45 @@ def analytics_view(request: Request, rng: str = "7"):
             "pd_data": pd_data,
             "summary": summary,
         },
+    )
+
+
+# -- 기록 검색 -------------------------------------------------------------
+
+
+@app.get("/search")
+def search_view(request: Request, q: str = ""):
+    """슬롯 DO·한일과 블록 PLAN·SEE·이름을 날짜를 가로질러 한 번에 검색한다."""
+    q = (q or "").strip()
+    slots: list = []
+    blocks: list = []
+    if q:
+        like = f"%{q}%"
+        with get_conn() as conn:
+            slots = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT s.date, s.start_time, b.block_order, b.block_label, "
+                    "       s.do_text, s.did_text "
+                    "FROM slots s JOIN blocks b ON b.id = s.block_id "
+                    "WHERE s.do_text LIKE ? OR s.did_text LIKE ? "
+                    "ORDER BY s.date DESC, s.slot_index LIMIT 300",
+                    (like, like),
+                )
+            ]
+            blocks = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT date, block_order, block_label, name, plan_text, see_text "
+                    "FROM blocks "
+                    "WHERE plan_text LIKE ? OR see_text LIKE ? OR name LIKE ? "
+                    "ORDER BY date DESC, block_order LIMIT 300",
+                    (like, like, like),
+                )
+            ]
+    return templates.TemplateResponse(
+        "search.html",
+        {"request": request, "q": q, "slots": slots, "blocks": blocks},
     )
 
 

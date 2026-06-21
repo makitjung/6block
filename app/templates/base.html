@@ -33,7 +33,7 @@
             </a>
             <nav class="topnav">
                 <a href="/today" class="{% if active == 'today' %}is-active{% endif %}">오늘</a>
-                <a href="/week"  class="{% if active in ['week', 'analytics', 'settings'] %}is-active{% endif %}">주간</a>
+                <a href="/week"  class="{% if active in ['week', 'analytics', 'search', 'settings'] %}is-active{% endif %}">주간</a>
                 <a href="/plan"  class="{% if active == 'plan' %}is-active{% endif %}">장기</a>
                 <a href="/reflect" class="{% if active == 'reflect' %}is-active{% endif %}">고민</a>
             </nav>
@@ -48,11 +48,12 @@
         <span class="stale-text">오프라인 · 지난 날짜를 보고 있어요. 연결되면 오늘로 자동 이동합니다.</span>
         <a href="/today" class="stale-go">오늘로</a>
     </div>
-    {% if active in ['week', 'analytics', 'settings'] %}
+    {% if active in ['week', 'analytics', 'search', 'settings'] %}
     <div class="subnav-wrap">
         <nav class="subnav">
             <a href="/week" class="{% if active == 'week' %}is-active{% endif %}">주간</a>
             <a href="/analytics" class="{% if active == 'analytics' %}is-active{% endif %}">분석</a>
+            <a href="/search" class="{% if active == 'search' %}is-active{% endif %}">검색</a>
             <a href="/settings" class="{% if active == 'settings' %}is-active{% endif %}">설정</a>
         </nav>
     </div>
@@ -82,14 +83,6 @@
     </aside>
 
     <div id="toast" class="toast" aria-live="polite"></div>
-
-    <!-- iOS 자동잠금 방지 폴백: 무음 인라인 영상을 재생하면 화면이 꺼지지 않는다 -->
-    <video id="nosleep-video" muted loop playsinline webkit-playsinline preload="auto"
-           aria-hidden="true"
-           style="position:fixed;left:-2px;bottom:-2px;width:1px;height:1px;opacity:0;pointer-events:none">
-        <source src="/static/nosleep.mp4" type="video/mp4">
-        <source src="/static/nosleep.webm" type="video/webm">
-    </video>
 
     <script>window.__settings = {{ get_settings() | tojson }};</script>
     <script src="/static/app.js?v={{ asset_ver() }}"></script>

@@ -18,6 +18,9 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
+        # WAL은 읽기(60초 폴링)와 쓰기(저장)가 겹쳐도 서로 막지 않게 해 'database is locked'를
+        # 줄인다. 파일 헤더에 한 번 기록되면 계속 유지되므로 시작 시 한 번만 켠다.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         _migrate(conn)
         _seed_categories(conn)
@@ -114,6 +117,10 @@ def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # 쓰기 잠금이 잡혀 있으면 즉시 실패하지 않고 최대 5초까지 기다린다(폴링·저장 경합 대비).
+    conn.execute("PRAGMA busy_timeout = 5000")
+    # WAL과 함께 쓰면 안전하면서 더 빠르다(OS 충돌 시 마지막 트랜잭션만 손실, 손상 없음).
+    conn.execute("PRAGMA synchronous = NORMAL")
     try:
         yield conn
         conn.commit()
@@ -124,23 +131,34 @@ def get_conn():
         conn.close()
 
 
+# 설정은 거의 안 바뀌는데 페이지마다 여러 번 읽히므로 프로세스 메모리에 캐시한다.
+# 단일 uvicorn 프로세스 기준으로 일관적이며, set_setting에서 무효화한다.
+_settings_cache: dict | None = None
+
+
 def get_settings() -> dict:
-    """모든 동작 설정을 dict로 반환한다(기본값 위에 DB 저장값을 덮어쓴다)."""
+    """모든 동작 설정을 dict로 반환한다(기본값 위에 DB 저장값을 덮어쓴다). 결과는 캐시한다."""
+    global _settings_cache
+    if _settings_cache is not None:
+        return dict(_settings_cache)
     out = dict(DEFAULT_SETTINGS)
     try:
         with get_conn() as conn:
             for r in conn.execute("SELECT key, value FROM app_settings"):
                 out[r["key"]] = r["value"]
     except Exception:
-        pass
-    return out
+        return out  # 실패 시 기본값만 주고 캐시하지 않는다(다음에 재시도).
+    _settings_cache = out
+    return dict(_settings_cache)
 
 
 def set_setting(key: str, value: str):
-    """설정 한 개를 저장한다(없으면 추가, 있으면 갱신)."""
+    """설정 한 개를 저장한다(없으면 추가, 있으면 갱신). 저장 후 캐시를 비운다."""
+    global _settings_cache
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO app_settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+    _settings_cache = None

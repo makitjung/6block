@@ -126,7 +126,15 @@
         <span>활성 구분 <strong>{{ summary.active_cats }}</strong></span>
     </div>
     <div class="set-data-row">
-        <span class="set-label">수동 백업</span>
+        <span class="set-label">백업 상태</span>
+        <span class="set-backup-status">
+            {% for b in backup_status %}
+            <span class="bk{% if not b.ok %} bad{% endif %}">{{ b.label }} · {% if b.ok %}{{ b.name }} · {{ b.kb }}KB{% if b.age is not none %} · {{ b.age }}일 전{% endif %}{% else %}없음{% endif %}</span>
+            {% endfor %}
+        </span>
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">수동 백업 <em>30일 지난 덤프 자동 정리</em></span>
         <button type="button" class="ghost-btn" id="set-backup-btn">지금 .sql 덤프</button>
     </div>
     <div class="set-data-row">

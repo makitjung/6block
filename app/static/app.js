@@ -200,6 +200,7 @@
     let lastBoundaryFired = '';
     let lastUserInteract = 0;   // 마지막 사용자 스크롤·터치 시각(자동 추적 억제용)
     let lastNowSlot = '';       // 마지막으로 추적한 현재 30분 슬롯(HH:MM)
+    let lastRenderSlot = '';    // 슬롯·블록 강조를 마지막으로 다시 칠한 슬롯(매초 재계산 방지)
     let warn5Fired = false;     // 종료 5분 전 사전 알림을 한 슬롯에 한 번만 울리기 위한 플래그
     function tick() {
         const now = new Date();
@@ -229,11 +230,12 @@
                 }
             }
         }
-        render();
+        render(false);
     }
 
     // ---- render ----------------------------------------------------------
-    function render() {
+    // force가 false면(매초 tick) 슬롯이 바뀔 때만 강조를 다시 칠한다. 그 외 호출은 항상 갱신.
+    function render(force) {
         // top clock
         const tc = document.getElementById('now-clock');
         if (tc) {
@@ -272,28 +274,33 @@
             }
         }
 
-        // highlight current-time slot row
+        // 슬롯·블록 강조는 매초가 아니라 30분 슬롯이 바뀔 때(또는 상태 변화에 의한 명시적
+        // render 호출)에만 다시 칠해, 폰에서의 상시 CPU·배터리 소모를 줄인다.
         const cur = currentSlotHHMM();
-        document.querySelectorAll('.slot').forEach((row) => {
-            const t = row.dataset.start;
-            const isNow = t === cur;
-            row.classList.toggle('is-now', isNow);
-            row.classList.toggle('is-pomo-focus', isNow && state.phase === 'FOCUS' && state.slotStart === t);
-        });
-
-        // 현재 시각 블록 강조 (실제 오늘을 보는 경우에만)
-        const dayForm = document.querySelector('.day-form');
-        if (dayForm && isDeviceToday()) {
-            const d = new Date();
-            const m = d.getHours() * 60 + d.getMinutes();
-            document.querySelectorAll('.block').forEach((blk) => {
-                const s = hhmmToMin(blk.dataset.start);
-                const e = hhmmToMin(blk.dataset.end);
-                blk.classList.toggle('is-current', m >= s && m < e);
+        if (force !== false || cur !== lastRenderSlot) {
+            lastRenderSlot = cur;
+            // highlight current-time slot row
+            document.querySelectorAll('.slot').forEach((row) => {
+                const t = row.dataset.start;
+                const isNow = t === cur;
+                row.classList.toggle('is-now', isNow);
+                row.classList.toggle('is-pomo-focus', isNow && state.phase === 'FOCUS' && state.slotStart === t);
             });
-        }
 
-        applyBlockCollapse();
+            // 현재 시각 블록 강조 (실제 오늘을 보는 경우에만)
+            const dayForm = document.querySelector('.day-form');
+            if (dayForm && isDeviceToday()) {
+                const d = new Date();
+                const m = d.getHours() * 60 + d.getMinutes();
+                document.querySelectorAll('.block').forEach((blk) => {
+                    const s = hhmmToMin(blk.dataset.start);
+                    const e = hhmmToMin(blk.dataset.end);
+                    blk.classList.toggle('is-current', m >= s && m < e);
+                });
+            }
+
+            applyBlockCollapse();
+        }
         autoFollowSlot();
     }
 

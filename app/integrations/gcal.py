@@ -57,7 +57,7 @@ def _load_calendar(url: str):
         return slot["cal"]
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "6block/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=8) as resp:
             raw = resp.read()
         cal = icalendar.Calendar.from_ical(raw)
     except Exception:

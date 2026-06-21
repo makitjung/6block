@@ -18,7 +18,7 @@ _SCRIPT = (
 )
 
 
-def _run(script: str, timeout: int = 15):
+def _run(script: str, timeout: int = 8):
     """osascript 실행. (returncode, stdout) 반환, 실패 시 (None, '')."""
     try:
         r = subprocess.run(

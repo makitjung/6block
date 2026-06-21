@@ -35,7 +35,7 @@
 - **오늘 일정·할 일**: 구글 캘린더 일정과 Things3 Today 할 일을 최상단에 한 번에 모아 표시(60초 실시간 폴링).
 - **블록마다 PLAN / SEE** 입력, 블록 이름 지정.
 - **블록별 호버 버튼(일정 · 할 일)**: PLAN·SEE 위에서 그 시간대 캘린더 일정과 Things3 Today를 호버(폰은 탭)로 확인.
-- **현재 블록만 보기**: 오늘 화면은 기본적으로 지금 시각의 블록만 표시하고, `전체 블록 보기` 버튼으로 9블록 전체를 펼쳐 스크롤.
+- **현재 블록만 보기**: 오늘 화면은 기본적으로 지금 시각의 블록만 표시하고, `전체 블록 보기` 버튼으로 8블록 전체를 펼쳐 스크롤.
 - **30분 슬롯**: 슬롯마다 카테고리(색 띠), DO 입력, 실행 완료 체크박스.
 - **포모도로(슬롯 종료시각까지 집중)**: ▶를 누르면 그 30분 슬롯이 끝날 때까지 집중하고, 자동 모드는 정각·30분 경계에 다음 슬롯을 자동 시작합니다. 별도 휴식 단계는 없고 종료 시 종소리·알림으로 알립니다.
 
@@ -112,7 +112,7 @@ tail -f ~/6block-data/uvicorn.err.log
 
 ### 화면 / 점검 경로
 
-- `/today` 오늘, `/week` 주간.
+- `/today` 오늘, `/week` 주간, `/plan` 장기, `/reflect` 고민, `/analytics` 분석, `/search` 기록 검색, `/settings` 설정.
 - `/api/health` 연동 상태(구글 캘린더·Things3), `/api/now` 서버 KST 시각.
 
 ### 백업 / 복원
@@ -132,18 +132,18 @@ sqlite3 ~/6block-data/blocks.db < ~/6block-data/backups/blocks-YYYYMMDD.sql
 
 ```
 app/
-  main.py              FastAPI 엔트리(라우팅·저장·폴링 API·PWA 서빙·캐시 헤더)
+  main.py              FastAPI 엔트리(라우팅·저장·폴링/검색 API·PWA 서빙·캐시 헤더)
   config.py            블록/슬롯/카테고리/환경값 정의
-  db.py                SQLite 연결·스키마 초기화·자동 마이그레이션
+  db.py                SQLite 연결(WAL)·스키마 초기화·자동 마이그레이션·설정 캐시
   schema.sql           테이블 스키마
-  seed.py              초기 카테고리 시드
   integrations/
-    gcal.py            구글 캘린더 비공개 iCal 파싱·캐시
+    gcal.py            구글 캘린더 비공개 iCal 파싱·캐시(읽기)
+    gcal_write.py      고민·감상 → 구글 캘린더 '고민/결심' 쓰기(서비스계정)
     things.py          Things3 Today(AppleScript) 읽기
-  templates/           base / today / week (Jinja2)
+  templates/           base·today·week·plan·analytics·search·settings·reflect (Jinja2)
   static/              app.js · style.css · sw.js · manifest.json · 아이콘
 scripts/
-  backup.py            SQLite .sql 덤프 백업
+  backup.py            SQLite .sql 덤프 백업 + 30일 지난 덤프 자동 정리
 requirements.txt
 .env.example
 ```
