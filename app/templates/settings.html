@@ -80,6 +80,27 @@
                 <option value="0" {% if settings.collapse_blocks == '0' %}selected{% endif %}>끔</option>
             </select>
         </label>
+        <label class="set-field">
+            <span class="set-label">블록 장소 표시</span>
+            <select data-key="show_location">
+                <option value="1" {% if settings.show_location == '1' %}selected{% endif %}>켬</option>
+                <option value="0" {% if settings.show_location == '0' %}selected{% endif %}>끔</option>
+            </select>
+        </label>
+        <label class="set-field">
+            <span class="set-label">슬롯 '한일' 버튼 표시</span>
+            <select data-key="show_did">
+                <option value="1" {% if settings.show_did == '1' %}selected{% endif %}>켬</option>
+                <option value="0" {% if settings.show_did == '0' %}selected{% endif %}>끔</option>
+            </select>
+        </label>
+        <label class="set-field">
+            <span class="set-label">슬롯 '고민' 버튼 표시</span>
+            <select data-key="show_reflect">
+                <option value="1" {% if settings.show_reflect == '1' %}selected{% endif %}>켬</option>
+                <option value="0" {% if settings.show_reflect == '0' %}selected{% endif %}>끔</option>
+            </select>
+        </label>
     </div>
 </section>
 

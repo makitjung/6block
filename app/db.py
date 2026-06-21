@@ -79,6 +79,9 @@ def _migrate(conn: sqlite3.Connection):
     # 블록 구분(카테고리). NULL이면 미지정.
     if "category_id" not in block_cols:
         conn.execute("ALTER TABLE blocks ADD COLUMN category_id INTEGER")
+    # 블록 장소(홈·회사·독서실·카페·기타). NULL이면 미지정.
+    if "location" not in block_cols:
+        conn.execute("ALTER TABLE blocks ADD COLUMN location TEXT")
     # 카테고리 색 톤 컬럼(설정에서 팔레트 색을 고른다). 없으면 추가하고 기존 행을 기본 톤으로 채운다.
     cat_cols = {r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()}
     if "tone" not in cat_cols:

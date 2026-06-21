@@ -283,7 +283,7 @@
 
         // 현재 시각 블록 강조 (실제 오늘을 보는 경우에만)
         const dayForm = document.querySelector('.day-form');
-        if (dayForm && dayForm.dataset.today === '1') {
+        if (dayForm && isDeviceToday()) {
             const d = new Date();
             const m = d.getHours() * 60 + d.getMinutes();
             document.querySelectorAll('.block').forEach((blk) => {
@@ -413,6 +413,13 @@
     function isStaleToday() {
         const f = document.querySelector('.day-form');
         return !!(f && f.dataset.today === '1' && f.dataset.date !== localDateStr());
+    }
+    // 현재 보고 있는 날짜 화면이 '기기 시계 기준 오늘'인가.
+    // 서버가 구운 data-today 대신 기기 날짜와 화면 날짜(data-date)를 비교하므로,
+    // 인터넷이 없어 캐시 페이지를 보더라도 그 페이지가 오늘이면 현재 블록·슬롯에 포커싱된다.
+    function isDeviceToday() {
+        const f = document.querySelector('.day-form');
+        return !!(f && f.dataset.date === localDateStr());
     }
     function checkStale() {
         const banner = document.getElementById('stale-banner');
@@ -606,7 +613,7 @@
             target = document.querySelector(hash);
         } else {
             const dayForm = document.querySelector('.day-form');
-            if (dayForm && dayForm.dataset.today === '1') {
+            if (dayForm && isDeviceToday()) {
                 // 현재 30분 슬롯을 우선 포커스, 없으면 현재 코어 블록
                 const slot = document.querySelector('.slot.is-now');
                 if (slot) { target = slot; isSlot = true; }
@@ -626,7 +633,7 @@
     // 현재 30분 슬롯이 바뀌면 화면을 부드럽게 따라 이동(사용자 조작 중에는 억제)
     function autoFollowSlot() {
         const dayForm = document.querySelector('.day-form');
-        if (!dayForm || dayForm.dataset.today !== '1') return;
+        if (!dayForm || !isDeviceToday()) return;
         const cur = currentSlotHHMM();
         if (cur === lastNowSlot) return;
         if (lastNowSlot === '') { lastNowSlot = cur; return; }   // 초기 1회는 initialScroll이 담당
@@ -639,7 +646,7 @@
     // 화면 회전·리사이즈 후 현재 슬롯을 다시 중앙에 맞춤(가로 전환 등에서 어긋남 방지)
     function refocusCurrent() {
         const dayForm = document.querySelector('.day-form');
-        if (!dayForm || dayForm.dataset.today !== '1') return;
+        if (!dayForm || !isDeviceToday()) return;
         const target = document.querySelector('.slot.is-now') || document.querySelector('.block.is-current');
         if (target) target.scrollIntoView({ behavior: 'auto', block: 'center' });
         lastNowSlot = currentSlotHHMM();
@@ -768,7 +775,7 @@
         const stack = document.querySelector('.block-stack');
         const toggle = document.getElementById('blocks-toggle');
         const dayForm = document.querySelector('.day-form');
-        if (stack && dayForm && dayForm.dataset.today === '1' && settingOn('collapse_blocks', true)) {
+        if (stack && dayForm && isDeviceToday() && settingOn('collapse_blocks', true)) {
             stack.classList.add('collapsed');  // 기본값(설정): 현재 블록만
         }
         if (stack && toggle) {
@@ -972,11 +979,59 @@
             }));
     }
 
+    // 고민·감상 입력창의 가벼운 목록 편집(마크다운 느낌). 외부 라이브러리 없이 동작한다.
+    //  - Tab: 들여쓰기(공백 2칸) 삽입, Shift+Tab: 내어쓰기
+    //  - Enter: '1. ' / '- ' / '* ' 로 시작한 줄이면 다음 줄을 자동 번호·불릿으로 잇고,
+    //           내용이 빈 항목에서 Enter면 그 표시를 지우고 목록을 끝낸다.
+    function bindListEditor(ta) {
+        if (!ta || ta.dataset.listed) return;
+        ta.dataset.listed = '1';
+        const INDENT = '  ';
+        const setCaret = (pos) => { ta.selectionStart = ta.selectionEnd = pos; };
+        ta.addEventListener('keydown', (e) => {
+            const s = ta.selectionStart, en = ta.selectionEnd;
+            const ls = ta.value.lastIndexOf('\n', s - 1) + 1;   // 현재 줄 시작 위치
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    const cut = ta.value.slice(ls).match(/^ {1,2}/);
+                    if (cut) {
+                        const n = cut[0].length;
+                        ta.value = ta.value.slice(0, ls) + ta.value.slice(ls + n);
+                        setCaret(Math.max(ls, s - n));
+                    }
+                } else {
+                    ta.value = ta.value.slice(0, s) + INDENT + ta.value.slice(en);
+                    setCaret(s + INDENT.length);
+                }
+                return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                const line = ta.value.slice(ls, s);
+                const mo = line.match(/^(\s*)(\d+)\.\s+(.*)$/);   // 순서 목록 1. 2. 3.
+                const mu = line.match(/^(\s*)([-*])\s+(.*)$/);    // 불릿 목록 - *
+                const m = mo || mu;
+                if (!m) return;
+                e.preventDefault();
+                if (m[3].trim() === '') {                          // 빈 항목 → 목록 종료
+                    ta.value = ta.value.slice(0, ls) + ta.value.slice(s);
+                    setCaret(ls);
+                    return;
+                }
+                const marker = mo ? (parseInt(mo[2], 10) + 1) + '. ' : mu[2] + ' ';
+                const ins = '\n' + m[1] + marker;
+                ta.value = ta.value.slice(0, s) + ins + ta.value.slice(en);
+                setCaret(s + ins.length);
+            }
+        });
+    }
+
     // ---- 고민·감상 (/reflect) --------------------------------------------
     function bindReflect() {
         const addBtn = document.getElementById('rf-add');
         const list = document.getElementById('reflect-list');
         if (!addBtn && !list) return;
+        bindListEditor(document.getElementById('rf-text'));
         addBtn?.addEventListener('click', () => {
             const ta = document.getElementById('rf-text');
             const text = (ta.value || '').trim();
@@ -1061,6 +1116,7 @@
     function bindReflectModal() {
         const modal = document.getElementById('reflect-modal');
         if (!modal) return;
+        bindListEditor(document.getElementById('rm-text'));
         const close = () => { modal.hidden = true; };
         const open = () => {
             modal.hidden = false;

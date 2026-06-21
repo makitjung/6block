@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     see_text TEXT,
     name TEXT,
     category_id INTEGER REFERENCES categories(id),
+    location TEXT,
     updated_at TEXT NOT NULL,
     UNIQUE(date, block_order)
 );

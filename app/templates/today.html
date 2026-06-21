@@ -2,6 +2,7 @@
 {% set active = 'today' %}
 {% block title %}{{ date_str }} | 6block{% endblock %}
 {% block content %}
+{% set st = get_settings() %}
 <form method="post" action="/save/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}" data-date="{{ date_str }}">
     <section class="hero">
         <div class="hero-nav">
@@ -144,6 +145,14 @@
                     {% endif %}
                 </div>
                 <div class="block-meta">
+                    {% if st.show_location != '0' %}
+                    <select name="bloc_{{ b.id }}" class="block-loc" aria-label="장소">
+                        <option value="">장소</option>
+                        {% for loc in ['홈', '회사', '독서실', '카페', '기타'] %}
+                        <option value="{{ loc }}" {% if b.location == loc %}selected{% endif %}>{{ loc }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
                     <span class="block-time mono">{{ b.start_time }} – {{ b.end_time }}</span>
                     <span class="now-badge">지금</span>
                 </div>
@@ -229,6 +238,8 @@
                         </select>
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    <div class="slot-actions">
+                    {% if st.show_did != '0' %}
                     <div class="hover-wrap slot-did">
                         <button type="button" class="slot-did-btn{% if s.did_text %} has-did{% endif %}" aria-label="실제로 한 일" title="실제로 한 일">한</button>
                         <div class="hover-pop did-pop">
@@ -236,7 +247,11 @@
                             <textarea name="did_{{ s.id }}" rows="3" class="slot-did-input" placeholder="이 슬롯에 실제로 한 일">{{ s.did_text or '' }}</textarea>
                         </div>
                     </div>
+                    {% endif %}
+                    {% if st.show_reflect != '0' %}
                     <button type="button" class="slot-reflect" data-time="{{ s.start_time }}" title="고민·감상 기록" aria-label="고민·감상 기록">고민</button>
+                    {% endif %}
+                    </div>
                     <input type="checkbox" class="slot-check" data-slot="{{ s.id }}" {% if s.done %}checked{% endif %} title="실제로 했는지 체크" aria-label="실행 완료">
                     <button type="button" class="slot-play" data-start="{{ s.start_time }}" title="이 슬롯 끝까지 집중">▶</button>
                 </div>

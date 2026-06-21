@@ -544,6 +544,11 @@ async def save_day(date_str: str, request: Request):
                     "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
                     (override, now, sid),
                 )
+            elif prefix == "bloc":
+                conn.execute(
+                    "UPDATE blocks SET location = ?, updated_at = ? WHERE id = ?",
+                    (val or None, now, sid),
+                )
         conn.execute(
             """
             INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow)
@@ -1257,7 +1262,8 @@ async def settings_cat_delete(request: Request):
 @app.post("/settings/save")
 async def settings_save(request: Request):
     form = await request.form()
-    allowed = {"start_view", "default_theme", "pomo_auto", "pomo_warn5", "collapse_blocks"}
+    allowed = {"start_view", "default_theme", "pomo_auto", "pomo_warn5", "collapse_blocks",
+               "show_location", "show_did", "show_reflect"}
     for key in allowed:
         if form.get(key) is not None:
             set_setting(key, form.get(key))

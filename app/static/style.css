@@ -295,7 +295,9 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .ctx-extra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-top: 8px; }
 
 /* 최상단 아젠다(캘린더+Things3, 줄바꿈 1회) */
-.agenda { display: flex; flex-direction: column; gap: 1px; }
+/* 오늘 일정·할 일: 2열로 나눠 목록이 너무 길어지지 않게 한다(빈 안내는 두 열 폭). */
+.agenda { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 14px; align-content: start; }
+.agenda .ctx-empty { grid-column: 1 / -1; }
 .agenda-row {
     display: flex; align-items: baseline; gap: 8px;
     padding: 4px 8px; border-radius: var(--r-sm); font-size: 13px;
@@ -479,7 +481,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .slots { display: flex; flex-direction: column; gap: 3px; }
 .slot {
     --row-accent: transparent;
-    display: grid; grid-template-columns: 52px 104px 1fr 26px auto 22px 28px;
+    display: grid; grid-template-columns: 52px 104px 1fr auto 22px 28px;
     align-items: center; gap: 10px;
     padding: 5px 10px 5px 12px;
     background: var(--surface-2); border: 1px solid var(--border);
@@ -524,6 +526,9 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .slot.is-done { background: var(--success-soft); }
 .slot.is-done .slot-do { text-decoration: line-through; color: var(--text-subtle); }
 .slot.is-done::before { background: var(--success); }
+
+/* 슬롯 '한일'·'고민' 버튼을 한 셀로 묶어 설정에서 꺼도 그리드 정렬이 유지되게 한다 */
+.slot-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 
 /* 슬롯 '실제로 한 일' 토글 버튼 + 탭하면 옆에 열리는 패널 */
 .slot-did { display: flex; align-items: center; justify-content: center; }
@@ -678,6 +683,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 구분이 지정되면 그 색으로 테두리를 칠해 색 칩처럼 보이게 한다(글자색=톤색). */
 .cat-select.has-cat { border-color: currentColor; font-weight: 700; }
 
+/* 오늘 블록 헤더 장소 콤보박스(홈·회사·독서실·카페·기타) */
+.block-loc {
+    width: auto; min-width: 52px; font-size: 12px; padding: 3px 8px;
+    border: 1px solid var(--border); border-radius: var(--r-pill);
+    color: var(--text-soft); background: var(--surface);
+}
+
 /* === Sticky save === */
 .actions-sticky { position: fixed; bottom: 16px; right: 16px; z-index: 30; display: flex; gap: 10px; }
 .save-btn { box-shadow: var(--sh-3); }
@@ -757,7 +769,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .now-clock { display: none; }
     .plan-see { grid-template-columns: 1fr; }
     .theme-grid { grid-template-columns: 1fr; }
-    .slot { grid-template-columns: 42px 80px 1fr 24px 20px 26px; gap: 6px; padding: 5px 8px 5px 10px; }
+    .slot { grid-template-columns: 42px 80px 1fr auto 20px 26px; gap: 6px; padding: 5px 8px 5px 10px; }
     .cat-bar-row { grid-template-columns: 80px 1fr 90px; gap: 10px; }
     .hero-date-main { font-size: 20px; }
     .pomo { bottom: 72px; }
