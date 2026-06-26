@@ -391,6 +391,19 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
 .inbox-block-chip:hover { border-color: var(--accent); background: var(--surface); color: var(--accent); }
+/* 주간 미처리 수집함: 인라인 수정(입력칸) + 삭제 */
+.wk-inbox-list { display: flex; flex-direction: column; gap: 4px; }
+.wk-inbox-item {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--r-sm); padding: 4px 6px 4px 10px;
+}
+.wk-inbox-text {
+    flex: 1; min-width: 0; border: 1px solid transparent; background: transparent;
+    font-size: 13px; padding: 4px 6px; border-radius: var(--r-sm); color: var(--text);
+}
+.wk-inbox-text:hover { border-color: var(--border); }
+.wk-inbox-text:focus { border-color: var(--accent); background: var(--surface); outline: none; }
 
 /* === KPI === */
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }

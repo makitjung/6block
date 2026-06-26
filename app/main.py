@@ -480,7 +480,7 @@ def _day_view(request: Request, date_str: str):
     )
 
 
-@app.post("/save/{date_str}")
+@app.post("/save/day/{date_str}")
 async def save_day(date_str: str, request: Request):
     form = await request.form()
     now = datetime.now(KST).isoformat(timespec="seconds")
@@ -590,9 +590,9 @@ async def save_field(request: Request):
     raw_id = form.get("id")
     value = form.get("value") or ""
     now = datetime.now(KST).isoformat(timespec="seconds")
-    # block/slot 은 숫자 id, meta 는 날짜(문자열) id 를 쓴다.
+    # block/slot 은 숫자 id, meta(날짜)·wmeta(주 시작일)·theme(주 시작일) 는 문자열 id 를 쓴다.
     rid = None
-    if entity != "meta":
+    if entity not in ("meta", "wmeta", "theme"):
         try:
             rid = int(raw_id)
         except (TypeError, ValueError):
@@ -683,6 +683,30 @@ async def save_field(request: Request):
                 )
             else:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+        elif entity == "wmeta":
+            # id 자리에 주 시작일(week_start). field: weekly_goal|appointments|vow|memo
+            ws = form.get("id") or ""
+            if field not in ("weekly_goal", "appointments", "vow", "memo"):
+                return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+            conn.execute(
+                "INSERT INTO weekly_meta (week_start, %s) VALUES (?, ?) "
+                "ON CONFLICT(week_start) DO UPDATE SET %s = excluded.%s"
+                % (field, field, field),
+                (ws, value),
+            )
+        elif entity == "theme":
+            # id=week_start, label=블록 라벨(B1..B6), value=테마 텍스트
+            ws = form.get("id") or ""
+            label = (form.get("label") or "").strip()
+            if not label:
+                return JSONResponse({"ok": False, "error": "bad-label"}, status_code=400)
+            conn.execute(
+                "INSERT INTO weekly_block_themes (week_start, block_label, theme_text, "
+                "updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(week_start, block_label) DO UPDATE SET "
+                "theme_text = excluded.theme_text, updated_at = excluded.updated_at",
+                (ws, label, value, now),
+            )
         else:
             return JSONResponse({"ok": False, "error": "bad-entity"}, status_code=400)
     return JSONResponse({"ok": True})
@@ -718,6 +742,22 @@ def inbox_delete(item_id: int):
     """수집함 항목을 완전히 삭제한다(정리 ✓와 달리 DB에서 지움)."""
     with get_conn() as conn:
         conn.execute("DELETE FROM inbox WHERE id = ?", (item_id,))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/inbox/update")
+async def inbox_update(request: Request):
+    """수집함 항목 텍스트를 수정한다(오늘·주간 공용. 같은 inbox 테이블)."""
+    form = await request.form()
+    try:
+        item_id = int(form.get("item_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    text = (form.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("UPDATE inbox SET text = ? WHERE id = ?", (text, item_id))
     return JSONResponse({"ok": True})
 
 

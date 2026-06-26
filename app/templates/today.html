@@ -3,7 +3,7 @@
 {% block title %}{{ date_str }} | 6block{% endblock %}
 {% block content %}
 {% set st = get_settings() %}
-<form method="post" action="/save/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}" data-date="{{ date_str }}">
+<form method="post" action="/save/day/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}" data-date="{{ date_str }}">
     <section class="hero">
         <div class="hero-nav">
             <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날">‹</a>

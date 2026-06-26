@@ -510,10 +510,22 @@
             });
         }
 
-        if (weekForm) {
-            // 주간 메타는 /week/save/{week} 전체 폼 저장에 맡기되, 테마 이름·블록 이름은
-            // 자동저장 엔드포인트가 없으므로 여기서는 폼 저장 버튼에 의존한다.
-            // (주간 메타 자동저장은 별도 엔드포인트가 필요해 범위 밖 — 저장 버튼 유지)
+        if (weekForm && weekStart) {
+            const ws = weekStart;
+            each('textarea[name], input[name]', (el, name) => {
+                let m;
+                if (['weekly_goal', 'appointments', 'vow', 'memo'].indexOf(name) >= 0)
+                    bindAutoSave(el, 'wmeta', ws, name);
+                else if ((m = name.match(/^theme_(.+)$/)))
+                    bindAutoSave(el, 'theme', ws, 'theme', { extra: { label: m[1] } });
+                else if ((m = name.match(/^bname_(\d+)$/)))
+                    bindAutoSave(el, 'block', m[1], 'bname');
+            });
+            each('select[name]', (el, name) => {
+                let m;
+                if ((m = name.match(/^bcat_(\d+)$/)))
+                    el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
+            });
         }
     }
 
@@ -1040,7 +1052,8 @@
     }
 
     // 모든 텍스트 입력창의 가벼운 목록 편집(애플노트/마크다운 느낌). 외부 라이브러리 없이 동작한다.
-    //  - Tab: 들여쓰기(공백 2칸) 삽입, Shift+Tab: 내어쓰기
+    //  - Tab: 목록 줄이면 한 단계 들여써 하위레벨(순서목록은 1.부터) 시작, 아니면 공백 2칸 들여쓰기.
+    //  - Shift+Tab: 목록 줄이면 한 단계 내어쓰기(번호 재계산), 아니면 공백 내어쓰기.
     //  - Enter: '1. ' / '- ' / '* ' 로 시작한 줄이면 다음 줄을 같은 들여쓰기로 자동 번호·불릿 잇고,
     //           내용이 빈 항목에서 Enter면 그 표시를 지우고 목록을 끝낸다(애플노트 동작).
     //  한글 IME 조합 Enter(isComposing / 229)는 무시한다.
@@ -1049,11 +1062,51 @@
         ta.dataset.listed = '1';
         const INDENT = '  ';
         const setCaret = (pos) => { ta.selectionStart = ta.selectionEnd = pos; };
+        // 줄을 목록 항목으로 해석(순서 1. / 불릿 - *). 들여쓰기·종류·내용을 나눈다.
+        const listMatch = (line) => {
+            const mo = line.match(/^(\s*)(\d+)\.(\s+)(.*)$/);
+            if (mo) return { indent: mo[1], kind: 'o', rest: mo[4] };
+            const mu = line.match(/^(\s*)([-*])(\s+)(.*)$/);
+            if (mu) return { indent: mu[1], kind: 'u', bullet: mu[2], rest: mu[4] };
+            return null;
+        };
+        // 주어진 들여쓰기 수준의 순서목록 번호: 같은 들여쓰기의 바로 위 형제 +1, 없으면 1.
+        const orderedNumberAt = (value, lineStartPos, indentLen) => {
+            const lines = value.slice(0, lineStartPos).split('\n');
+            for (let i = lines.length - 1; i >= 0; i--) {
+                if (lines[i].trim() === '') continue;
+                const m = lines[i].match(/^(\s*)(\d+)\.\s+/);
+                const ind = (lines[i].match(/^\s*/) || [''])[0].length;
+                if (m && ind === indentLen) return parseInt(m[2], 10) + 1;
+                if (ind < indentLen) break;   // 상위(부모) 줄을 만나면 하위목록은 1부터
+            }
+            return 1;
+        };
         ta.addEventListener('keydown', (e) => {
             const s = ta.selectionStart, en = ta.selectionEnd;
             const ls = ta.value.lastIndexOf('\n', s - 1) + 1;   // 현재 줄 시작 위치
             if (e.key === 'Tab') {
                 e.preventDefault();
+                const le = ta.value.indexOf('\n', s);
+                const lineEnd = le === -1 ? ta.value.length : le;
+                const line = ta.value.slice(ls, lineEnd);
+                const lm = listMatch(line);
+                // 목록 줄: Tab은 하위레벨 시작(순서목록 1.부터), Shift+Tab은 한 단계 위로(번호 재계산)
+                if (lm && !(e.shiftKey && lm.indent.length === 0)) {
+                    const newIndent = e.shiftKey
+                        ? lm.indent.slice(0, Math.max(0, lm.indent.length - INDENT.length))
+                        : lm.indent + INDENT;
+                    const marker = lm.kind === 'o'
+                        ? orderedNumberAt(ta.value, ls, newIndent.length) + '. '
+                        : lm.bullet + ' ';
+                    const newLine = newIndent + marker + lm.rest;
+                    const caretInRest = Math.max(0, s - (ls + line.length - lm.rest.length));
+                    ta.value = ta.value.slice(0, ls) + newLine + ta.value.slice(lineEnd);
+                    setCaret(ls + newLine.length - lm.rest.length + caretInRest);
+                    ta.dispatchEvent(new Event('input', { bubbles: true }));
+                    return;
+                }
+                // 목록이 아니면 기존 동작: 공백 들여쓰기 / 내어쓰기
                 if (e.shiftKey) {
                     const cut = ta.value.slice(ls).match(/^ {1,2}/);
                     if (cut) {
@@ -1131,9 +1184,10 @@
             if (timer) { clearTimeout(timer); timer = null; }
             let value = el.value;
             // 3칸 묶음(goal/dplan)은 그룹의 나머지 값도 같이 보내 서버에서 합치게 한다.
-            let extra = null;
+            // 정적 extra(예: 주간 테마의 label)는 항상 같이 보낸다.
+            let extra = opts.extra ? Object.assign({}, opts.extra) : null;
             if (opts.groupPrefix) {
-                extra = {};
+                extra = extra || {};
                 document.querySelectorAll('[data-as-prefix="' + opts.groupPrefix + '"]').forEach((g) => {
                     extra[g.dataset.asIdx] = g.value;
                 });
@@ -1278,6 +1332,89 @@
         });
     }
 
+    // ---- 주간 미처리 수집함 (오늘 빠른수집함과 같은 inbox 테이블, 추가·수정·삭제) ----
+    function bindWeekInbox() {
+        const list = document.getElementById('wk-inbox-list');
+        const input = document.getElementById('wk-inbox-input');
+        const addBtn = document.getElementById('wk-inbox-add');
+        if (!list && !input) return;
+        const countEl = document.getElementById('wk-inbox-count');
+        const empty = document.getElementById('wk-inbox-empty');
+        const bump = (d) => { if (countEl) countEl.textContent = Math.max(0, (parseInt(countEl.textContent, 10) || 0) + d); };
+        const refreshEmpty = () => { if (empty) empty.hidden = !!(list && list.querySelector('.wk-inbox-item')); };
+        const bindEdit = (ti) => {
+            let last = ti.value;
+            const save = () => {
+                const v = (ti.value || '').trim();
+                const id = ti.dataset.id;
+                if (String(id).indexOf('tmp-') === 0) return;   // 아직 미동기화 항목
+                if (v === last || !v) return;
+                last = v;
+                sendOrQueue(
+                    { id: genId(), kind: 'inbox-edit', url: '/inbox/update', headers: FORM_HEADERS,
+                      body: new URLSearchParams({ item_id: id, text: v }).toString(),
+                      dedupe: 'inbox-edit:' + id },
+                    () => autosaveToast(),
+                    () => toast('저장 대기 · 자동 재시도'),
+                );
+            };
+            ti.addEventListener('change', save);
+            ti.addEventListener('blur', save);
+            ti.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); ti.blur(); }
+            });
+        };
+        const remove = (row) => {
+            const id = row.dataset.id;
+            row.remove(); bump(-1); refreshEmpty();
+            if (String(id).indexOf('tmp-') === 0) { cancelQueued(row.dataset.op); return; }
+            sendOrQueue(
+                { id: genId(), kind: 'inbox-op', url: '/inbox/delete/' + id, headers: {}, body: '' },
+                null, () => toast('전송 대기 · 자동 재시도'),
+            );
+        };
+        const addRow = (id, text, opId) => {
+            const row = el('div', 'wk-inbox-item');
+            row.dataset.id = id; if (opId) row.dataset.op = opId;
+            const ti = document.createElement('input');
+            ti.type = 'text'; ti.className = 'wk-inbox-text'; ti.value = text; ti.dataset.id = id;
+            bindEdit(ti);
+            const del = document.createElement('button');
+            del.type = 'button'; del.className = 'inbox-del wk-inbox-del'; del.title = '삭제'; del.textContent = '✕';
+            del.addEventListener('click', () => remove(row));
+            row.appendChild(ti); row.appendChild(del);
+            list.insertBefore(row, list.firstChild);
+            refreshEmpty();
+        };
+        let inflight = false;
+        const add = () => {
+            if (!input || inflight) return;
+            const text = input.value.trim();
+            if (!text) return;
+            inflight = true;
+            const op = { id: genId(), kind: 'inbox-add', url: '/inbox/add', headers: FORM_HEADERS,
+                         body: new URLSearchParams({ text: text }).toString() };
+            fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
+                .then((r) => r.json())
+                .then((d) => {
+                    if (!d.ok) return;
+                    addRow(d.id, d.text); input.value = ''; bump(1); toast('수집함에 추가');
+                })
+                .catch(() => {
+                    enqueue(op); addRow('tmp-' + op.id, text, op.id);
+                    input.value = ''; bump(1); toast('수집함 대기 · 연결되면 전송');
+                })
+                .finally(() => { inflight = false; });
+        };
+        list?.querySelectorAll('.wk-inbox-text').forEach(bindEdit);
+        list?.querySelectorAll('.wk-inbox-del').forEach((b) =>
+            b.addEventListener('click', () => remove(b.closest('.wk-inbox-item'))));
+        addBtn?.addEventListener('click', add);
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); add(); }
+        });
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();
@@ -1345,6 +1482,7 @@
         bindPlanAreas();
         bindReflect();
         bindReflectModal();
+        bindWeekInbox();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {
