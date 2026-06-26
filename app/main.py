@@ -573,6 +573,118 @@ async def save_day(date_str: str, request: Request):
     return RedirectResponse(url=f"/day/{date_str}", status_code=303)
 
 
+# -- 필드별 자동저장 (blur/debounce 한 칸 즉시 저장) -------------------------
+# 장기플랜 /plan/cell/save 와 같은 단일 필드 저장 패턴. 전체 폼 저장(저장 버튼)과
+# 병행해 쓴다. 클라이언트는 한 필드가 바뀌면 곧장 이 엔드포인트로 보낸다.
+
+_VALID_BLOCK_FIELDS = {"plan_text", "see_text", "bcat", "bname", "bloc"}
+_VALID_SLOT_FIELDS = {"do_text", "did_text", "cat"}
+
+
+@app.post("/save/field")
+async def save_field(request: Request):
+    """한 필드만 즉시 저장한다. entity=block|slot|meta, id, field, value 를 받는다."""
+    form = await request.form()
+    entity = (form.get("entity") or "").strip()
+    field = (form.get("field") or "").strip()
+    raw_id = form.get("id")
+    value = form.get("value") or ""
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    try:
+        rid = int(raw_id)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+
+    with get_conn() as conn:
+        if entity == "block":
+            if field not in _VALID_BLOCK_FIELDS:
+                return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+            row = conn.execute(
+                "SELECT date, block_label FROM blocks WHERE id = ?", (rid,)
+            ).fetchone()
+            if not row:
+                return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+            if field == "bname":
+                # 일간 덮어쓰기 판정을 위해 주간 이름과 비교(None이면 상속)
+                wk = week_start(
+                    datetime.strptime(row["date"], "%Y-%m-%d").date()
+                ).strftime("%Y-%m-%d")
+                wrow = conn.execute(
+                    "SELECT theme_text FROM weekly_block_themes "
+                    "WHERE week_start = ? AND block_label = ?",
+                    (wk, row["block_label"]),
+                ).fetchone()
+                override = _name_override(value, (wrow["theme_text"] if wrow else ""))
+                conn.execute(
+                    "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
+                    (override, now, rid),
+                )
+            elif field == "bcat":
+                cid = int(value) if value else None
+                conn.execute(
+                    "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
+                    (cid, now, rid),
+                )
+            else:  # plan_text | see_text | bloc
+                col = "location" if field == "bloc" else field
+                conn.execute(
+                    f"UPDATE blocks SET {col} = ?, updated_at = ? WHERE id = ?",
+                    ((value or None) if field == "bloc" else value, now, rid),
+                )
+        elif entity == "slot":
+            if field not in _VALID_SLOT_FIELDS:
+                return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+            if field == "cat":
+                cid = int(value) if value else None
+                conn.execute(
+                    "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
+                    (cid, now, rid),
+                )
+            else:  # do_text | did_text
+                conn.execute(
+                    f"UPDATE slots SET {field} = ?, updated_at = ? WHERE id = ?",
+                    (value, now, rid),
+                )
+        elif entity == "meta":
+            # id 자리에 날짜(문자열)가 온다. field: goal1~3|dplan1~3|memo|vow
+            date_str = form.get("id") or ""
+            if field in ("memo", "vow"):
+                conn.execute(
+                    "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
+                    "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
+                    % (field, field, field),
+                    (date_str, value),
+                )
+            elif field.startswith("goal") or field.startswith("dplan"):
+                # 목표/계획 3칸: 같은 prefix의 3값을 읽어 들여, 바뀐 한 칸만 갱신한 뒤
+                # 줄바꿈 합친 전체를 다시 저장한다(클라이언트가 나머지 두 값을 같이 보냄).
+                prefix = "goal" if field.startswith("goal") else "dplan"
+                vals = [form.get(f"{prefix}{i}", "") or "" for i in (1, 2, 3)]
+                # 폼에서 안 온 칸이 있을 수 있으니 기존 값으로 보충
+                col = "today_goal" if prefix == "goal" else "daily_plan"
+                existing = conn.execute(
+                    f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
+                ).fetchone()
+                parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
+                parts = (parts + ["", "", ""])[:3]
+                for i in range(3):
+                    if f"{prefix}{i+1}" in form:
+                        parts[i] = form.get(f"{prefix}{i+1}", "") or ""
+                joined = "\n".join(p.strip() for p in parts)
+                joined = joined if joined.strip() else ""
+                conn.execute(
+                    "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
+                    "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
+                    % (col, col, col),
+                    (date_str, joined),
+                )
+            else:
+                return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+        else:
+            return JSONResponse({"ok": False, "error": "bad-entity"}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
 # -- GTD 빠른 수집함 --------------------------------------------------------
 
 

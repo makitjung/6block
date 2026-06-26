@@ -481,11 +481,13 @@
     }
 
     // ---- inbox (GTD 빠른 수집) -------------------------------------------
+    let inboxInflight = false;   // IME 가드를 못 잡은 환경에서도 2회 실행을 막는 중복 가드
     function inboxAdd() {
         const input = document.getElementById('inbox-input');
-        if (!input) return;
+        if (!input || inboxInflight) return;
         const text = input.value.trim();
         if (!text) return;
+        inboxInflight = true;
         const op = {
             id: genId(), kind: 'inbox-add', url: '/inbox/add',
             headers: FORM_HEADERS, body: new URLSearchParams({ text }).toString(),
@@ -497,6 +499,7 @@
             input.value = '';
             bumpInboxCount(1);
             toast('수집함 대기 · 연결되면 전송');
+            inboxInflight = false;
         };
         fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
             .then((r) => r.json())
@@ -507,7 +510,8 @@
                 bumpInboxCount(1);
                 toast('수집함에 추가');
             })
-            .catch(queueIt);
+            .catch(queueIt)
+            .finally(() => { inboxInflight = false; });
     }
     function addInboxItem(id, text, opId) {
         const list = document.getElementById('inbox-list');
@@ -986,10 +990,11 @@
             }));
     }
 
-    // 고민·감상 입력창의 가벼운 목록 편집(마크다운 느낌). 외부 라이브러리 없이 동작한다.
+    // 모든 텍스트 입력창의 가벼운 목록 편집(애플노트/마크다운 느낌). 외부 라이브러리 없이 동작한다.
     //  - Tab: 들여쓰기(공백 2칸) 삽입, Shift+Tab: 내어쓰기
-    //  - Enter: '1. ' / '- ' / '* ' 로 시작한 줄이면 다음 줄을 자동 번호·불릿으로 잇고,
-    //           내용이 빈 항목에서 Enter면 그 표시를 지우고 목록을 끝낸다.
+    //  - Enter: '1. ' / '- ' / '* ' 로 시작한 줄이면 다음 줄을 같은 들여쓰기로 자동 번호·불릿 잇고,
+    //           내용이 빈 항목에서 Enter면 그 표시를 지우고 목록을 끝낸다(애플노트 동작).
+    //  한글 IME 조합 Enter(isComposing / 229)는 무시한다.
     function bindListEditor(ta) {
         if (!ta || ta.dataset.listed) return;
         ta.dataset.listed = '1';
@@ -1011,9 +1016,10 @@
                     ta.value = ta.value.slice(0, s) + INDENT + ta.value.slice(en);
                     setCaret(s + INDENT.length);
                 }
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
                 return;
             }
-            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
                 const line = ta.value.slice(ls, s);
                 const mo = line.match(/^(\s*)(\d+)\.\s+(.*)$/);   // 순서 목록 1. 2. 3.
                 const mu = line.match(/^(\s*)([-*])\s+(.*)$/);    // 불릿 목록 - *
@@ -1023,15 +1029,72 @@
                 if (m[3].trim() === '') {                          // 빈 항목 → 목록 종료
                     ta.value = ta.value.slice(0, ls) + ta.value.slice(s);
                     setCaret(ls);
-                    return;
+                } else {
+                    const marker = mo ? (parseInt(mo[2], 10) + 1) + '. ' : mu[2] + ' ';
+                    const ins = '\n' + m[1] + marker;
+                    ta.value = ta.value.slice(0, s) + ins + ta.value.slice(en);
+                    setCaret(s + ins.length);
                 }
-                const marker = mo ? (parseInt(mo[2], 10) + 1) + '. ' : mu[2] + ' ';
-                const ins = '\n' + m[1] + marker;
-                ta.value = ta.value.slice(0, s) + ins + ta.value.slice(en);
-                setCaret(s + ins.length);
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
     }
+
+    // ---- 자동저장: 한 필드가 바뀌면 (blur 즉시 / input 1.2초 후) 즉시 저장 ----
+    // 엔티티(block/slot/meta) + id + field 를 서버 /save/field 로 보낸다.
+    // 오프라인이면 대기열로, 돌아오면 자동 재전송(개인용 1인 기준 마지막 저장 우선).
+    const AS_TOAST_MS = 900;
+    let asToastTimer = null;
+    function autosaveToast() {
+        const t = document.getElementById('toast');
+        if (!t) return;
+        t.textContent = '✓ 저장됨';
+        t.classList.add('show');
+        if (asToastTimer) clearTimeout(asToastTimer);
+        asToastTimer = setTimeout(() => t.classList.remove('show'), AS_TOAST_MS);
+    }
+    // 같은 엔티티+id+field 의 자동저장 요청은 마지막 것만 남긴다(전체 폼 저장과 동일 전략).
+    function asOpKey(entity, id, field) { return 'as:' + entity + ':' + id + ':' + field; }
+    function saveField(entity, id, field, value, extra) {
+        const bodyObj = { entity: entity, id: String(id), field: field, value: value };
+        if (extra) Object.keys(extra).forEach((k) => { bodyObj[k] = extra[k]; });
+        const op = {
+            id: genId(), kind: 'autosave', url: '/save/field', headers: FORM_HEADERS,
+            body: new URLSearchParams(bodyObj).toString(),
+            dedupe: asOpKey(entity, id, field),
+        };
+        sendOrQueue(
+            op,
+            autosaveToast,
+            () => toast('저장 대기 · 연결되면 자동 전송'),
+        );
+    }
+    function bindAutoSave(el, entity, id, field, opts) {
+        if (!el || el.dataset.autosave) return;
+        el.dataset.autosave = '1';
+        opts = opts || {};
+        let timer = null;
+        const flush = () => {
+            if (timer) { clearTimeout(timer); timer = null; }
+            let value = el.value;
+            // 3칸 묶음(goal/dplan)은 그룹의 나머지 값도 같이 보내 서버에서 합치게 한다.
+            let extra = null;
+            if (opts.groupPrefix) {
+                extra = {};
+                document.querySelectorAll('[data-as-prefix="' + opts.groupPrefix + '"]').forEach((g) => {
+                    extra[g.dataset.asIdx] = g.value;
+                });
+            }
+            saveField(entity, id, field, value, extra);
+        };
+        el.addEventListener('change', flush);
+        el.addEventListener('blur', flush);
+        el.addEventListener('input', () => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(flush, 1200);
+        });
+    }
+
 
     // ---- 고민·감상 (/reflect) --------------------------------------------
     function bindReflect() {
@@ -1195,10 +1258,13 @@
         // 테마 토글
         document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
 
-        // 빠른 수집함
+        // 빠른 수집함. 한글 IME 조합 Enter(229/isComposing)는 무시해 2회 추가를 막는다.
         document.getElementById('inbox-add')?.addEventListener('click', inboxAdd);
         document.getElementById('inbox-input')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); inboxAdd(); }
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+                e.preventDefault();
+                inboxAdd();
+            }
         });
         document.querySelectorAll('.inbox-send').forEach((btn) => {
             btn.addEventListener('click', () => openInboxBlocks(btn.closest('.inbox-item')));
