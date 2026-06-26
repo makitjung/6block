@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% set active = 'reflect' %}
-{% block title %}고민 · 감상 | 6block{% endblock %}
+{% block title %}고결감 | 6block{% endblock %}
 {% block content %}
 <section class="hero">
     <div class="hero-date">
-        <div class="hero-date-main">고민 · 감상</div>
+        <div class="hero-date-main">고결감</div>
         <div class="hero-date-sub mono">
-            {% if gcal_write_on %}구글 캘린더 '고민/결심'에 자동 기록{% else %}로컬 저장 · 캘린더 연동 꺼짐{% endif %}
+            {% if gcal_write_on %}구글 캘린더 '고결감'과 양방향 동기화{% else %}로컬 저장 · 캘린더 연동 꺼짐{% endif %}
         </div>
     </div>
 </section>
@@ -21,13 +21,14 @@
             </label>
             {% endfor %}
         </div>
-        <textarea id="rf-text" class="rf-text" rows="4" placeholder="반복되는 고민, 떠오른 감상, 다짐을 적어두세요"></textarea>
+        <input type="text" id="rf-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸에 들어갑니다)" autocomplete="off">
+        <textarea id="rf-text" class="rf-text" rows="4" placeholder="내용 (구글 캘린더 설명칸에 들어갑니다)"></textarea>
         <div class="rf-row">
             <input type="text" id="rf-tags" class="rf-tags" placeholder="태그 (예: 진로, 건강)" autocomplete="off">
             <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rf-review" value=""></label>
             <button type="button" id="rf-add" class="primary-btn">기록</button>
         </div>
-        <p class="rf-hint mono">기록일은 오늘로 자동 저장됩니다.</p>
+        <p class="rf-hint mono">기록일은 오늘로 자동 저장됩니다. 제목·내용 중 하나만 적어도 됩니다.</p>
     </section>
 
     <section class="reflect-right">
@@ -45,7 +46,7 @@
         <div class="reflect-list" id="reflect-list">
             {% if items %}
             {% for it in items %}
-            <article class="rf-item" data-id="{{ it.id }}" data-search="{{ (it.text ~ ' ' ~ (it.tags or '')) | lower }}">
+            <article class="rf-item" data-id="{{ it.id }}" data-search="{{ ((it.title or '') ~ ' ' ~ (it.text or '') ~ ' ' ~ (it.tags or '')) | lower }}">
                 <div class="rf-meta">
                     <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
                     <span class="rf-date mono">{{ it.event_date }}</span>
@@ -57,13 +58,14 @@
                     {% endif %}
                     <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
                 </div>
-                <div class="rf-body">{{ it.text }}</div>
+                {% if it.title %}<div class="rf-title-row">{{ it.title }}</div>{% endif %}
+                {% if it.text %}<div class="rf-body">{{ it.text }}</div>{% endif %}
                 {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
             </article>
             {% endfor %}
             <div class="ctx-empty rf-no-match" hidden>검색 결과가 없습니다.</div>
             {% else %}
-            <div class="card ctx-empty">기록이 없습니다. 왼쪽에서 첫 고민이나 감상을 적어보세요.</div>
+            <div class="card ctx-empty">기록이 없습니다. 왼쪽에서 첫 고민·결정·감사를 적어보세요.</div>
             {% endif %}
         </div>
     </section>

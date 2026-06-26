@@ -1248,14 +1248,16 @@
         bindListEditor(document.getElementById('rf-text'));
         addBtn?.addEventListener('click', () => {
             const ta = document.getElementById('rf-text');
+            const titleEl = document.getElementById('rf-title');
+            const title = (titleEl?.value || '').trim();
             const text = (ta.value || '').trim();
-            if (!text) { toast('내용을 입력하세요'); return; }
+            if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
             const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
             const tags = (document.getElementById('rf-tags').value || '').trim();
             const review_date = document.getElementById('rf-review')?.value || '';
             const op = {
                 id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind: kind, text: text, tags: tags, review_date: review_date }).toString(),
+                body: new URLSearchParams({ kind: kind, title: title, text: text, tags: tags, review_date: review_date }).toString(),
             };
             fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
                 .then((r) => r.json())
@@ -1346,14 +1348,16 @@
         });
         document.getElementById('rm-save')?.addEventListener('click', () => {
             const ta = document.getElementById('rm-text');
+            const titleEl = document.getElementById('rm-title');
+            const title = (titleEl?.value || '').trim();
             const text = (ta.value || '').trim();
-            if (!text) { toast('내용을 입력하세요'); return; }
+            if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
             const kind = (modal.querySelector('input[name="rmk"]:checked') || {}).value || '고민';
             const tags = (document.getElementById('rm-tags').value || '').trim();
             const review_date = document.getElementById('rm-review')?.value || '';
             const op = {
                 id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind: kind, text: text, tags: tags, review_date: review_date }).toString(),
+                body: new URLSearchParams({ kind: kind, title: title, text: text, tags: tags, review_date: review_date }).toString(),
             };
             fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
                 .then((r) => r.json())
@@ -1361,6 +1365,7 @@
                     if (!d.ok) { toast('저장 실패'); return; }
                     toast(d.synced ? '기록 · 캘린더 반영' : '기록함');
                     ta.value = '';
+                    if (titleEl) titleEl.value = '';
                     document.getElementById('rm-tags').value = '';
                     document.getElementById('rm-review').value = '';
                     close();

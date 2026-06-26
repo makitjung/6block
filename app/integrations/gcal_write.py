@@ -1,11 +1,16 @@
-# 서비스계정으로 구글 캘린더 '고민/결심'에 고민·감상 이벤트를 생성·삭제하는 쓰기 연동 모듈
+# 서비스계정으로 구글 캘린더 '고결감'에 고민·결정·감사 이벤트를 만들고 읽고 고치는 양방향 연동 모듈
 import os
+import re
+import time
 from datetime import date, timedelta
 
 from app.config import GCAL_SA_KEYFILE, GCAL_WRITE_CALENDAR_ID
 
 # events 범위만 요청한다(캘린더 자체 생성/삭제 권한은 필요 없음).
 _SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+_KINDS = ("고민", "결정", "감사")
+_KIND_ALIAS = {"감상": "감사", "결심": "결정"}  # 옛 명칭 호환
+_MARKER = "(6block 고결감)"
 
 try:
     from google.oauth2 import service_account
@@ -16,6 +21,7 @@ except Exception:  # 라이브러리 미설치 시 캘린더 쓰기만 비활성
     _HAS_LIB = False
 
 _service = None
+_list_cache: dict = {"at": 0.0, "key": None, "items": None}  # 양방향 읽기 60초 캐시
 
 
 def enabled() -> bool:
@@ -49,11 +55,8 @@ def status() -> dict:
         return {"enabled": False, "reason": "GCAL_WRITE_CALENDAR_ID 미설정"}
     if not GCAL_SA_KEYFILE or not os.path.exists(GCAL_SA_KEYFILE):
         return {"enabled": False, "reason": "서비스계정 키파일 없음"}
-    # events 범위로 접근 확인(calendars.get은 더 넓은 scope가 필요해 events.list로 점검).
     try:
-        _svc().events().list(
-            calendarId=GCAL_WRITE_CALENDAR_ID, maxResults=1
-        ).execute()
+        _svc().events().list(calendarId=GCAL_WRITE_CALENDAR_ID, maxResults=1).execute()
         return {"enabled": True, "calendar": GCAL_WRITE_CALENDAR_ID}
     except Exception as e:
         return {"enabled": False, "reason": str(e)[:160]}
@@ -65,28 +68,90 @@ def _next_day(d: str) -> str:
     return (date(y, m, dd) + timedelta(days=1)).isoformat()
 
 
-def create_event(kind: str, text: str, tags: str, event_date: str) -> str | None:
-    """[종류] 접두어 제목 + 태그 본문으로 종일 이벤트를 만들고 event id를 돌려준다.
+def _hashtags(tags: str) -> str:
+    """'진로, 건강' → '#진로 #건강' (구글 캘린더 검색에 걸리도록 해시태그로)."""
+    toks = [t.strip().lstrip("#") for t in re.split(r"[,\s]+", tags or "") if t.strip()]
+    return " ".join("#" + t for t in toks)
 
-    extendedProperties에 표식을 남겨 캘린더에서 6block 기록만 추려보기 쉽게 한다.
-    """
+
+def _build_description(content: str, tags: str) -> str:
+    """내용 + 해시태그 + 표식으로 설명란을 만든다(검색·역파싱 가능하게)."""
+    parts = []
+    if (content or "").strip():
+        parts.append(content.strip())
+    hs = _hashtags(tags)
+    if hs:
+        parts.append(hs)
+    parts.append(_MARKER)
+    return "\n\n".join(parts)
+
+
+def _norm_kind(kind: str) -> str:
+    k = (kind or "").strip()
+    k = _KIND_ALIAS.get(k, k)
+    return k if k in _KINDS else "고민"
+
+
+def parse_summary(summary: str):
+    """'[종류] 제목' → (kind, title). 형식이 아니면 (고민, 통째 제목)."""
+    m = re.match(r"^\s*\[(.+?)\]\s*(.*)$", summary or "")
+    if m:
+        return _norm_kind(m.group(1)), m.group(2).strip()
+    return "고민", (summary or "").strip()
+
+
+def parse_description(desc: str):
+    """설명란 → (content, tags). 표식·해시태그 줄을 걷어내 내용을 복원하고 태그를 뽑는다."""
+    if not desc:
+        return "", ""
+    tags = " ".join(t.lstrip("#") for t in re.findall(r"#\S+", desc))
+    body = desc.replace(_MARKER, "")
+    kept = [
+        ln for ln in body.splitlines()
+        if not re.fullmatch(r"\s*(#\S+\s*)+", ln or "")
+    ]
+    return "\n".join(kept).strip(), tags
+
+
+def create_event(kind: str, title: str, content: str, tags: str, event_date: str):
+    """'[종류] 제목' 요약 + 내용/해시태그 설명으로 종일 이벤트를 만들고 event id를 돌려준다."""
     svc = _svc()
     if svc is None:
         return None
-    first_line = (text.strip().splitlines() or [""])[0][:80]
-    desc = text.strip()
-    if tags:
-        desc += f"\n\n태그: {tags}"
-    desc += "\n\n(6block 고민/감상 기록)"
+    kind = _norm_kind(kind)
+    summary = f"[{kind}] {(title or '').strip()[:120]}"
     body = {
-        "summary": f"[{kind}] {first_line}",
-        "description": desc,
+        "summary": summary,
+        "description": _build_description(content, tags),
         "start": {"date": event_date},
         "end": {"date": _next_day(event_date)},
         "extendedProperties": {"private": {"sixblock": "reflection", "kind": kind}},
     }
     ev = svc.events().insert(calendarId=GCAL_WRITE_CALENDAR_ID, body=body).execute()
+    _list_cache["items"] = None  # 캐시 무효화(방금 만든 게 즉시 보이도록)
     return ev.get("id")
+
+
+def update_event(event_id: str, kind: str, title: str, content: str, tags: str) -> bool:
+    """이벤트의 요약·설명을 현재 종류/제목/내용/태그로 갱신한다(종류 변경·제목 정정용)."""
+    svc = _svc()
+    if svc is None or not event_id:
+        return False
+    kind = _norm_kind(kind)
+    try:
+        svc.events().patch(
+            calendarId=GCAL_WRITE_CALENDAR_ID,
+            eventId=event_id,
+            body={
+                "summary": f"[{kind}] {(title or '').strip()[:120]}",
+                "description": _build_description(content, tags),
+                "extendedProperties": {"private": {"sixblock": "reflection", "kind": kind}},
+            },
+        ).execute()
+        _list_cache["items"] = None
+        return True
+    except Exception:
+        return False
 
 
 def delete_event(event_id: str) -> bool:
@@ -98,6 +163,62 @@ def delete_event(event_id: str) -> bool:
         svc.events().delete(
             calendarId=GCAL_WRITE_CALENDAR_ID, eventId=event_id
         ).execute()
+        _list_cache["items"] = None
         return True
     except Exception:
         return False
+
+
+def list_reflection_events(start: date, end: date) -> list[dict]:
+    """[start, end] 구간 고결감 캘린더 이벤트를 (id, kind, title, content, tags, date)로 파싱.
+
+    구글에서 직접 만든 일정도 여기로 들어와 탭에 보이게 된다(양방향). 60초 캐시.
+    """
+    if not enabled():
+        return []
+    key = (start.isoformat(), end.isoformat())
+    now = time.time()
+    if (
+        _list_cache["items"] is not None
+        and _list_cache["key"] == key
+        and (now - _list_cache["at"]) < 60
+    ):
+        return _list_cache["items"]
+    svc = _svc()
+    if svc is None:
+        return []
+    time_min = f"{start.isoformat()}T00:00:00Z"
+    time_max = f"{(end + timedelta(days=1)).isoformat()}T00:00:00Z"
+    out: list[dict] = []
+    page_token = None
+    try:
+        while True:
+            resp = svc.events().list(
+                calendarId=GCAL_WRITE_CALENDAR_ID,
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                maxResults=2500,
+                pageToken=page_token,
+            ).execute()
+            for it in resp.get("items", []):
+                ev_id = it.get("id")
+                if not ev_id:
+                    continue
+                start_obj = it.get("start", {})
+                d = start_obj.get("date") or (start_obj.get("dateTime") or "")[:10]
+                if not d:
+                    continue
+                kind, title = parse_summary(it.get("summary", ""))
+                content, tags = parse_description(it.get("description", ""))
+                out.append({
+                    "id": ev_id, "kind": kind, "title": title,
+                    "content": content, "tags": tags, "date": d,
+                })
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception:
+        return _list_cache["items"] or []
+    _list_cache.update({"at": now, "key": key, "items": out})
+    return out

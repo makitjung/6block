@@ -104,12 +104,12 @@
 
     {% if due_reflections %}
     <section class="card due-reflect">
-        <h2 class="card-title">오늘 다시 볼 고민 · 감상 <span class="card-sub">예전에 다시 볼 날짜로 잡아둔 것 · <a href="/reflect">고민 탭</a></span></h2>
+        <h2 class="card-title">오늘 다시 볼 고결감 <span class="card-sub">예전에 다시 볼 날짜로 잡아둔 것 · <a href="/reflect">고결감 탭</a></span></h2>
         <div class="due-list">
             {% for r in due_reflections %}
             <div class="due-item">
                 <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
-                <span class="due-text">{{ r.text }}</span>
+                <span class="due-text">{% if r.title %}{{ r.title }}{% if r.text %} · {{ r.text }}{% endif %}{% else %}{{ r.text }}{% endif %}</span>
                 {% if r.tags %}<span class="due-tags">{{ r.tags }}</span>{% endif %}
             </div>
             {% endfor %}
@@ -270,13 +270,14 @@
 <div id="reflect-modal" class="reflect-modal" hidden>
     <div class="rm-backdrop"></div>
     <div class="rm-box" role="dialog" aria-label="고민·감상 기록">
-        <div class="rm-head">고민 · 감상 기록 <button type="button" class="rm-close" aria-label="닫기">✕</button></div>
+        <div class="rm-head">고결감 기록 <button type="button" class="rm-close" aria-label="닫기">✕</button></div>
         <div class="reflect-kind rm-kind">
             <label class="rk-opt"><input type="radio" name="rmk" value="고민" checked><span>고민</span></label>
-            <label class="rk-opt"><input type="radio" name="rmk" value="감상"><span>감상</span></label>
-            <label class="rk-opt"><input type="radio" name="rmk" value="결심"><span>결심</span></label>
+            <label class="rk-opt"><input type="radio" name="rmk" value="결정"><span>결정</span></label>
+            <label class="rk-opt"><input type="radio" name="rmk" value="감사"><span>감사</span></label>
         </div>
-        <textarea id="rm-text" class="rf-text" rows="3" placeholder="지금 떠오른 고민·감상·다짐"></textarea>
+        <input type="text" id="rm-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸)" autocomplete="off">
+        <textarea id="rm-text" class="rf-text" rows="3" placeholder="내용 (구글 캘린더 설명칸)"></textarea>
         <div class="rf-row">
             <input type="text" id="rm-tags" class="rf-tags" placeholder="태그 (선택)" autocomplete="off">
             <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rm-review" value=""></label>

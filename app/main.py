@@ -1,6 +1,7 @@
 # 오늘/주간 입력과 PWA 서빙, 포모도로 정적 자원을 제공하는 FastAPI 메인 애플리케이션
 import json
 import re
+import threading
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -43,9 +44,33 @@ KO_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
 CORE_LABELS = [b[0] for b in DAY_BLOCKS if b[1]]  # B1..B6
 
 
+def _migrate_gcal_titles():
+    """옛 종류(감상·결심)로 만든 구글 이벤트 제목 접두어를 새 종류로 한 번만 정정한다."""
+    try:
+        if not gcal_write.enabled():
+            return
+        if get_settings().get("reflect_gcal_titles_migrated") == "1":
+            return
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT kind, title, text, tags, gcal_event_id FROM reflection "
+                "WHERE gcal_event_id IS NOT NULL AND kind IN ('감사', '결정') LIMIT 500"
+            ).fetchall()
+        for r in rows:
+            gcal_write.update_event(
+                r["gcal_event_id"], r["kind"], _reflect_title(r["title"], r["text"]),
+                r["text"] or "", r["tags"] or "",
+            )
+        set_setting("reflect_gcal_titles_migrated", "1")
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    # 옛 구글 이벤트 제목 정정은 시작을 막지 않게 백그라운드에서(한 번만).
+    threading.Thread(target=_migrate_gcal_titles, daemon=True).start()
     yield
 
 
@@ -431,7 +456,7 @@ def _day_view(request: Request, date_str: str):
         ).fetchall()
         # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
         due_reflections = conn.execute(
-            "SELECT id, kind, text, tags FROM reflection "
+            "SELECT id, kind, title, text, tags FROM reflection "
             "WHERE review_date = ? ORDER BY id DESC",
             (date_str,),
         ).fetchall()
@@ -1765,13 +1790,54 @@ def search_view(q: str = ""):
     return RedirectResponse(url=target)
 
 
-# -- 고민·감상 (반복 고민/감상/결심) ----------------------------------------
+# -- 고결감 (반복 고민·결정·감사) ------------------------------------------
 
-REFLECT_KINDS = ("고민", "감상", "결심")
+REFLECT_KINDS = ("고민", "결정", "감사")
+
+
+def _reflect_title(title, text) -> str:
+    """제목이 비면 내용 첫 줄에서 만든다(구글 summary가 비지 않게)."""
+    t = (title or "").strip()
+    if t:
+        return t
+    return ((text or "").strip().splitlines() or [""])[0][:120]
+
+
+def _import_gcal_reflections():
+    """고결감 캘린더에서 로컬에 없는 이벤트(구글에서 직접 만든 것)를 reflection으로 가져온다."""
+    if not gcal_write.enabled():
+        return
+    today = datetime.now(KST).date()
+    try:
+        evs = gcal_write.list_reflection_events(
+            today - timedelta(days=730), today + timedelta(days=730)
+        )
+    except Exception:
+        return
+    if not evs:
+        return
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        existing = {
+            r[0] for r in conn.execute(
+                "SELECT gcal_event_id FROM reflection WHERE gcal_event_id IS NOT NULL"
+            )
+        }
+        for ev in evs:
+            if ev["id"] in existing:
+                continue
+            conn.execute(
+                "INSERT INTO reflection (kind, title, text, tags, event_date, "
+                "review_date, created_at, gcal_event_id, synced) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                (ev["kind"], ev["title"], ev["content"], ev["tags"], ev["date"],
+                 None, now, ev["id"]),
+            )
 
 
 @app.get("/reflect")
 def reflect_view(request: Request, q: str = "", kind: str = ""):
+    _import_gcal_reflections()  # 구글 캘린더에서 만든 것도 탭에 보이게(양방향)
     q = (q or "").strip()
     kind = kind if kind in REFLECT_KINDS else ""
     where: list[str] = []
@@ -1780,8 +1846,8 @@ def reflect_view(request: Request, q: str = "", kind: str = ""):
         where.append("kind = ?")
         params.append(kind)
     if q:
-        where.append("(text LIKE ? OR tags LIKE ?)")
-        params += [f"%{q}%", f"%{q}%"]
+        where.append("(title LIKE ? OR text LIKE ? OR tags LIKE ?)")
+        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
     sql = "SELECT * FROM reflection"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -1806,25 +1872,28 @@ def reflect_view(request: Request, q: str = "", kind: str = ""):
 async def reflect_add(request: Request):
     form = await request.form()
     kind = form.get("kind") if form.get("kind") in REFLECT_KINDS else "고민"
-    text = (form.get("text") or "").strip()
+    title = (form.get("title") or "").strip()
+    text = (form.get("text") or "").strip()                     # 내용
     tags = (form.get("tags") or "").strip()
     event_date = today_str()                                    # 기록일은 자동(오늘)
     review_date = (form.get("review_date") or "").strip() or None  # 입력할 때만 저장
-    if not text:
+    if not title and not text:
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    title = _reflect_title(title, text)
     now = datetime.now(KST).isoformat(timespec="seconds")
     # 캘린더 일정은 다시 볼 날짜가 있으면 그날, 없으면 기록일에 올린다.
     cal_date = review_date or event_date
     # 반영을 시도하되, 실패해도 DB에는 저장해 나중에 재시도할 수 있게 한다.
+    # 제목→구글 summary, 내용→description.
     try:
-        event_id = gcal_write.create_event(kind, text, tags, cal_date)
+        event_id = gcal_write.create_event(kind, title, text, tags, cal_date)
     except Exception:
         event_id = None
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO reflection (kind, text, tags, event_date, review_date, "
-            "created_at, gcal_event_id, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (kind, text, tags, event_date, review_date, now, event_id,
+            "INSERT INTO reflection (kind, title, text, tags, event_date, review_date, "
+            "created_at, gcal_event_id, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, title, text, tags, event_date, review_date, now, event_id,
              1 if event_id else 0),
         )
         new_id = cur.lastrowid
@@ -1842,9 +1911,10 @@ def reflect_sync(item_id: int):
         if r["synced"] and r["gcal_event_id"]:
             return JSONResponse({"ok": True, "synced": True})
         cal_date = r["review_date"] or r["event_date"]
+        title = _reflect_title(r["title"], r["text"])
         try:
             event_id = gcal_write.create_event(
-                r["kind"], r["text"], r["tags"] or "", cal_date
+                r["kind"], title, r["text"] or "", r["tags"] or "", cal_date
             )
         except Exception:
             event_id = None

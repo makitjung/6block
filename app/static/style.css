@@ -1026,6 +1026,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rk-opt input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .rk-opt span { display: inline-block; padding: 6px 16px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--text-muted); }
 .rk-opt input:checked + span { background: var(--surface); color: var(--accent); box-shadow: var(--sh-1); }
+.rf-title { width: 100%; font-weight: 600; }
 .rf-text { width: 100%; resize: vertical; }
 .rf-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .rf-tags { flex: 1 1 200px; }
@@ -1044,6 +1045,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .rf-badge { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: var(--r-pill); background: var(--surface-3); }
 .rf-badge[data-kind="고민"] { color: var(--tone-orange); }
+.rf-badge[data-kind="결정"] { color: var(--tone-purple); }
+.rf-badge[data-kind="감사"] { color: var(--tone-teal); }
 .rf-badge[data-kind="감상"] { color: var(--tone-teal); }
 .rf-badge[data-kind="결심"] { color: var(--tone-purple); }
 .rf-meta .rf-date { color: var(--text-muted); font-size: 12px; }
@@ -1052,6 +1055,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-sync.retry { color: var(--warm); font-weight: 600; cursor: pointer; border: 1px solid var(--warm); border-radius: var(--r-pill); padding: 1px 8px; }
 .rf-del { margin-left: auto; border: none; background: none; color: var(--text-subtle); cursor: pointer; font-size: 14px; }
 .rf-del:hover { color: var(--danger); }
+.rf-title-row { font-weight: 700; color: var(--text); line-height: 1.4; margin-bottom: 3px; }
 .rf-body { white-space: pre-wrap; color: var(--text); line-height: 1.5; }
 .rf-tags-row { margin-top: 6px; font-size: 12px; color: var(--accent-soft-text); }
 

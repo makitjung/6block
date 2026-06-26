@@ -112,6 +112,13 @@ def _migrate(conn: sqlite3.Connection):
     refl_cols = {r[1] for r in conn.execute("PRAGMA table_info(reflection)").fetchall()}
     if refl_cols and "review_date" not in refl_cols:
         conn.execute("ALTER TABLE reflection ADD COLUMN review_date TEXT")
+    # 고결감: 제목과 내용 분리(제목→구글 summary, 내용→description). 없으면 추가.
+    if refl_cols and "title" not in refl_cols:
+        conn.execute("ALTER TABLE reflection ADD COLUMN title TEXT")
+    # 종류 명칭 변경(고민·감상·결심 → 고민·결정·감사). 기존 기록을 멱등 일괄 변경.
+    if refl_cols:
+        conn.execute("UPDATE reflection SET kind = '감사' WHERE kind = '감상'")
+        conn.execute("UPDATE reflection SET kind = '결정' WHERE kind = '결심'")
 
 
 @contextmanager
