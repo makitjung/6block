@@ -1,4 +1,5 @@
 # SQLite 연결과 스키마 초기화, 누락 컬럼 자동 마이그레이션을 담당하는 데이터 액세스 헬퍼
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 from app.config import (
     CAT_TONE,
     CATEGORIES,
+    DAY_BLOCKS,
     DEFAULT_SETTINGS,
     DB_PATH,
     LT_AREAS,
@@ -162,3 +164,28 @@ def set_setting(key: str, value: str):
             (key, value),
         )
     _settings_cache = None
+
+
+# 설정의 시간 오버라이드(app_settings 'day_blocks_times', JSON)를 기본 DAY_BLOCKS 위에 입혀
+# 효과적인 8블록 (label, is_core, start, end) 을 돌려준다. 라벨·코어여부·개수는 기본값 고정.
+BLOCK_TIMES_KEY = "day_blocks_times"
+
+
+def get_day_blocks():
+    """효과적인 하루 8블록 목록. DB에 저장된 시작·끝 시간 오버라이드를 기본값 위에 입힌다."""
+    blocks = [(lbl, core, s, e) for (lbl, core, s, e) in DAY_BLOCKS]
+    raw = get_settings().get(BLOCK_TIMES_KEY)
+    if not raw:
+        return blocks
+    try:
+        times = json.loads(raw)
+    except Exception:
+        return blocks
+    if not isinstance(times, list) or len(times) != len(DAY_BLOCKS):
+        return blocks
+    merged = []
+    for (lbl, core, ds, de), t in zip(DAY_BLOCKS, times):
+        s = (t.get("start") if isinstance(t, dict) else None) or ds
+        e = (t.get("end") if isinstance(t, dict) else None) or de
+        merged.append((lbl, core, s, e))
+    return merged

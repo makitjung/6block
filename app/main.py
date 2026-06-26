@@ -1,4 +1,5 @@
 # 오늘/주간 입력과 PWA 서빙, 포모도로 정적 자원을 제공하는 FastAPI 메인 애플리케이션
+import json
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -22,11 +23,17 @@ from app.config import (
     TONE_KEYS,
     TONES,
     WEEK_CORE_BLOCKS,
-    WEEK_TOTAL_HOURS,
     hhmm_to_min,
     slots_for_day,
 )
-from app.db import get_conn, get_settings, init_db, set_setting
+from app.db import (
+    BLOCK_TIMES_KEY,
+    get_conn,
+    get_day_blocks,
+    get_settings,
+    init_db,
+    set_setting,
+)
 from app.integrations import gcal, gcal_write, things
 
 KST = ZoneInfo("Asia/Seoul")
@@ -221,7 +228,7 @@ def _plan_breadcrumb(level: str, anchor: date):
 
 
 def _skeleton_matches_config(conn, date_str: str) -> bool:
-    """DB의 그날 블록 골격이 현재 설정(DAY_BLOCKS)과 정확히 같은지."""
+    """DB의 그날 블록 골격이 현재 효과적 설정(시간 편집 반영)과 정확히 같은지."""
     have = [
         (r["block_label"], r["start_time"], r["end_time"])
         for r in conn.execute(
@@ -230,7 +237,7 @@ def _skeleton_matches_config(conn, date_str: str) -> bool:
             (date_str,),
         )
     ]
-    want = [(label, start, end) for (label, _core, start, end) in DAY_BLOCKS]
+    want = [(label, start, end) for (label, _core, start, end) in get_day_blocks()]
     return have == want
 
 
@@ -265,8 +272,9 @@ def ensure_day_skeleton(conn, date_str: str):
         conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
         conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
+    day_blocks = get_day_blocks()
     block_ids = {}
-    for order, (label, is_core, start, end) in enumerate(DAY_BLOCKS):
+    for order, (label, is_core, start, end) in enumerate(day_blocks):
         cur = conn.execute(
             """
             INSERT INTO blocks (date, block_order, block_label, is_core,
@@ -276,7 +284,7 @@ def ensure_day_skeleton(conn, date_str: str):
             (date_str, order, label, 1 if is_core else 0, start, end, now),
         )
         block_ids[label] = cur.lastrowid
-    for slot_idx, label, s_t, e_t in slots_for_day():
+    for slot_idx, label, s_t, e_t in slots_for_day(day_blocks):
         conn.execute(
             """
             INSERT INTO slots (date, block_id, slot_index, start_time, end_time,
@@ -993,7 +1001,7 @@ def _week_view(request: Request, monday: date):
             "used_core": plan_total,
             "total_core": used_core_total,
             "achieve_pct": achieve_pct,
-            "week_total_hours": WEEK_TOTAL_HOURS,
+            "week_total_hours": len(slots_for_day(get_day_blocks())) * 0.5 * 7,
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
             "core_labels": CORE_LABELS,
@@ -1337,10 +1345,60 @@ def settings_view(request: Request):
             "settings": settings,
             "summary": summary,
             "weekday_concepts": weekday_concepts,
+            "day_blocks": [
+                {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
+                for i, (lbl, core, s, e) in enumerate(get_day_blocks())
+            ],
             "backup_status": _backup_status(),
             "today": today_str(),
         },
     )
+
+
+def _valid_hhmm30(s: str) -> bool:
+    """'HH:MM' 이고 분이 00/30, 00:00~24:00 범위인지(30분 슬롯 경계 유지)."""
+    if not re.match(r"^\d{2}:\d{2}$", s or ""):
+        return False
+    h, m = int(s[:2]), int(s[3:5])
+    return 0 <= h <= 24 and m in (0, 30) and (h * 60 + m) <= 24 * 60
+
+
+@app.post("/settings/blocktimes")
+async def settings_blocktimes(request: Request):
+    """8블록의 시작·끝 시간만 저장한다(라벨·코어여부·개수 고정). 30분 경계·겹침을 검증한다."""
+    form = await request.form()
+    n = len(DAY_BLOCKS)
+    times = []
+    prev_end = None
+    for i in range(n):
+        s = (form.get(f"start_{i}") or "").strip()
+        e = (form.get(f"end_{i}") or "").strip()
+        label = DAY_BLOCKS[i][0]
+        if not _valid_hhmm30(s) or not _valid_hhmm30(e):
+            return JSONResponse(
+                {"ok": False, "error": f"{label} 시간 형식이 잘못됨(HH:MM, 30분 단위)"},
+                status_code=400,
+            )
+        if hhmm_to_min(s) >= hhmm_to_min(e):
+            return JSONResponse(
+                {"ok": False, "error": f"{label}: 시작이 끝보다 빨라야 합니다"},
+                status_code=400,
+            )
+        if prev_end is not None and hhmm_to_min(s) < prev_end:
+            return JSONResponse(
+                {"ok": False, "error": f"{label}이 앞 블록과 겹칩니다"}, status_code=400
+            )
+        prev_end = hhmm_to_min(e)
+        times.append({"start": s, "end": e})
+    set_setting(BLOCK_TIMES_KEY, json.dumps(times))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/blocktimes/reset")
+async def settings_blocktimes_reset():
+    """블록 시간 오버라이드를 지워 기본 시간표로 되돌린다."""
+    set_setting(BLOCK_TIMES_KEY, "")
+    return JSONResponse({"ok": True})
 
 
 @app.post("/settings/category/add")

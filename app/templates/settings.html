@@ -105,6 +105,24 @@
 </section>
 
 <section class="card">
+    <h2 class="card-title">세션(블록) 시간 <span class="card-sub">8블록 시작·끝만 편집 · 30분 단위 · 기록 없는 날부터 자동 적용</span></h2>
+    <div class="set-blocktimes" id="set-blocktimes">
+        {% for b in day_blocks %}
+        <div class="set-bt-row" data-order="{{ b.order }}">
+            <span class="set-bt-label{% if b.is_core %} core{% endif %}">{{ b.label }}</span>
+            <input type="time" class="set-bt-start" data-order="{{ b.order }}" value="{{ b.start }}" step="1800" aria-label="{{ b.label }} 시작">
+            <span class="set-bt-dash">–</span>
+            <input type="time" class="set-bt-end" data-order="{{ b.order }}" value="{{ b.end }}" step="1800" aria-label="{{ b.label }} 끝">
+        </div>
+        {% endfor %}
+    </div>
+    <div class="set-bt-actions">
+        <span class="set-bt-msg" id="set-bt-msg"></span>
+        <button type="button" class="ghost-btn" id="set-bt-reset">기본값으로</button>
+    </div>
+</section>
+
+<section class="card">
     <h2 class="card-title">요일별 컨셉 <span class="card-sub">그 요일을 어떤 컨셉으로 보낼지 · 오늘 각 블록 오른쪽에 표시됩니다</span></h2>
     <div class="set-weekday-grid" id="set-weekday">
         {% for w in weekday_concepts %}

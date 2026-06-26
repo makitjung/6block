@@ -963,6 +963,41 @@
         });
     }
 
+    // ---- 설정: 세션(블록) 시간 편집 (8칸 묶음 검증 → 변경 즉시 자동저장) ----
+    function bindBlockTimes() {
+        const box = document.getElementById('set-blocktimes');
+        if (!box) return;
+        const msg = document.getElementById('set-bt-msg');
+        const collect = () => {
+            const data = {};
+            box.querySelectorAll('.set-bt-row').forEach((row) => {
+                const o = row.dataset.order;
+                data['start_' + o] = row.querySelector('.set-bt-start').value;
+                data['end_' + o] = row.querySelector('.set-bt-end').value;
+            });
+            return data;
+        };
+        const save = () => {
+            if (msg) { msg.textContent = ''; msg.classList.remove('bad'); }
+            fetch('/settings/blocktimes', {
+                method: 'POST', headers: FORM_HEADERS,
+                body: new URLSearchParams(collect()).toString(),
+            })
+                .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+                .then(({ ok, d }) => {
+                    if (ok && d.ok) { autosaveToast(); }
+                    else if (msg) { msg.textContent = (d && d.error) || '저장 실패'; msg.classList.add('bad'); }
+                })
+                .catch(() => { if (msg) { msg.textContent = '연결이 필요합니다'; msg.classList.add('bad'); } });
+        };
+        box.querySelectorAll('.set-bt-start, .set-bt-end').forEach((inp) =>
+            inp.addEventListener('change', save));
+        document.getElementById('set-bt-reset')?.addEventListener('click', () => {
+            if (!window.confirm('블록 시간을 기본값으로 되돌립니다.')) return;
+            postForm('/settings/blocktimes/reset', {}).then((d) => { if (d && d.ok) location.reload(); });
+        });
+    }
+
     // ---- 장기플랜 (/plan) ------------------------------------------------
     function bindPlan() {
         const grid = document.querySelector('.plan-grid');
@@ -1478,6 +1513,7 @@
         bindSlotChecks();
         bindBlockTools();
         bindSettings();
+        bindBlockTimes();
         bindPlan();
         bindPlanAreas();
         bindReflect();

@@ -114,11 +114,15 @@ def hhmm_to_min(hhmm: str) -> int:
     return int(hhmm[:2]) * 60 + int(hhmm[3:5])
 
 
-def slots_for_day():
-    """하루 30분 단위 슬롯 리스트. (slot_index, block_label, start_time, end_time)."""
+def slots_for_day(blocks=None):
+    """하루 30분 단위 슬롯 리스트. (slot_index, block_label, start_time, end_time).
+
+    blocks 를 주면(설정에서 시간 편집한 효과적 8블록) 그 시간대로 슬롯을 만든다.
+    없으면 기본 DAY_BLOCKS 를 쓴다.
+    """
     out = []
     idx = 0
-    for label, _core, start, end in DAY_BLOCKS:
+    for label, _core, start, end in (blocks if blocks is not None else DAY_BLOCKS):
         cur = hhmm_to_min(start)
         end_min = hhmm_to_min(end)
         while cur < end_min:

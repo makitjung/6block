@@ -1085,6 +1085,20 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .set-wd-label { flex: 0 0 28px; font-weight: 700; color: var(--text-soft); }
 .set-wd-input { flex: 1; }
 
+/* 세션(블록) 시간 편집 */
+.set-blocktimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.set-bt-row { display: flex; align-items: center; gap: 8px; }
+.set-bt-label {
+    flex: 0 0 44px; font-weight: 700; color: var(--text-soft);
+    font-size: 13px;
+}
+.set-bt-label.core { color: var(--accent); }
+.set-bt-row input[type=time] { flex: 1; min-width: 0; }
+.set-bt-dash { color: var(--text-subtle); }
+.set-bt-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.set-bt-msg { flex: 1; font-size: 13px; color: var(--text-subtle); }
+.set-bt-msg.bad { color: var(--danger); }
+
 /* 고민 작성 버튼(슬롯 DO 옆) */
 .slot-reflect {
     font-size: 11px; padding: 2px 7px; border-radius: var(--r-pill);
