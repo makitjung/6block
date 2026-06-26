@@ -1,6 +1,7 @@
 # 오늘/주간 입력과 PWA 서빙, 포모도로 정적 자원을 제공하는 FastAPI 메인 애플리케이션
 import json
 import re
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -1307,6 +1308,33 @@ def settings_view(request: Request):
             "SELECT id, name, tone, is_active FROM categories "
             "ORDER BY is_active DESC, display_order"
         ).fetchall()
+        wc_map = {
+            r["weekday"]: (r["text"] or "")
+            for r in conn.execute("SELECT weekday, text FROM weekday_concept")
+        }
+    weekday_concepts = [
+        {"weekday": i, "label": KO_WEEKDAYS[i], "text": wc_map.get(i, "")}
+        for i in range(7)
+    ]
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "categories": [dict(c) for c in cats],
+            "tones": TONES,
+            "settings": settings,
+            "weekday_concepts": weekday_concepts,
+            "day_blocks": [
+                {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
+                for i, (lbl, core, s, e) in enumerate(get_day_blocks())
+            ],
+        },
+    )
+
+
+def _data_summary() -> dict:
+    """데이터 탭 요약(기록 일수·슬롯 수·기간·미처리 수집함·활성 구분)."""
+    with get_conn() as conn:
         rec_filter = "(do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1"
         rec_days = conn.execute(
             f"SELECT COUNT(DISTINCT date) FROM slots WHERE {rec_filter}"
@@ -1320,35 +1348,27 @@ def settings_view(request: Request):
         inbox_open = conn.execute(
             "SELECT COUNT(*) FROM inbox WHERE done = 0"
         ).fetchone()[0]
-        wc_map = {
-            r["weekday"]: (r["text"] or "")
-            for r in conn.execute("SELECT weekday, text FROM weekday_concept")
-        }
-    weekday_concepts = [
-        {"weekday": i, "label": KO_WEEKDAYS[i], "text": wc_map.get(i, "")}
-        for i in range(7)
-    ]
-    summary = {
+        active_cats = conn.execute(
+            "SELECT COUNT(*) FROM categories WHERE is_active = 1"
+        ).fetchone()[0]
+    return {
         "rec_days": rec_days,
         "slot_recs": slot_recs,
         "first": span[0] or "-",
         "last": span[1] or "-",
         "inbox_open": inbox_open,
-        "active_cats": sum(1 for c in cats if c["is_active"]),
+        "active_cats": active_cats,
     }
+
+
+@app.get("/data")
+def data_view(request: Request):
+    """데이터 탭: 요약·백업·내보내기·삭제(설정에서 분리, 화면 2분할)."""
     return templates.TemplateResponse(
-        "settings.html",
+        "data.html",
         {
             "request": request,
-            "categories": [dict(c) for c in cats],
-            "tones": TONES,
-            "settings": settings,
-            "summary": summary,
-            "weekday_concepts": weekday_concepts,
-            "day_blocks": [
-                {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
-                for i, (lbl, core, s, e) in enumerate(get_day_blocks())
-            ],
+            "summary": _data_summary(),
             "backup_status": _backup_status(),
             "today": today_str(),
         },
@@ -1612,7 +1632,7 @@ def _calc_streak(rec_dates: set, today: date) -> int:
 
 
 @app.get("/analytics")
-def analytics_view(request: Request, rng: str = "7"):
+def analytics_view(request: Request, rng: str = "7", q: str = ""):
     today = datetime.now(KST).date()
     today_s = today.strftime("%Y-%m-%d")
     with get_conn() as conn:
@@ -1682,6 +1702,9 @@ def analytics_view(request: Request, rng: str = "7"):
         "avg_done": round(sum(d["pct"] for d in days_data) / len(days_data)) if days_data else 0,
         "pd_pct": round(pd_total_a / pd_total_p * 100) if pd_total_p else 0,
     }
+    # 분석·검색 병합: 검색어가 있으면 지난 슬롯/블록 기록을 같은 화면에서 함께 보여준다.
+    q = (q or "").strip()
+    s_slots, s_blocks = _search_records(q)
     return templates.TemplateResponse(
         "analytics.html",
         {
@@ -1694,47 +1717,52 @@ def analytics_view(request: Request, rng: str = "7"):
             "days_data": days_data,
             "pd_data": pd_data,
             "summary": summary,
+            "q": q,
+            "s_slots": s_slots,
+            "s_blocks": s_blocks,
         },
     )
 
 
-# -- 기록 검색 -------------------------------------------------------------
+# -- 기록 검색 (분석·검색 탭에 병합) ---------------------------------------
+
+
+def _search_records(q: str):
+    """슬롯 DO·한일과 블록 PLAN·SEE·이름을 날짜를 가로질러 찾아 (slots, blocks) 반환."""
+    q = (q or "").strip()
+    if not q:
+        return [], []
+    like = f"%{q}%"
+    with get_conn() as conn:
+        slots = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT s.date, s.start_time, b.block_order, b.block_label, "
+                "       s.do_text, s.did_text "
+                "FROM slots s JOIN blocks b ON b.id = s.block_id "
+                "WHERE s.do_text LIKE ? OR s.did_text LIKE ? "
+                "ORDER BY s.date DESC, s.slot_index LIMIT 300",
+                (like, like),
+            )
+        ]
+        blocks = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT date, block_order, block_label, name, plan_text, see_text "
+                "FROM blocks "
+                "WHERE plan_text LIKE ? OR see_text LIKE ? OR name LIKE ? "
+                "ORDER BY date DESC, block_order LIMIT 300",
+                (like, like, like),
+            )
+        ]
+    return slots, blocks
 
 
 @app.get("/search")
-def search_view(request: Request, q: str = ""):
-    """슬롯 DO·한일과 블록 PLAN·SEE·이름을 날짜를 가로질러 한 번에 검색한다."""
-    q = (q or "").strip()
-    slots: list = []
-    blocks: list = []
-    if q:
-        like = f"%{q}%"
-        with get_conn() as conn:
-            slots = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT s.date, s.start_time, b.block_order, b.block_label, "
-                    "       s.do_text, s.did_text "
-                    "FROM slots s JOIN blocks b ON b.id = s.block_id "
-                    "WHERE s.do_text LIKE ? OR s.did_text LIKE ? "
-                    "ORDER BY s.date DESC, s.slot_index LIMIT 300",
-                    (like, like),
-                )
-            ]
-            blocks = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT date, block_order, block_label, name, plan_text, see_text "
-                    "FROM blocks "
-                    "WHERE plan_text LIKE ? OR see_text LIKE ? OR name LIKE ? "
-                    "ORDER BY date DESC, block_order LIMIT 300",
-                    (like, like, like),
-                )
-            ]
-    return templates.TemplateResponse(
-        "search.html",
-        {"request": request, "q": q, "slots": slots, "blocks": blocks},
-    )
+def search_view(q: str = ""):
+    """과거 호환: 검색은 분석·검색(/analytics) 탭으로 이동했다."""
+    target = "/analytics?q=" + urllib.parse.quote((q or "").strip()) if q else "/analytics"
+    return RedirectResponse(url=target)
 
 
 # -- 고민·감상 (반복 고민/감상/결심) ----------------------------------------

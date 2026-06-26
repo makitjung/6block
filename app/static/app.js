@@ -878,7 +878,9 @@
     }
     function bindSettings() {
         const addBtn = document.getElementById('set-cat-add-btn');
-        if (!addBtn && !document.getElementById('set-behavior')) return;   // 설정 페이지 아님
+        // 설정·데이터 페이지가 아니면 종료(데이터 탭의 백업·CSV·삭제 버튼도 여기서 바인딩)
+        if (!addBtn && !document.getElementById('set-behavior')
+            && !document.getElementById('set-backup-btn')) return;
 
         addBtn?.addEventListener('click', () => {
             const name = (document.getElementById('set-cat-new-name').value || '').trim();

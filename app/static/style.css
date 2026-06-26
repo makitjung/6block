@@ -1099,6 +1099,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .set-bt-msg { flex: 1; font-size: 13px; color: var(--text-subtle); }
 .set-bt-msg.bad { color: var(--danger); }
 
+/* 설정·데이터 2분할 레이아웃 (넓은 화면 2열, 좁으면 1열) */
+.split-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.split-2 > .card { margin: 0; }
+@media (max-width: 720px) { .split-2 { grid-template-columns: 1fr; } }
+/* 분석·검색: 검색 결과 영역 간격 */
+.search-results { margin-top: 12px; }
+
 /* 고민 작성 버튼(슬롯 DO 옆) */
 .slot-reflect {
     font-size: 11px; padding: 2px 7px; border-radius: var(--r-pill);

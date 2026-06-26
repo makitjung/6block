@@ -1,19 +1,64 @@
 {% extends "base.html" %}
 {% set active = 'analytics' %}
-{% block title %}분석 | 6block{% endblock %}
+{% block title %}분석 · 검색 | 6block{% endblock %}
 {% block content %}
 <section class="hero">
     <div class="hero-date">
-        <div class="hero-date-main">분석</div>
+        <div class="hero-date-main">분석 · 검색</div>
         <div class="hero-date-sub mono">{{ start }} ~ {{ end }} · {{ range_label }}</div>
     </div>
     <div class="hero-actions">
         <div class="range-toggle">
-            <a href="/analytics?rng=7" class="{% if rng == '7' %}is-active{% endif %}">7일</a>
-            <a href="/analytics?rng=30" class="{% if rng == '30' %}is-active{% endif %}">30일</a>
-            <a href="/analytics?rng=all" class="{% if rng == 'all' %}is-active{% endif %}">전체</a>
+            <a href="/analytics?rng=7{% if q %}&q={{ q | urlencode }}{% endif %}" class="{% if rng == '7' %}is-active{% endif %}">7일</a>
+            <a href="/analytics?rng=30{% if q %}&q={{ q | urlencode }}{% endif %}" class="{% if rng == '30' %}is-active{% endif %}">30일</a>
+            <a href="/analytics?rng=all{% if q %}&q={{ q | urlencode }}{% endif %}" class="{% if rng == 'all' %}is-active{% endif %}">전체</a>
         </div>
     </div>
+</section>
+
+<section class="card">
+    <form method="get" action="/analytics" class="search-form">
+        <input type="hidden" name="rng" value="{{ rng }}">
+        <input type="search" name="q" value="{{ q }}" placeholder="기록 검색 (DO·한일·PLAN·SEE·블록이름)" autocomplete="off">
+        <button type="submit" class="primary-btn">검색</button>
+    </form>
+    {% if q %}
+    <div class="search-results">
+        {% if s_slots %}
+        <h3 class="card-title">슬롯 기록 <span class="card-sub">{{ s_slots | length }}건</span></h3>
+        <ul class="search-list">
+            {% for s in s_slots %}
+            <li class="search-row">
+                <a href="/day/{{ s.date }}#blk-{{ s.block_order }}">
+                    <span class="sr-date mono">{{ s.date | short_date }}({{ s.date | ko_weekday }})</span>
+                    <span class="sr-blk">{{ s.block_label }} {{ s.start_time }}</span>
+                </a>
+                {% if s.do_text %}<span class="sr-do"><b>DO</b> {{ s.do_text }}</span>{% endif %}
+                {% if s.did_text %}<span class="sr-did"><b>한</b> {{ s.did_text }}</span>{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if s_blocks %}
+        <h3 class="card-title">블록 기록 <span class="card-sub">{{ s_blocks | length }}건</span></h3>
+        <ul class="search-list">
+            {% for b in s_blocks %}
+            <li class="search-row">
+                <a href="/day/{{ b.date }}#blk-{{ b.block_order }}">
+                    <span class="sr-date mono">{{ b.date | short_date }}({{ b.date | ko_weekday }})</span>
+                    <span class="sr-blk">{{ b.block_label }}{% if b.name %} · {{ b.name }}{% endif %}</span>
+                </a>
+                {% if b.plan_text %}<span class="sr-do"><b>PLAN</b> {{ b.plan_text }}</span>{% endif %}
+                {% if b.see_text %}<span class="sr-did"><b>SEE</b> {{ b.see_text }}</span>{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if not s_slots and not s_blocks %}
+        <div class="ctx-empty">'{{ q }}'에 대한 기록이 없습니다.</div>
+        {% endif %}
+    </div>
+    {% endif %}
 </section>
 
 <section class="kpi-row an-kpi">
