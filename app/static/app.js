@@ -361,6 +361,8 @@
         let q = loadQueue();
         // 전체 폼 저장은 최신 1건만 남겨 큰 스냅샷이 쌓이지 않게 한다.
         if (op.kind === 'form') q = q.filter((o) => !(o.kind === 'form' && o.url === op.url));
+        // 같은 필드 자동저장(dedupe 키 동일)은 최신 1건만 남긴다.
+        if (op.dedupe) q = q.filter((o) => o.dedupe !== op.dedupe);
         q.push(op);
         saveQueue(q);
         updateNetStatus();
@@ -466,6 +468,53 @@
                 if (wf) wf.submit();
             }
         });
+    }
+
+    // ---- 오늘/주간 폼의 각 필드에 자동저장 연결 --------------------------
+    // name 속성 규칙을 파싱: plan_{id}, see_{id}, do_{id}, did_{id}, cat_{id},
+    // bcat_{id}, bname_{id}, bloc_{id}, goal{1-3}, dplan{1-3}, memo, vow,
+    // theme_{lbl}(주간), weekly_goal/appointments/vow/memo(주간).
+    function bindAutosaveAll() {
+        const dayForm = document.querySelector('form.day-form');
+        const dateStr = dayForm ? dayForm.dataset.date : null;
+        const weekForm = document.querySelector('form.week-form');
+        const weekStart = weekForm ? (weekForm.getAttribute('action') || '').split('/').pop() : null;
+
+        const each = (sel, fn) => document.querySelectorAll(sel).forEach((el) => { if (el.name) fn(el, el.name); });
+
+        if (dayForm) {
+            each('textarea[name], input[name]', (el, name) => {
+                let m;
+                if ((m = name.match(/^plan_(\d+)$/)))      bindAutoSave(el, 'block', m[1], 'plan_text');
+                else if ((m = name.match(/^see_(\d+)$/)))   bindAutoSave(el, 'block', m[1], 'see_text');
+                else if ((m = name.match(/^bname_(\d+)$/))) bindAutoSave(el, 'block', m[1], 'bname');
+                else if ((m = name.match(/^bloc_(\d+)$/)))  bindAutoSave(el, 'block', m[1], 'bloc');
+                else if ((m = name.match(/^do_(\d+)$/)))    bindAutoSave(el, 'slot', m[1], 'do_text');
+                else if ((m = name.match(/^did_(\d+)$/)))   bindAutoSave(el, 'slot', m[1], 'did_text');
+                else if ((m = name.match(/^goal([123])$/))) {
+                    el.dataset.asPrefix = 'goal';
+                    el.dataset.asIdx = m[1];
+                    bindAutoSave(el, 'meta', dateStr, 'goal' + m[1], { groupPrefix: 'goal' });
+                } else if ((m = name.match(/^dplan([123])$/))) {
+                    el.dataset.asPrefix = 'dplan';
+                    el.dataset.asIdx = m[1];
+                    bindAutoSave(el, 'meta', dateStr, 'dplan' + m[1], { groupPrefix: 'dplan' });
+                } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
+                else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
+            });
+            // 카테고리 셀렉트(change 로 즉시 저장)
+            each('select[name]', (el, name) => {
+                let m;
+                if ((m = name.match(/^bcat_(\d+)$/))) el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
+                else if ((m = name.match(/^cat_(\d+)$/))) el.addEventListener('change', () => saveField('slot', m[1], 'cat', el.value));
+            });
+        }
+
+        if (weekForm) {
+            // 주간 메타는 /week/save/{week} 전체 폼 저장에 맡기되, 테마 이름·블록 이름은
+            // 자동저장 엔드포인트가 없으므로 여기서는 폼 저장 버튼에 의존한다.
+            // (주간 메타 자동저장은 별도 엔드포인트가 필요해 범위 밖 — 저장 버튼 유지)
+        }
     }
 
     // ---- theme -----------------------------------------------------------
@@ -1055,17 +1104,21 @@
     }
     // 같은 엔티티+id+field 의 자동저장 요청은 마지막 것만 남긴다(전체 폼 저장과 동일 전략).
     function asOpKey(entity, id, field) { return 'as:' + entity + ':' + id + ':' + field; }
+    const asInflight = {};   // key -> 이전 요청이 진행 중인가 (중복 전송 억제)
     function saveField(entity, id, field, value, extra) {
+        const key = asOpKey(entity, id, field);
         const bodyObj = { entity: entity, id: String(id), field: field, value: value };
         if (extra) Object.keys(extra).forEach((k) => { bodyObj[k] = extra[k]; });
         const op = {
             id: genId(), kind: 'autosave', url: '/save/field', headers: FORM_HEADERS,
             body: new URLSearchParams(bodyObj).toString(),
-            dedupe: asOpKey(entity, id, field),
+            dedupe: key,
         };
+        // 진행 중인 동일 필드 요청이 있으면 결과는 무시(마지막 값이 대기열/새 요청으로 이김)
+        asInflight[key] = true;
         sendOrQueue(
             op,
-            autosaveToast,
+            () => { asInflight[key] = false; autosaveToast(); },
             () => toast('저장 대기 · 연결되면 자동 전송'),
         );
     }
@@ -1309,6 +1362,9 @@
         }
 
         bindForm();
+        bindAutosaveAll();
+        // 모든 텍스트 입력창에 애플노트 스타일 마크다운(자동번호/들여쓰기/하위레벨) 적용.
+        document.querySelectorAll('textarea').forEach((ta) => bindListEditor(ta));
 
         // 대기열 자동 전송: 로드 직후 + 30초마다 재시도 + 연결 복구 이벤트 때
         updateNetStatus();

@@ -590,10 +590,13 @@ async def save_field(request: Request):
     raw_id = form.get("id")
     value = form.get("value") or ""
     now = datetime.now(KST).isoformat(timespec="seconds")
-    try:
-        rid = int(raw_id)
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    # block/slot 은 숫자 id, meta 는 날짜(문자열) id 를 쓴다.
+    rid = None
+    if entity != "meta":
+        try:
+            rid = int(raw_id)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
 
     with get_conn() as conn:
         if entity == "block":
