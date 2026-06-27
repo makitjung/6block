@@ -134,6 +134,22 @@
                 {% endif %}
             </div>
         </div>
+        <div class="review-reflect">
+            <div class="review-head">이번 주 고결감 <span class="count">{{ week_reflections | length }}</span> <span class="card-sub"><a href="/reflect">고결감 탭</a></span></div>
+            {% if week_reflections %}
+            <ul class="review-list rv-reflect-list">
+                {% for r in week_reflections %}
+                <li class="rv-reflect">
+                    <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
+                    <span class="rv-date mono">{{ r.event_date | short_date }}</span>
+                    <span class="rv-plan">{% if r.title %}{{ r.title }}{% if r.text %} · {{ r.text }}{% endif %}{% else %}{{ r.text }}{% endif %}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="ctx-empty">이번 주에 기록한 고결감이 없습니다.</div>
+            {% endif %}
+        </div>
     </section>
 
     <section class="card">

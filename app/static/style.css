@@ -426,6 +426,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .wk-inbox-text:hover { border-color: var(--border); }
 .wk-inbox-text:focus { border-color: var(--accent); background: var(--surface); outline: none; }
 .wk-inbox-status { flex: 0 0 auto; font-size: 12px; padding: 3px 4px; }
+/* 주간 리뷰: 이번 주 고결감 모아보기 */
+.review-reflect { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.rv-reflect-list { display: flex; flex-direction: column; gap: 4px; }
+.rv-reflect { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 13px; }
+.rv-reflect .rv-date { flex: 0 0 auto; color: var(--text-muted); font-size: 12px; }
+.rv-reflect .rv-plan { flex: 1 1 auto; min-width: 0; word-break: break-word; }
 
 /* === KPI === */
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }

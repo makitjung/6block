@@ -1114,6 +1114,12 @@ def _week_view(request: Request, monday: date):
             """,
             dates,
         ).fetchall()
+        # 주간 검토: 이번 주에 기록한 고결감(고민·결정·감사)을 한 자리에서 회고
+        week_reflections = conn.execute(
+            "SELECT kind, title, text, event_date FROM reflection "
+            "WHERE event_date BETWEEN ? AND ? ORDER BY event_date DESC, id DESC LIMIT 50",
+            (dates[0], dates[6]),
+        ).fetchall()
 
     blocks_by_date: dict[str, list] = {d: [] for d in dates}
     for r in rows:
@@ -1184,6 +1190,7 @@ def _week_view(request: Request, monday: date):
             "today": today_str(),
             "review_inbox": review_inbox,
             "missed_blocks": missed_blocks,
+            "week_reflections": [dict(r) for r in week_reflections],
         },
     )
 
