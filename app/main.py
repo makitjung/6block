@@ -1773,6 +1773,34 @@ def _calc_streak(rec_dates: set, today: date) -> int:
     return streak
 
 
+def _on_this_day(today: date):
+    """예전 오늘(어제·1주·한 달·1년 전)의 한 일(슬롯)과 고결감을 모아 회고용으로 돌려준다."""
+    points = [(1, "어제"), (7, "1주 전"), (30, "한 달 전"), (365, "1년 전")]
+    out = []
+    with get_conn() as conn:
+        for off, label in points:
+            d = (today - timedelta(days=off)).strftime("%Y-%m-%d")
+            slots = [
+                dict(r) for r in conn.execute(
+                    "SELECT b.block_label, s.start_time, s.do_text, s.did_text "
+                    "FROM slots s JOIN blocks b ON b.id = s.block_id "
+                    "WHERE s.date = ? AND (TRIM(COALESCE(s.do_text,'')) != '' "
+                    "OR TRIM(COALESCE(s.did_text,'')) != '') ORDER BY s.slot_index LIMIT 10",
+                    (d,),
+                )
+            ]
+            refls = [
+                dict(r) for r in conn.execute(
+                    "SELECT kind, title, text FROM reflection WHERE event_date = ? "
+                    "ORDER BY id DESC LIMIT 10",
+                    (d,),
+                )
+            ]
+            if slots or refls:
+                out.append({"label": label, "date": d, "slots": slots, "reflections": refls})
+    return out
+
+
 @app.get("/analytics")
 def analytics_view(request: Request, rng: str = "7", q: str = ""):
     today = datetime.now(KST).date()
@@ -1862,6 +1890,7 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
             "q": q,
             "s_slots": s_slots,
             "s_blocks": s_blocks,
+            "flashback": _on_this_day(today),
         },
     )
 

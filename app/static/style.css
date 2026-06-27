@@ -1125,6 +1125,17 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 @media (max-width: 720px) { .split-2 { grid-template-columns: 1fr; } }
 /* 분석·검색: 검색 결과 영역 간격 */
 .search-results { margin-top: 12px; }
+/* 지난 기록 돌아보기 */
+.flashback { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.fb-group { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; background: var(--surface-2); }
+.fb-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fb-label { font-weight: 700; color: var(--accent); font-size: 13px; }
+.fb-date { color: var(--text-muted); font-size: 12px; }
+.fb-go { margin-left: auto; color: var(--text-subtle); text-decoration: none; font-size: 12px; }
+.fb-go:hover { color: var(--accent); }
+.fb-row { display: flex; gap: 8px; padding: 3px 0; font-size: 13px; align-items: baseline; }
+.fb-blk { flex: 0 0 auto; color: var(--text-subtle); font-size: 11px; }
+.fb-x { flex: 1 1 auto; min-width: 0; word-break: break-word; }
 /* 구글 일정 쓰기 연동 카드 */
 .set-events-status { font-size: 13px; font-weight: 600; }
 .set-events-status.ok { color: var(--success); }

@@ -61,6 +61,29 @@
     {% endif %}
 </section>
 
+{% if flashback %}
+<section class="card">
+    <h2 class="card-title">지난 기록 돌아보기 <span class="card-sub">예전 오늘의 한 일과 고결감</span></h2>
+    <div class="flashback">
+        {% for f in flashback %}
+        <div class="fb-group">
+            <div class="fb-head">
+                <span class="fb-label">{{ f.label }}</span>
+                <span class="fb-date mono">{{ f.date | short_date }}({{ f.date | ko_weekday }})</span>
+                <a class="fb-go mono" href="/day/{{ f.date }}">열기 ↗</a>
+            </div>
+            {% for s in f.slots %}
+            <div class="fb-row"><span class="fb-blk mono">{{ s.block_label }} {{ s.start_time }}</span><span class="fb-x">{{ s.did_text or s.do_text }}</span></div>
+            {% endfor %}
+            {% for r in f.reflections %}
+            <div class="fb-row"><span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span><span class="fb-x">{% if r.title %}{{ r.title }}{% if r.text %} · {{ r.text }}{% endif %}{% else %}{{ r.text }}{% endif %}</span></div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
 <section class="kpi-row an-kpi">
     <div class="kpi">
         <span class="kpi-label">연속 기록</span>
