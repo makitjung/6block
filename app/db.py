@@ -119,6 +119,10 @@ def _migrate(conn: sqlite3.Connection):
     if refl_cols:
         conn.execute("UPDATE reflection SET kind = '감사' WHERE kind = '감상'")
         conn.execute("UPDATE reflection SET kind = '결정' WHERE kind = '결심'")
+    # GTD 명료화: 수집함 항목 상태(''=미분류·next·wait·someday·ref). 없으면 추가.
+    inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
+    if inbox_cols and "status" not in inbox_cols:
+        conn.execute("ALTER TABLE inbox ADD COLUMN status TEXT NOT NULL DEFAULT ''")
 
 
 @contextmanager

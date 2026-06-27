@@ -1444,6 +1444,33 @@
                 null, () => toast('전송 대기 · 자동 재시도'),
             );
         };
+        // GTD 상태(미분류/다음행동/대기/언젠가/참고) 자동저장
+        const STATUS_OPTS = [['', '미분류'], ['next', '다음행동'], ['wait', '대기'], ['someday', '언젠가'], ['ref', '참고']];
+        const bindStatus = (sel) => {
+            sel.addEventListener('change', () => {
+                const id = sel.dataset.id;
+                if (String(id).indexOf('tmp-') === 0) return;   // 아직 미동기화
+                sendOrQueue(
+                    { id: genId(), kind: 'inbox-status', url: '/inbox/status', headers: FORM_HEADERS,
+                      body: new URLSearchParams({ item_id: id, status: sel.value }).toString(),
+                      dedupe: 'inbox-status:' + id },
+                    () => autosaveToast(),
+                    () => toast('저장 대기 · 자동 재시도'),
+                );
+            });
+        };
+        const makeStatusSelect = (id, cur) => {
+            const sel = document.createElement('select');
+            sel.className = 'wk-inbox-status'; sel.dataset.id = id;
+            STATUS_OPTS.forEach(([v, t]) => {
+                const o = document.createElement('option');
+                o.value = v; o.textContent = t;
+                if (v === (cur || '')) o.selected = true;
+                sel.appendChild(o);
+            });
+            bindStatus(sel);
+            return sel;
+        };
         const addRow = (id, text, opId) => {
             const row = el('div', 'wk-inbox-item');
             row.dataset.id = id; if (opId) row.dataset.op = opId;
@@ -1453,7 +1480,7 @@
             const del = document.createElement('button');
             del.type = 'button'; del.className = 'inbox-del wk-inbox-del'; del.title = '삭제'; del.textContent = '✕';
             del.addEventListener('click', () => remove(row));
-            row.appendChild(ti); row.appendChild(del);
+            row.appendChild(ti); row.appendChild(makeStatusSelect(id, '')); row.appendChild(del);
             list.insertBefore(row, list.firstChild);
             refreshEmpty();
         };
@@ -1478,6 +1505,7 @@
                 .finally(() => { inflight = false; });
         };
         list?.querySelectorAll('.wk-inbox-text').forEach(bindEdit);
+        list?.querySelectorAll('.wk-inbox-status').forEach(bindStatus);
         list?.querySelectorAll('.wk-inbox-del').forEach((b) =>
             b.addEventListener('click', () => remove(b.closest('.wk-inbox-item'))));
         addBtn?.addEventListener('click', add);

@@ -101,6 +101,13 @@
                     {% for it in review_inbox %}
                     <div class="wk-inbox-item" data-id="{{ it.id }}">
                         <input type="text" class="wk-inbox-text" value="{{ it.text }}" data-id="{{ it.id }}" autocomplete="off">
+                        <select class="wk-inbox-status" data-id="{{ it.id }}" aria-label="상태">
+                            <option value="" {% if not it.status %}selected{% endif %}>미분류</option>
+                            <option value="next" {% if it.status == 'next' %}selected{% endif %}>다음행동</option>
+                            <option value="wait" {% if it.status == 'wait' %}selected{% endif %}>대기</option>
+                            <option value="someday" {% if it.status == 'someday' %}selected{% endif %}>언젠가</option>
+                            <option value="ref" {% if it.status == 'ref' %}selected{% endif %}>참고</option>
+                        </select>
                         <button type="button" class="inbox-del wk-inbox-del" data-id="{{ it.id }}" title="삭제">✕</button>
                     </div>
                     {% endfor %}

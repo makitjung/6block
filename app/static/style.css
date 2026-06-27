@@ -412,6 +412,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .wk-inbox-text:hover { border-color: var(--border); }
 .wk-inbox-text:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+.wk-inbox-status { flex: 0 0 auto; font-size: 12px; padding: 3px 4px; }
 
 /* === KPI === */
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }

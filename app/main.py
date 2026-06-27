@@ -797,6 +797,25 @@ async def inbox_update(request: Request):
     return JSONResponse({"ok": True})
 
 
+INBOX_STATUSES = {"", "next", "wait", "someday", "ref"}
+
+
+@app.post("/inbox/status")
+async def inbox_status(request: Request):
+    """수집함 항목의 GTD 상태(미분류/다음행동/대기/언젠가/참고)를 저장한다(주간 정리 단계)."""
+    form = await request.form()
+    try:
+        item_id = int(form.get("item_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    status = (form.get("status") or "").strip()
+    if status not in INBOX_STATUSES:
+        return JSONResponse({"ok": False, "error": "bad-status"}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("UPDATE inbox SET status = ? WHERE id = ?", (status, item_id))
+    return JSONResponse({"ok": True})
+
+
 # -- 오늘 외부 입력: Things3 할일 / 구글 일정 쓰기 -------------------------
 
 
@@ -995,7 +1014,7 @@ def _week_view(request: Request, monday: date):
         ).fetchall()
         # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
         review_inbox = conn.execute(
-            "SELECT id, text FROM inbox WHERE done = 0 ORDER BY id DESC"
+            "SELECT id, text, status FROM inbox WHERE done = 0 ORDER BY id DESC"
         ).fetchall()
         missed_blocks = conn.execute(
             f"""
