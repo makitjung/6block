@@ -941,6 +941,31 @@
             });
         });
 
+        // 구글 일정 쓰기: 캘린더 ID 자동 저장 + 연결 테스트
+        const evCal = document.getElementById('set-events-cal');
+        const evStatus = document.getElementById('set-events-status');
+        const setEvStatus = (on) => {
+            if (!evStatus) return;
+            evStatus.textContent = on ? '켜짐 · 연결됨' : '꺼짐 · ID 입력 필요';
+            evStatus.classList.toggle('ok', !!on);
+            evStatus.classList.toggle('bad', !on);
+        };
+        evCal?.addEventListener('change', () => {
+            postForm('/settings/events-calendar', { value: evCal.value.trim() }).then((d) => {
+                if (!d) return;
+                setEvStatus(d.enabled);
+                toast('캘린더 ID 저장');
+            });
+        });
+        document.getElementById('set-events-test')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget; btn.disabled = true;
+            postForm('/settings/events-calendar/test', {}).then((d) => {
+                btn.disabled = false;
+                if (d && d.ok) toast(d.warn || '연결 OK · 테스트 일정 생성/삭제 성공');
+                else toast((d && d.error) || '연결 실패');
+            });
+        });
+
         document.getElementById('set-backup-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget; btn.disabled = true;
             postForm('/settings/backup', {}).then((d) => {

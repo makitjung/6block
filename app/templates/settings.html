@@ -134,5 +134,21 @@
         {% endfor %}
     </div>
 </section>
+
+<section class="card">
+    <h2 class="card-title">구글 일정 쓰기 <span class="card-sub">오늘 탭에서 만든 일정을 보낼 캘린더</span></h2>
+    <div class="set-data-row">
+        <span class="set-label">캘린더 ID</span>
+        <input type="text" id="set-events-cal" value="{{ events_calendar_id }}" placeholder="...@group.calendar.google.com" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">상태</span>
+        <span class="set-events-status {% if gcal_events_on %}ok{% else %}bad{% endif %}" id="set-events-status">{% if gcal_events_on %}켜짐 · 연결됨{% else %}꺼짐 · ID 입력 필요{% endif %}</span>
+        <button type="button" class="ghost-btn" id="set-events-test">연결 테스트</button>
+    </div>
+    {% if sa_email %}
+    <p class="set-events-hint mono">이 캘린더를 구글 캘린더 공유 설정에서 다음 계정에 '변경 권한'으로 공유하세요 · {{ sa_email }}</p>
+    {% endif %}
+</section>
 </div>
 {% endblock %}

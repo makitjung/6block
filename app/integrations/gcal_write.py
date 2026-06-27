@@ -136,10 +136,32 @@ def create_event(kind: str, title: str, content: str, tags: str, event_date: str
     return ev.get("id")
 
 
+def service_account_email() -> str:
+    """캘린더 공유 안내용 서비스계정 이메일(키파일의 client_email)."""
+    try:
+        import json as _json
+
+        with open(GCAL_SA_KEYFILE, encoding="utf-8") as f:
+            return _json.load(f).get("client_email", "")
+    except Exception:
+        return ""
+
+
+def events_calendar_id() -> str:
+    """일정용 캘린더 ID. 설정(app_settings)에 넣은 값이 우선, 없으면 .env 값."""
+    try:
+        from app.db import get_settings
+
+        v = (get_settings().get("gcal_events_calendar_id") or "").strip()
+    except Exception:
+        v = ""
+    return v or GCAL_WRITE_EVENTS_CALENDAR_ID
+
+
 def events_enabled() -> bool:
     """오늘 탭 '일정' 쓰기 가능 여부(일정용 캘린더 ID + 서비스계정 + 라이브러리)."""
     return bool(
-        GCAL_WRITE_EVENTS_CALENDAR_ID
+        events_calendar_id()
         and GCAL_SA_KEYFILE
         and _HAS_LIB
         and os.path.exists(GCAL_SA_KEYFILE)
@@ -148,8 +170,9 @@ def events_enabled() -> bool:
 
 def create_calendar_event(summary: str, date_str: str, time_hhmm: str | None = None):
     """오늘 탭에서 만든 일정을 일정용 캘린더에 생성한다. 시간 있으면 1시간 블록, 없으면 종일."""
+    cal = events_calendar_id()
     svc = _svc()
-    if svc is None or not GCAL_WRITE_EVENTS_CALENDAR_ID:
+    if svc is None or not cal:
         return None
     summary = (summary or "").strip()[:200]
     if time_hhmm and re.match(r"^\d{2}:\d{2}$", time_hhmm):
@@ -167,10 +190,34 @@ def create_calendar_event(summary: str, date_str: str, time_hhmm: str | None = N
             "start": {"date": date_str},
             "end": {"date": _next_day(date_str)},
         }
-    ev = svc.events().insert(
-        calendarId=GCAL_WRITE_EVENTS_CALENDAR_ID, body=body
-    ).execute()
+    ev = svc.events().insert(calendarId=cal, body=body).execute()
     return ev.get("id")
+
+
+def test_events_write() -> dict:
+    """일정용 캘린더에 테스트 이벤트를 만들고 즉시 지워 쓰기 권한을 확인한다."""
+    cal = events_calendar_id()
+    if not cal:
+        return {"ok": False, "error": "캘린더 ID가 비어 있습니다"}
+    svc = _svc()
+    if svc is None:
+        return {"ok": False, "error": "서비스계정 비활성(키파일 확인)"}
+    d1 = (date.today() + timedelta(days=1)).isoformat()
+    d2 = (date.today() + timedelta(days=2)).isoformat()
+    try:
+        ev = svc.events().insert(
+            calendarId=cal,
+            body={"summary": "[6block 연결테스트] (자동삭제)",
+                  "start": {"date": d1}, "end": {"date": d2}},
+        ).execute()
+        eid = ev.get("id")
+    except Exception as e:
+        return {"ok": False, "error": "쓰기 실패(공유가 '변경 권한'인지 확인): " + str(e)[:140]}
+    try:
+        svc.events().delete(calendarId=cal, eventId=eid).execute()
+    except Exception:
+        return {"ok": True, "warn": "생성됐으나 삭제 실패(테스트 이벤트가 남았을 수 있음)"}
+    return {"ok": True}
 
 
 def update_event(event_id: str, kind: str, title: str, content: str, tags: str) -> bool:

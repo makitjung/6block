@@ -1397,6 +1397,9 @@ def settings_view(request: Request):
                 {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
                 for i, (lbl, core, s, e) in enumerate(get_day_blocks())
             ],
+            "events_calendar_id": gcal_write.events_calendar_id(),
+            "gcal_events_on": gcal_write.events_enabled(),
+            "sa_email": gcal_write.service_account_email(),
         },
     )
 
@@ -1488,6 +1491,21 @@ async def settings_blocktimes_reset():
     """블록 시간 오버라이드를 지워 기본 시간표로 되돌린다."""
     set_setting(BLOCK_TIMES_KEY, "")
     return JSONResponse({"ok": True})
+
+
+@app.post("/settings/events-calendar")
+async def settings_events_calendar(request: Request):
+    """오늘 탭 일정 쓰기용 구글 캘린더 ID를 저장한다(빈 값이면 일정 쓰기 해제)."""
+    form = await request.form()
+    value = (form.get("value") or "").strip()
+    set_setting("gcal_events_calendar_id", value)
+    return JSONResponse({"ok": True, "enabled": gcal_write.events_enabled()})
+
+
+@app.post("/settings/events-calendar/test")
+async def settings_events_calendar_test():
+    """저장된 일정용 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
+    return JSONResponse(gcal_write.test_events_write())
 
 
 @app.post("/settings/category/add")
