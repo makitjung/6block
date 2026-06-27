@@ -1596,6 +1596,45 @@
         });
     }
 
+    // ---- 하루 마감(오늘 감사 한 줄 → 고결감 / 내일 가장 중요한 일 → 내일 목표) ----
+    function bindShutdown() {
+        const form = document.querySelector('.day-form');
+        const date = form ? form.dataset.date : '';
+        const thanks = document.getElementById('sd-thanks');
+        const saveThanks = () => {
+            const t = (thanks?.value || '').trim();
+            if (!t) return;
+            fetch('/reflect/add', {
+                method: 'POST', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind: '감사', title: t, text: '', tags: '' }).toString(),
+            })
+                .then((r) => r.json())
+                .then((d) => {
+                    if (d && d.ok) { thanks.value = ''; toast(d.synced ? '감사 기록 · 캘린더 반영' : '감사 기록'); }
+                    else toast('기록 실패');
+                })
+                .catch(() => toast('연결이 필요합니다'));
+        };
+        document.getElementById('sd-thanks-btn')?.addEventListener('click', saveThanks);
+        thanks?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveThanks(); }
+        });
+
+        const tom = document.getElementById('sd-tomorrow');
+        const saveTom = () => {
+            const t = (tom?.value || '').trim();
+            if (!t) return;
+            postForm('/meta/tomorrow-goal', { date: date, text: t }).then((d) => {
+                if (d && d.ok) { toast('내일 목표로 저장'); }
+                else toast('저장 실패');
+            });
+        };
+        document.getElementById('sd-tomorrow-btn')?.addEventListener('click', saveTom);
+        tom?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveTom(); }
+        });
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();
@@ -1667,6 +1706,7 @@
         bindWeekInbox();
         bindTodayExternal();
         bindRollover();
+        bindShutdown();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

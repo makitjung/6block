@@ -477,6 +477,25 @@ def _day_view(request: Request, date_str: str):
     for s in slots:
         slots_by_block.setdefault(s["block_id"], []).append(s)
 
+    # 하루 마감 요약: 완료·기록 슬롯 수와 코어 블록 계획→실행 달성.
+    done_slots = sum(1 for s in slots if s["done"])
+    recorded_slots = sum(
+        1 for s in slots
+        if (s["do_text"] or "").strip() or (s["did_text"] or "").strip()
+        or s["category_id"] or s["done"]
+    )
+    core_planned = core_achieved = 0
+    for b in blocks:
+        if b["is_core"] and (b["plan_text"] or "").strip():
+            core_planned += 1
+            if any((s["do_text"] or "").strip() or s["done"]
+                   for s in slots_by_block.get(b["id"], [])):
+                core_achieved += 1
+    day_stats = {
+        "done": done_slots, "recorded": recorded_slots,
+        "core_planned": core_planned, "core_achieved": core_achieved,
+    }
+
     # 외부 연동: Things3 Today + 구글 캘린더 일정.
     # 전체 목록은 최상단에 1번만 줄바꿈으로 노출(cal_events, task_list),
     # 시각이 있는 항목만 해당 시간 블록의 아젠다로 배치한다.
@@ -512,6 +531,7 @@ def _day_view(request: Request, date_str: str):
             "cal_enabled": gcal.enabled(),
             "things_write_on": things.enabled(),
             "gcal_events_on": gcal_write.events_enabled(),
+            "day_stats": day_stats,
         },
     )
 
@@ -919,6 +939,34 @@ async def block_rollover(request: Request):
             (new_plan, now, dst["id"]),
         )
     return JSONResponse({"ok": True, "date": nxt, "label": src["block_label"]})
+
+
+@app.post("/meta/tomorrow-goal")
+async def meta_tomorrow_goal(request: Request):
+    """하루 마감에서 적은 '내일 가장 중요한 일'을 다음 날 목표 1번에 저장한다."""
+    form = await request.form()
+    date_str = (form.get("date") or "").strip()
+    text = (form.get("text") or "").strip()
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
+    nxt = (d + timedelta(days=1)).strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT today_goal FROM daily_meta WHERE date = ?", (nxt,)
+        ).fetchone()
+        base = (row["today_goal"] if row and row["today_goal"] else "")
+        parts = (base.split("\n") + ["", "", ""])[:3]
+        parts[0] = text
+        joined = "\n".join(p.strip() for p in parts)
+        joined = joined if joined.strip() else ""
+        conn.execute(
+            "INSERT INTO daily_meta (date, today_goal) VALUES (?, ?) "
+            "ON CONFLICT(date) DO UPDATE SET today_goal = excluded.today_goal",
+            (nxt, joined),
+        )
+    return JSONResponse({"ok": True, "date": nxt})
 
 
 # -- 슬롯 실행 체크 + 실시간 폴링 -------------------------------------------

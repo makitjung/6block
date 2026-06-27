@@ -283,6 +283,30 @@
     {% endfor %}
     </section>
 
+    {% if is_today %}
+    <details class="card shutdown-card">
+        <summary class="card-title">오늘 마감 <span class="card-sub">하루를 닫고 내일을 준비</span></summary>
+        <div class="sd-stats mono">
+            <span>완료 <strong>{{ day_stats.done }}</strong>/{{ day_stats.recorded }} 슬롯</span>
+            <span>코어 실행 <strong>{{ day_stats.core_achieved }}</strong>/{{ day_stats.core_planned }}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">오늘 감사 한 줄 <span class="card-sub">고결감(감사)에 기록</span></span>
+            <div class="sd-row">
+                <input type="text" id="sd-thanks" placeholder="오늘 고마웠던 것 한 가지" autocomplete="off">
+                <button type="button" class="ghost-btn" id="sd-thanks-btn">기록</button>
+            </div>
+        </div>
+        <div class="field">
+            <span class="field-label">내일 가장 중요한 일 <span class="card-sub">내일 목표 1번에 저장</span></span>
+            <div class="sd-row">
+                <input type="text" id="sd-tomorrow" placeholder="내일 꼭 할 한 가지" autocomplete="off">
+                <button type="button" class="ghost-btn" id="sd-tomorrow-btn">저장</button>
+            </div>
+        </div>
+    </details>
+    {% endif %}
+
     <div class="actions-sticky">
         <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
     </div>

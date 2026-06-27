@@ -322,6 +322,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: var(--text-muted); border-radius: var(--r-pill);
 }
 .block-rollover:hover { border-color: var(--accent); color: var(--accent); }
+/* 하루 마감 카드 */
+.shutdown-card { margin-top: 14px; }
+.shutdown-card > summary { cursor: pointer; }
+.sd-stats { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0 12px; color: var(--text-muted); font-size: 13px; }
+.sd-row { display: flex; gap: 8px; margin-top: 4px; }
+.sd-row input { flex: 1; min-width: 0; }
 .agenda-row .x::before {
     content: ""; display: inline-block; margin-right: 7px; vertical-align: middle;
     width: 7px; height: 7px;
