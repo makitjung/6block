@@ -4,7 +4,11 @@ import re
 import time
 from datetime import date, timedelta
 
-from app.config import GCAL_SA_KEYFILE, GCAL_WRITE_CALENDAR_ID
+from app.config import (
+    GCAL_SA_KEYFILE,
+    GCAL_WRITE_CALENDAR_ID,
+    GCAL_WRITE_EVENTS_CALENDAR_ID,
+)
 
 # events 범위만 요청한다(캘린더 자체 생성/삭제 권한은 필요 없음).
 _SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
@@ -129,6 +133,43 @@ def create_event(kind: str, title: str, content: str, tags: str, event_date: str
     }
     ev = svc.events().insert(calendarId=GCAL_WRITE_CALENDAR_ID, body=body).execute()
     _list_cache["items"] = None  # 캐시 무효화(방금 만든 게 즉시 보이도록)
+    return ev.get("id")
+
+
+def events_enabled() -> bool:
+    """오늘 탭 '일정' 쓰기 가능 여부(일정용 캘린더 ID + 서비스계정 + 라이브러리)."""
+    return bool(
+        GCAL_WRITE_EVENTS_CALENDAR_ID
+        and GCAL_SA_KEYFILE
+        and _HAS_LIB
+        and os.path.exists(GCAL_SA_KEYFILE)
+    )
+
+
+def create_calendar_event(summary: str, date_str: str, time_hhmm: str | None = None):
+    """오늘 탭에서 만든 일정을 일정용 캘린더에 생성한다. 시간 있으면 1시간 블록, 없으면 종일."""
+    svc = _svc()
+    if svc is None or not GCAL_WRITE_EVENTS_CALENDAR_ID:
+        return None
+    summary = (summary or "").strip()[:200]
+    if time_hhmm and re.match(r"^\d{2}:\d{2}$", time_hhmm):
+        sm = int(time_hhmm[:2]) * 60 + int(time_hhmm[3:5])
+        em = min(sm + 60, 23 * 60 + 59)
+        body = {
+            "summary": summary,
+            "start": {"dateTime": f"{date_str}T{time_hhmm}:00", "timeZone": "Asia/Seoul"},
+            "end": {"dateTime": f"{date_str}T{em // 60:02d}:{em % 60:02d}:00",
+                    "timeZone": "Asia/Seoul"},
+        }
+    else:
+        body = {
+            "summary": summary,
+            "start": {"date": date_str},
+            "end": {"date": _next_day(date_str)},
+        }
+    ev = svc.events().insert(
+        calendarId=GCAL_WRITE_EVENTS_CALENDAR_ID, body=body
+    ).execute()
     return ev.get("id")
 
 

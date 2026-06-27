@@ -75,29 +75,50 @@
             </div>
         </div>
 
-        <div class="ctx-section">
-            <div class="ctx-head">
-                오늘 일정 · 할 일 <span class="live-dot" title="실시간 갱신"></span>
-                <button type="button" id="agenda-refresh" class="agenda-refresh" title="지금 동기화" aria-label="새로고침">↻</button>
-                <span class="ctx-empty cal-warn"{% if cal_enabled %} style="display:none"{% endif %}>(구글 캘린더 미연결)</span>
-            </div>
-            <div class="agenda" id="agenda">
-                {% for ev in cal_events %}
-                <div class="agenda-row event cal-{{ ev.color }}">
-                    <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
-                    <span class="x">{{ ev.title }}</span>
+        <div class="ctx-section agenda-2">
+            <div class="agenda-col">
+                <div class="ctx-head">
+                    구글 일정 <span class="live-dot" title="실시간 갱신"></span>
+                    <button type="button" id="agenda-refresh" class="agenda-refresh" title="지금 동기화" aria-label="새로고침">↻</button>
+                    <span class="ctx-empty cal-warn"{% if cal_enabled %} style="display:none"{% endif %}>(미연결)</span>
                 </div>
-                {% endfor %}
-                {% for t in task_list %}
-                <div class="agenda-row task">
-                    {% if t.time %}<span class="t">{{ t.time }}</span>{% endif %}
-                    <span class="x">{{ t.title }}</span>
-                    {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
+                {% if gcal_events_on %}
+                <div class="agenda-add">
+                    <input type="text" id="ev-input" placeholder="일정 추가 → 구글 캘린더" autocomplete="off" enterkeyhint="done">
+                    <input type="time" id="ev-time" step="300" aria-label="시간(선택)">
+                    <button type="button" class="inbox-add" id="ev-add" aria-label="일정 추가">+</button>
                 </div>
-                {% endfor %}
-                {% if not cal_events and not task_list %}
-                <div class="ctx-empty agenda-empty">Things3 Today와 구글 캘린더 일정이 여기에 한 번에 모입니다.</div>
+                {% else %}
+                <div class="agenda-hint mono">일정 쓰기를 켜려면 계획 캘린더를 서비스계정에 공유하고 .env의 GCAL_WRITE_EVENTS_CALENDAR_ID를 채우세요.</div>
                 {% endif %}
+                <div class="agenda" id="agenda-events">
+                    {% for ev in cal_events %}
+                    <div class="agenda-row event cal-{{ ev.color }}">
+                        <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
+                        <span class="x">{{ ev.title }}</span>
+                    </div>
+                    {% endfor %}
+                    {% if not cal_events %}<div class="ctx-empty agenda-empty">오늘 일정이 없습니다.</div>{% endif %}
+                </div>
+            </div>
+            <div class="agenda-col">
+                <div class="ctx-head">Things3 할 일</div>
+                {% if things_write_on %}
+                <div class="agenda-add">
+                    <input type="text" id="task-input" placeholder="할일 추가 → Things3" autocomplete="off" enterkeyhint="done">
+                    <button type="button" class="inbox-add" id="task-add" aria-label="할일 추가">+</button>
+                </div>
+                {% endif %}
+                <div class="agenda" id="agenda-tasks">
+                    {% for t in task_list %}
+                    <div class="agenda-row task">
+                        {% if t.time %}<span class="t">{{ t.time }}</span>{% endif %}
+                        <span class="x">{{ t.title }}</span>
+                        {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                    {% if not task_list %}<div class="ctx-empty agenda-empty">Things3 Today가 비어 있습니다.</div>{% endif %}
+                </div>
             </div>
         </div>
     </section>

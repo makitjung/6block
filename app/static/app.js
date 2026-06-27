@@ -732,28 +732,32 @@
         return e;
     }
     function renderAgenda(data) {
-        const box = document.getElementById('agenda');
-        if (!box) return;
+        // 구글 일정과 Things3 할 일을 각각의 칸에 따로 그린다(분리 표시).
+        const evBox = document.getElementById('agenda-events');
+        const taskBox = document.getElementById('agenda-tasks');
         const events = data.events || [];
         const tasks = data.tasks || [];
-        box.textContent = '';
-        events.forEach((ev) => {
-            const row = el('div', 'agenda-row event' + (ev.color ? ' cal-' + ev.color : ''));
-            row.appendChild(el('span', 't', ev.all_day ? '종일' : (ev.start || '')));
-            row.appendChild(el('span', 'x', ev.title));
-            box.appendChild(row);
-        });
-        tasks.forEach((t) => {
-            const row = el('div', 'agenda-row task');
-            if (t.time) row.appendChild(el('span', 't', t.time));
-            row.appendChild(el('span', 'x', t.title));
-            if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
-            else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));
-            box.appendChild(row);
-        });
-        if (!events.length && !tasks.length) {
-            box.appendChild(el('div', 'ctx-empty agenda-empty',
-                'Things3 Today와 구글 캘린더 일정이 여기에 한 번에 모입니다.'));
+        if (evBox) {
+            evBox.textContent = '';
+            events.forEach((ev) => {
+                const row = el('div', 'agenda-row event' + (ev.color ? ' cal-' + ev.color : ''));
+                row.appendChild(el('span', 't', ev.all_day ? '종일' : (ev.start || '')));
+                row.appendChild(el('span', 'x', ev.title));
+                evBox.appendChild(row);
+            });
+            if (!events.length) evBox.appendChild(el('div', 'ctx-empty agenda-empty', '오늘 일정이 없습니다.'));
+        }
+        if (taskBox) {
+            taskBox.textContent = '';
+            tasks.forEach((t) => {
+                const row = el('div', 'agenda-row task');
+                if (t.time) row.appendChild(el('span', 't', t.time));
+                row.appendChild(el('span', 'x', t.title));
+                if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
+                else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));
+                taskBox.appendChild(row);
+            });
+            if (!tasks.length) taskBox.appendChild(el('div', 'ctx-empty agenda-empty', 'Things3 Today가 비어 있습니다.'));
         }
     }
     function renderBlockAgendas(data) {
@@ -1457,6 +1461,75 @@
         });
     }
 
+    // ---- 오늘 외부 입력: 일정→구글 / 할일→Things3 (입력 즉시 낙관적 표시) ----
+    function bindTodayExternal() {
+        const form = document.querySelector('.day-form');
+        const dateOf = () => (form ? form.dataset.date : '');
+        const optimistic = (boxId, makeRow) => {
+            const box = document.getElementById(boxId);
+            if (!box) return;
+            box.querySelector('.agenda-empty')?.remove();
+            box.insertBefore(makeRow(), box.firstChild);
+        };
+
+        const evInput = document.getElementById('ev-input');
+        const evTime = document.getElementById('ev-time');
+        const addEvent = () => {
+            const title = (evInput?.value || '').trim();
+            if (!title) return;
+            const time = (evTime?.value || '').trim();
+            fetch('/gcal/event/add', {
+                method: 'POST', headers: FORM_HEADERS,
+                body: new URLSearchParams({ title: title, time: time, date: dateOf() }).toString(),
+            })
+                .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+                .then(({ ok, d }) => {
+                    if (ok && d.ok) {
+                        optimistic('agenda-events', () => {
+                            const row = el('div', 'agenda-row event');
+                            row.appendChild(el('span', 't', time || '종일'));
+                            row.appendChild(el('span', 'x', title));
+                            return row;
+                        });
+                        evInput.value = ''; if (evTime) evTime.value = '';
+                        toast('일정 추가 → 구글 캘린더');
+                    } else { toast((d && d.error) || '일정 추가 실패'); }
+                })
+                .catch(() => toast('연결이 필요합니다'));
+        };
+        document.getElementById('ev-add')?.addEventListener('click', addEvent);
+        evInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); addEvent(); }
+        });
+
+        const taskInput = document.getElementById('task-input');
+        const addTask = () => {
+            const title = (taskInput?.value || '').trim();
+            if (!title) return;
+            fetch('/things/add', {
+                method: 'POST', headers: FORM_HEADERS,
+                body: new URLSearchParams({ title: title }).toString(),
+            })
+                .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+                .then(({ ok, d }) => {
+                    if (ok && d.ok) {
+                        optimistic('agenda-tasks', () => {
+                            const row = el('div', 'agenda-row task');
+                            row.appendChild(el('span', 'x', title));
+                            return row;
+                        });
+                        taskInput.value = '';
+                        toast('할일 추가 → Things3');
+                    } else { toast((d && d.error) || '할일 추가 실패'); }
+                })
+                .catch(() => toast('연결이 필요합니다'));
+        };
+        document.getElementById('task-add')?.addEventListener('click', addTask);
+        taskInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); addTask(); }
+        });
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();
@@ -1526,6 +1599,7 @@
         bindReflect();
         bindReflectModal();
         bindWeekInbox();
+        bindTodayExternal();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

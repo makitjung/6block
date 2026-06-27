@@ -307,6 +307,14 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .agenda-row.event .t { color: var(--accent); }
 .agenda-row.task .t { color: var(--text-muted); }
 .agenda-row .x { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+/* 오늘: 구글 일정 / Things3 할일 2열 분리 + 빠른 추가 */
+.agenda-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.agenda-2 .agenda { grid-template-columns: 1fr; }
+.agenda-add { display: flex; gap: 6px; margin: 6px 0; }
+.agenda-add input[type="text"] { flex: 1; min-width: 0; }
+.agenda-add input[type="time"] { flex: 0 0 auto; width: 96px; }
+.agenda-hint { font-size: 11px; color: var(--text-subtle); margin: 6px 0; line-height: 1.4; }
+@media (max-width: 720px) { .agenda-2 { grid-template-columns: 1fr; } }
 .agenda-row .x::before {
     content: ""; display: inline-block; margin-right: 7px; vertical-align: middle;
     width: 7px; height: 7px;

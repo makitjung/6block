@@ -1,5 +1,6 @@
-# Things3 'Today' 목록을 AppleScript로 읽어오는 연동 모듈 (DB 스키마 버전차에 안전)
+# Things3 'Today' 목록을 AppleScript로 읽고 쓰는(할일 추가) 연동 모듈 (macOS 전용)
 import subprocess
+import sys
 import time
 from datetime import date
 
@@ -76,3 +77,39 @@ def status() -> dict:
     except ValueError:
         cnt = None
     return {"ok": True, "today": cnt}
+
+
+def enabled() -> bool:
+    """할일 쓰기는 macOS에서만(AppleScript). 권한 미승인 시 add_todo가 실패로 알린다."""
+    return sys.platform == "darwin"
+
+
+# 새 할일을 만들어 Today로 예약한다(이름은 argv로 전달해 따옴표·줄바꿈 escape 회피).
+_ADD_SCRIPT = (
+    "on run argv\n"
+    "    set theName to item 1 of argv\n"
+    '    tell application "Things3"\n'
+    "        set t to make new to do with properties {name:theName}\n"
+    "        schedule t for (current date)\n"
+    "    end tell\n"
+    '    return "ok"\n'
+    "end run"
+)
+
+
+def add_todo(title: str) -> bool:
+    """Things3에 할일을 만들고 오늘(Today)로 예약한다. 성공 여부 반환."""
+    title = (title or "").strip()
+    if not title or not enabled():
+        return False
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", _ADD_SCRIPT, title],
+            capture_output=True, text=True, timeout=8,
+        )
+    except Exception:
+        return False
+    if r.returncode == 0:
+        _cache["items"] = None  # 다음 폴링에서 새 할일이 바로 보이도록 캐시 무효화
+        return True
+    return False

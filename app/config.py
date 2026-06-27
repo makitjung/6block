@@ -40,6 +40,10 @@ GCAL_ICAL_URL_2 = os.getenv("GCAL_ICAL_URL_2", "").strip()
 GCAL_WRITE_CALENDAR_ID = os.getenv("GCAL_WRITE_CALENDAR_ID", "").strip()
 GCAL_SA_KEYFILE = os.getenv("GCAL_SA_KEYFILE", "").strip()
 
+# 오늘 탭에서 만든 '일정'을 쓰는 구글 캘린더(보통 계획 캘린더). 같은 서비스계정으로 쓰며,
+# 그 캘린더를 서비스계정 이메일에 '변경 권한'으로 공유해야 동작한다. 비우면 일정 쓰기만 비활성.
+GCAL_WRITE_EVENTS_CALENDAR_ID = os.getenv("GCAL_WRITE_EVENTS_CALENDAR_ID", "").strip()
+
 # 캘린더별 이름·색. url이 빈 것은 제외한다. color는 style.css의 --cal-* 토큰과 일치.
 GCAL_CALENDARS = [
     c

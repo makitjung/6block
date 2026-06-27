@@ -510,6 +510,8 @@ def _day_view(request: Request, date_str: str):
             "weekday_concept": weekday_concept,
             "weekday_label": weekday_label,
             "cal_enabled": gcal.enabled(),
+            "things_write_on": things.enabled(),
+            "gcal_events_on": gcal_write.events_enabled(),
         },
     )
 
@@ -793,6 +795,48 @@ async def inbox_update(request: Request):
     with get_conn() as conn:
         conn.execute("UPDATE inbox SET text = ? WHERE id = ?", (text, item_id))
     return JSONResponse({"ok": True})
+
+
+# -- 오늘 외부 입력: Things3 할일 / 구글 일정 쓰기 -------------------------
+
+
+@app.post("/things/add")
+async def things_add(request: Request):
+    """오늘 탭에서 입력한 할일을 Things3 Today에 만든다(macOS AppleScript)."""
+    form = await request.form()
+    title = (form.get("title") or "").strip()
+    if not title:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    if not things.enabled():
+        return JSONResponse({"ok": False, "error": "things-off"}, status_code=400)
+    ok = things.add_todo(title)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "권한 미승인 또는 Things3 미실행"},
+                            status_code=502)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/gcal/event/add")
+async def gcal_event_add(request: Request):
+    """오늘 탭에서 입력한 일정을 일정용 구글 캘린더에 만든다(서비스계정)."""
+    form = await request.form()
+    title = (form.get("title") or "").strip()
+    time_hhmm = (form.get("time") or "").strip() or None
+    date_str = (form.get("date") or today_str()).strip()
+    if not title:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    if not gcal_write.events_enabled():
+        return JSONResponse(
+            {"ok": False, "error": "일정 쓰기 미설정(캘린더 공유 + GCAL_WRITE_EVENTS_CALENDAR_ID)"},
+            status_code=400,
+        )
+    try:
+        ev = gcal_write.create_calendar_event(title, date_str, time_hhmm)
+    except Exception:
+        ev = None
+    if not ev:
+        return JSONResponse({"ok": False, "error": "캘린더 생성 실패"}, status_code=502)
+    return JSONResponse({"ok": True, "id": ev})
 
 
 @app.post("/inbox/assign")
