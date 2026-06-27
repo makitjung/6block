@@ -1583,6 +1583,19 @@
         });
     }
 
+    // ---- 블록 PLAN 이월(내일로) ------------------------------------------
+    function bindRollover() {
+        document.querySelectorAll('.block-rollover').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                postForm('/block/rollover', { block_id: btn.dataset.blockId }).then((d) => {
+                    if (d && d.ok) toast('내일 ' + (d.label || '') + ' 계획으로 이월');
+                    else if (d && d.error === 'empty') toast('이 블록 PLAN이 비어 있습니다');
+                    else toast('이월 실패');
+                });
+            });
+        });
+    }
+
     // ---- init ------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
         restore();
@@ -1653,6 +1666,7 @@
         bindReflectModal();
         bindWeekInbox();
         bindTodayExternal();
+        bindRollover();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

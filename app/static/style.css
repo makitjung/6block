@@ -315,6 +315,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .agenda-add input[type="time"] { flex: 0 0 auto; width: 96px; }
 .agenda-hint { font-size: 11px; color: var(--text-subtle); margin: 6px 0; line-height: 1.4; }
 @media (max-width: 720px) { .agenda-2 { grid-template-columns: 1fr; } }
+/* 블록 PLAN 이월(내일로) 버튼 */
+.block-rollover {
+    margin-left: auto; font-size: 12px; padding: 3px 9px; cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--surface);
+    color: var(--text-muted); border-radius: var(--r-pill);
+}
+.block-rollover:hover { border-color: var(--accent); color: var(--accent); }
 .agenda-row .x::before {
     content: ""; display: inline-block; margin-right: 7px; vertical-align: middle;
     width: 7px; height: 7px;

@@ -885,6 +885,42 @@ async def inbox_assign(request: Request):
     return JSONResponse({"ok": True, "block_id": block_id, "plan_text": plan_text})
 
 
+@app.post("/block/rollover")
+async def block_rollover(request: Request):
+    """이 블록의 PLAN을 다음 날 같은 블록 PLAN 끝에 복사한다(미룬 계획 이월)."""
+    form = await request.form()
+    try:
+        block_id = int(form.get("block_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        src = conn.execute(
+            "SELECT date, block_label, plan_text FROM blocks WHERE id = ?", (block_id,)
+        ).fetchone()
+        if not src:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        plan = (src["plan_text"] or "").strip()
+        if not plan:
+            return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+        d = datetime.strptime(src["date"], "%Y-%m-%d").date()
+        nxt = (d + timedelta(days=1)).strftime("%Y-%m-%d")
+        ensure_day_skeleton(conn, nxt)
+        dst = conn.execute(
+            "SELECT id, plan_text FROM blocks WHERE date = ? AND block_label = ?",
+            (nxt, src["block_label"]),
+        ).fetchone()
+        if not dst:
+            return JSONResponse({"ok": False, "error": "no-target"}, status_code=404)
+        cur = (dst["plan_text"] or "").rstrip()
+        new_plan = f"{cur}\n{plan}" if cur else plan
+        conn.execute(
+            "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
+            (new_plan, now, dst["id"]),
+        )
+    return JSONResponse({"ok": True, "date": nxt, "label": src["block_label"]})
+
+
 # -- 슬롯 실행 체크 + 실시간 폴링 -------------------------------------------
 
 
