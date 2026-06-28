@@ -1316,112 +1316,56 @@
         input.addEventListener('keydown', (e) => { if (e.key === 'Escape') drop.hidden = true; });
     }
 
-    // ---- 고민·감상 (/reflect) --------------------------------------------
+    // ---- 고결감 (/reflect) -----------------------------------------------
     function bindReflect() {
-        const addBtn = document.getElementById('rf-add');
+        const compose = document.querySelector('.reflect-compose');
         const list = document.getElementById('reflect-list');
-        if (!addBtn && !list) return;
-        bindListEditor(document.getElementById('rf-text'));
-        addBtn?.addEventListener('click', () => {
-            const ta = document.getElementById('rf-text');
-            const titleEl = document.getElementById('rf-title');
-            const title = (titleEl?.value || '').trim();
-            const text = (ta.value || '').trim();
-            if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
-            const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
-            const tags = normalizeTags((document.getElementById('rf-tags').value || '').trim());
-            const review_date = document.getElementById('rf-review')?.value || '';
-            const op = {
-                id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind: kind, title: title, text: text, tags: tags, review_date: review_date }).toString(),
-            };
-            fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
-                .then((r) => r.json())
-                .then((d) => {
-                    if (!d.ok) { toast('저장 실패'); return; }
-                    toast(d.synced ? '기록 · 캘린더 반영' : '기록함 (캘린더 미반영)');
-                    location.reload();
-                })
-                .catch(() => {
-                    enqueue(op); ta.value = '';
-                    toast('저장 대기 · 연결되면 전송');
-                });
-        });
-        list?.querySelectorAll('.rf-del').forEach((b) =>
-            b.addEventListener('click', () => {
-                if (!window.confirm('이 기록을 삭제합니다. 캘린더 이벤트도 함께 지웁니다.')) return;
-                postForm('/reflect/delete/' + b.dataset.id, {}).then((d) => {
-                    if (d && d.ok) { b.closest('.rf-item')?.remove(); toast('삭제'); }
-                });
-            }));
-        list?.querySelectorAll('.rf-sync.retry').forEach((b) =>
-            b.addEventListener('click', () => {
-                postForm('/reflect/sync/' + b.dataset.id, {}).then((d) => {
-                    if (d && d.synced) { toast('캘린더 반영'); location.reload(); }
-                    else toast('캘린더 연동이 아직 설정되지 않았습니다');
-                });
-            }));
-        list?.querySelectorAll('.rf-edit').forEach((b) =>
-            b.addEventListener('click', () => {
-                const item = b.closest('.rf-item');
-                const panel = item.querySelector('.rf-edit-panel');
-                panel.hidden = !panel.hidden;
-                if (!panel.hidden) {
-                    const ti = panel.querySelector('.rf-edit-tags');
-                    if (ti && !ti.dataset.acBound) {
-                        bindTagAutocomplete(ti);
-                        ti.dataset.acBound = '1';
-                    }
-                }
-            }));
-        list?.querySelectorAll('.rf-edit-cancel').forEach((b) =>
-            b.addEventListener('click', () => {
-                b.closest('.rf-edit-panel').hidden = true;
-            }));
-        list?.querySelectorAll('.rf-edit-save').forEach((b) =>
-            b.addEventListener('click', () => {
-                const item = b.closest('.rf-item');
-                const id = item.dataset.id;
-                const kind = (item.querySelector(`input[name="rek${id}"]:checked`) || {}).value || '';
-                const ti = item.querySelector('.rf-edit-tags');
-                const tags = normalizeTags((ti?.value || '').trim());
-                fetch('/reflect/update/' + id, {
-                    method: 'POST', headers: FORM_HEADERS,
-                    body: new URLSearchParams({ kind: kind, tags: tags }).toString(),
-                })
-                    .then((r) => r.json())
-                    .then((d) => {
-                        if (!d.ok) { toast('저장 실패'); return; }
-                        const badge = item.querySelector('.rf-badge');
-                        if (badge && kind) { badge.textContent = kind; badge.dataset.kind = kind; }
-                        if (ti) {
-                            let row = item.querySelector('.rf-tags-row');
-                            if (tags) {
-                                if (!row) {
-                                    row = document.createElement('div');
-                                    row.className = 'rf-tags-row';
-                                    item.querySelector('.rf-edit-panel').before(row);
-                                }
-                                row.textContent = tags;
-                            } else { row?.remove(); }
-                            ti.value = tags;
-                        }
-                        item.dataset.search = [
-                            (item.querySelector('.rf-title-row')?.textContent || ''),
-                            (item.querySelector('.rf-body')?.textContent || ''),
-                            tags,
-                        ].join(' ').toLowerCase();
-                        item.querySelector('.rf-edit-panel').hidden = true;
-                        toast('저장됨');
-                    })
-                    .catch(() => toast('저장 실패'));
-            }));
-        bindTagAutocomplete(document.getElementById('rf-tags'));
+        const upcoming = document.getElementById('reflect-upcoming');
+        if (!compose && !list) return;
+        let lastSig = list ? (list.dataset.sig || null) : null;
+        const curKind = () => new URLSearchParams(location.search).get('kind') || '';
 
-        // 유사검색: 입력 즉시 클라이언트에서 점수(부분일치·부분수열)로 필터·정렬
-        const searchInput = document.getElementById('rf-search-input');
-        if (searchInput && list) {
-            const items = Array.from(list.querySelectorAll('.rf-item'));
+        // 대상 카드로 스크롤·펼침·강조(상호 이동·미도래 칩 공용)
+        function focusCard(id) {
+            if (!id || !list) return;
+            const card = list.querySelector('.rf-card[data-id="' + id + '"]');
+            if (!card) return;
+            card.classList.add('expanded');
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+        }
+
+        function deleteItem(id, after) {
+            if (!window.confirm('이 기록을 삭제합니다. 캘린더 이벤트도 함께 지웁니다.')) return;
+            postForm('/reflect/delete/' + id, {}).then((d) => {
+                if (d && d.ok) { if (after) after(); toast('삭제'); refreshReflect(true); }
+            });
+        }
+
+        // ---- 부분 갱신: 목록·미도래를 서버 진실로 다시 그린다 ----
+        function refreshReflect(force) {
+            if (!list) return Promise.resolve();
+            const url = '/reflect/list?kind=' + encodeURIComponent(curKind()) + (force ? '&force=1' : '');
+            return fetch(url).then((r) => r.json()).then((d) => {
+                if (!d || !d.ok) return;
+                if (!force) {
+                    if (d.sig === lastSig) return;                                    // 변화 없음
+                    if (list.querySelector('.rf-edit-panel:not([hidden])')) return;   // 편집 중 보호
+                    const ae = document.activeElement;
+                    if (ae && list.contains(ae)) return;                              // 입력 중 보호
+                }
+                lastSig = d.sig;
+                if (upcoming) upcoming.innerHTML = d.upcoming_html;
+                list.innerHTML = d.list_html;
+                bindList(); bindUpcoming(); applySearch();
+            }).catch(() => {});
+        }
+
+        // ---- 유사검색(부분 갱신 뒤에도 다시 적용) ----
+        function applySearch() {
+            const searchInput = document.getElementById('rf-search-input');
+            if (!searchInput || !list) return;
+            const items = Array.from(list.querySelectorAll('.rf-card'));
             const noMatch = list.querySelector('.rf-no-match');
             const norm = (s) => (s || '').normalize('NFC').toLowerCase();
             const subseq = (n, h) => {
@@ -1438,25 +1382,133 @@
                 }
                 return sc;
             };
-            const apply = () => {
-                const q = norm(searchInput.value.trim());
-                const toks = q ? q.split(/\s+/).filter(Boolean) : [];
-                let shown = 0;
-                if (!toks.length) {
-                    items.forEach((el) => { el.hidden = false; list.appendChild(el); });
-                    shown = items.length;
-                } else {
-                    const scored = items.map((el, idx) => ({
-                        el, idx, s: score(toks, el.dataset.search || norm(el.textContent)),
-                    }));
-                    scored.forEach((o) => { o.el.hidden = o.s === 0; });
-                    scored.filter((o) => o.s > 0).sort((a, b) => b.s - a.s || a.idx - b.idx)
-                        .forEach((o) => { list.appendChild(o.el); shown += 1; });
-                }
-                if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
+            const q = norm(searchInput.value.trim());
+            const toks = q ? q.split(/\s+/).filter(Boolean) : [];
+            let shown = 0;
+            if (!toks.length) {
+                items.forEach((el) => { el.hidden = false; list.appendChild(el); });
+                shown = items.length;
+            } else {
+                const scored = items.map((el, idx) => ({
+                    el, idx, s: score(toks, el.dataset.search || norm(el.textContent)),
+                }));
+                scored.forEach((o) => { o.el.hidden = o.s === 0; });
+                scored.filter((o) => o.s > 0).sort((a, b) => b.s - a.s || a.idx - b.idx)
+                    .forEach((o) => { list.appendChild(o.el); shown += 1; });
+            }
+            if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
+        }
+
+        // ---- 카드 바인딩(펼침·상호이동·삭제·재동기화·편집) ----
+        function bindList() {
+            if (!list) return;
+            list.querySelectorAll('.rf-card-title').forEach((b) =>
+                b.addEventListener('click', () => b.closest('.rf-card')?.classList.toggle('expanded')));
+            list.querySelectorAll('.rf-jump').forEach((b) =>
+                b.addEventListener('click', (e) => { e.stopPropagation(); focusCard(b.dataset.target); }));
+            list.querySelectorAll('.rf-del').forEach((b) =>
+                b.addEventListener('click', () => deleteItem(b.dataset.id, () => b.closest('.rf-card')?.remove())));
+            list.querySelectorAll('.rf-sync.retry').forEach((b) =>
+                b.addEventListener('click', () => {
+                    postForm('/reflect/sync/' + b.dataset.id, {}).then((d) => {
+                        if (d && d.synced) { toast('캘린더 반영'); refreshReflect(true); }
+                        else toast('캘린더 연동이 아직 설정되지 않았습니다');
+                    });
+                }));
+            list.querySelectorAll('.rf-edit').forEach((b) =>
+                b.addEventListener('click', () => {
+                    const card = b.closest('.rf-card');
+                    card.classList.add('expanded');
+                    const panel = card.querySelector('.rf-edit-panel');
+                    if (!panel) return;
+                    panel.hidden = !panel.hidden;
+                    if (!panel.hidden) {
+                        const ti = panel.querySelector('.rf-edit-tags');
+                        if (ti && !ti.dataset.acBound) { bindTagAutocomplete(ti); ti.dataset.acBound = '1'; }
+                    }
+                }));
+            list.querySelectorAll('.rf-edit-cancel').forEach((b) =>
+                b.addEventListener('click', () => { b.closest('.rf-edit-panel').hidden = true; }));
+            list.querySelectorAll('.rf-edit-save').forEach((b) =>
+                b.addEventListener('click', () => {
+                    const card = b.closest('.rf-card');
+                    const id = card.dataset.id;
+                    const kind = (card.querySelector('input[name="rek' + id + '"]:checked') || {}).value || '';
+                    const title = (card.querySelector('.rf-edit-title')?.value || '').trim();
+                    const text = (card.querySelector('.rf-edit-text')?.value || '').trim();
+                    const tags = normalizeTags((card.querySelector('.rf-edit-tags')?.value || '').trim());
+                    const review_date = card.querySelector('.rf-edit-review-date')?.value || '';
+                    if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
+                    fetch('/reflect/update/' + id, {
+                        method: 'POST', headers: FORM_HEADERS,
+                        body: new URLSearchParams({ kind, title, text, tags, review_date }).toString(),
+                    })
+                        .then((r) => r.json())
+                        .then((d) => {
+                            if (!d.ok) { toast('저장 실패'); return; }
+                            toast('저장됨'); refreshReflect(true);
+                        })
+                        .catch(() => toast('저장 실패'));
+                }));
+        }
+
+        // ---- 미도래 칩 바인딩(클릭 이동·삭제) ----
+        function bindUpcoming() {
+            if (!upcoming) return;
+            upcoming.querySelectorAll('.rf-chip').forEach((chip) =>
+                chip.addEventListener('click', () => focusCard(chip.dataset.target)));
+            upcoming.querySelectorAll('.rf-chip-del').forEach((b) =>
+                b.addEventListener('click', (e) => { e.stopPropagation(); deleteItem(b.dataset.id); }));
+        }
+
+        // ---- 작성 바(기록 추가) ----
+        bindListEditor(document.getElementById('rf-text'));
+        bindTagAutocomplete(document.getElementById('rf-tags'));
+        document.getElementById('rf-add')?.addEventListener('click', () => {
+            const ta = document.getElementById('rf-text');
+            const titleEl = document.getElementById('rf-title');
+            const title = (titleEl?.value || '').trim();
+            const text = (ta.value || '').trim();
+            if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
+            const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
+            const tags = normalizeTags((document.getElementById('rf-tags').value || '').trim());
+            const review_date = document.getElementById('rf-review')?.value || '';
+            const op = {
+                id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind, title, text, tags, review_date }).toString(),
             };
-            searchInput.addEventListener('input', apply);
-            if (searchInput.value.trim()) apply();   // 딥링크 q 반영
+            fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
+                .then((r) => r.json())
+                .then((d) => {
+                    if (!d.ok) { toast('저장 실패'); return; }
+                    toast(d.synced ? '기록 · 캘린더 반영' : '기록함 (캘린더 미반영)');
+                    titleEl.value = ''; ta.value = '';
+                    document.getElementById('rf-tags').value = '';
+                    document.getElementById('rf-review').value = '';
+                    refreshReflect(true);
+                })
+                .catch(() => { enqueue(op); toast('저장 대기 · 연결되면 전송'); });
+        });
+
+        // 초기 바인딩
+        bindList();
+        bindUpcoming();
+        const searchInput = document.getElementById('rf-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', applySearch);
+            if (searchInput.value.trim()) applySearch();   // 딥링크 q 반영
+        }
+
+        // 자동 폴링·수동 동기화(구글 연동이 켜진 경우에만)
+        const syncBtn = document.getElementById('rf-sync-now');
+        if (syncBtn) {
+            syncBtn.addEventListener('click', () => {
+                syncBtn.disabled = true; toast('동기화 중…');
+                refreshReflect(true).finally(() => { syncBtn.disabled = false; toast('동기화 완료'); });
+            });
+            setInterval(() => { if (!document.hidden) refreshReflect(false); }, 60000);
+            window.addEventListener('focus', () => refreshReflect(false));
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshReflect(false); });
         }
     }
 

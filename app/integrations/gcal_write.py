@@ -37,6 +37,11 @@ def enabled() -> bool:
     )
 
 
+def invalidate_cache():
+    """수동 동기화에서 60초 읽기 캐시를 비워 다음 조회가 즉시 구글을 다시 읽게 한다."""
+    _list_cache["items"] = None
+
+
 def _svc():
     """서비스계정 자격증명으로 Calendar 서비스를 만들고 캐시한다. 비활성이면 None."""
     global _service

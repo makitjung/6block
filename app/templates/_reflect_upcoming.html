@@ -1,0 +1,14 @@
+{# 미도래 다시보기 칩(전체 화면과 부분 갱신이 함께 쓰는 partial) #}
+{% if upcoming_reviews %}
+<div class="rf-upcoming-head">미도래 다시보기 <span class="rf-count">{{ upcoming_reviews | length }}</span></div>
+<div class="rf-chips">
+    {% for r in upcoming_reviews %}
+    <span class="rf-chip" data-target="{{ r.id }}" data-id="{{ r.id }}" title="해당 기록으로 이동">
+        <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
+        <span class="rf-chip-date mono">↻ {{ r.review_date }}</span>
+        <span class="rf-chip-title">{% if r.title %}{{ r.title }}{% else %}{{ (r.text or '')[:30] }}{% endif %}</span>
+        <button type="button" class="rf-chip-del" data-id="{{ r.id }}" title="삭제">✕</button>
+    </span>
+    {% endfor %}
+</div>
+{% endif %}
