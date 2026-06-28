@@ -6,20 +6,6 @@
       "runtimeExecutable": ".venv/bin/uvicorn",
       "runtimeArgs": ["app.main:app", "--port", "8023"],
       "port": 8023
-    },
-    {
-      "name": "6block-test",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "HOME=/private/tmp/claude-501/-Users-jinhyugjung-dev-6block/14533ded-9690-4509-b1e0-524c7d57e7a2/scratchpad/testhome",
-        "GCAL_WRITE_CALENDAR_ID=",
-        "GCAL_SA_KEYFILE=",
-        "GCAL_ICAL_URL=",
-        "GCAL_ICAL_URL_2=",
-        "GCAL_WRITE_EVENTS_CALENDAR_ID=",
-        ".venv/bin/uvicorn", "app.main:app", "--port", "8024"
-      ],
-      "port": 8024
     }
   ]
 }
