@@ -456,7 +456,7 @@ def _day_view(request: Request, date_str: str):
         ).fetchall()
         # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
         due_reflections = conn.execute(
-            "SELECT id, kind, title, text, tags FROM reflection "
+            "SELECT id, kind, title, text, tags, event_date, review_note FROM reflection "
             "WHERE review_date = ? ORDER BY id DESC",
             (date_str,),
         ).fetchall()
@@ -1072,19 +1072,20 @@ def _week_view(request: Request, monday: date):
         ).fetchall()
         plan_total = conn.execute(
             f"""
-            SELECT COUNT(*) FROM blocks
-            WHERE date IN ({placeholders}) AND is_core = 1
-              AND plan_text IS NOT NULL AND TRIM(plan_text) != ''
+            SELECT COUNT(s.id) FROM slots s
+            JOIN blocks b ON b.id = s.block_id
+            WHERE b.date IN ({placeholders}) AND b.is_core = 1
+              AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
             """,
             dates,
         ).fetchone()[0]
         achieved = conn.execute(
             f"""
-            SELECT COUNT(DISTINCT b.id) FROM blocks b
-            JOIN slots s ON s.block_id = b.id
+            SELECT COUNT(s.id) FROM slots s
+            JOIN blocks b ON b.id = s.block_id
             WHERE b.date IN ({placeholders}) AND b.is_core = 1
               AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
-              AND s.do_text IS NOT NULL AND TRIM(s.do_text) != ''
+              AND (s.done = 1 OR (s.do_text IS NOT NULL AND TRIM(s.do_text) != ''))
             """,
             dates,
         ).fetchone()[0]
@@ -1558,11 +1559,11 @@ def data_view(request: Request):
 
 
 def _valid_hhmm30(s: str) -> bool:
-    """'HH:MM' 이고 분이 00/30, 00:00~24:00 범위인지(30분 슬롯 경계 유지)."""
+    """'HH:MM' 이고 분이 00/15/30/45, 00:00~24:00 범위인지(15분 슬롯 경계 유지)."""
     if not re.match(r"^\d{2}:\d{2}$", s or ""):
         return False
     h, m = int(s[:2]), int(s[3:5])
-    return 0 <= h <= 24 and m in (0, 30) and (h * 60 + m) <= 24 * 60
+    return 0 <= h <= 24 and m in (0, 15, 30, 45) and (h * 60 + m) <= 24 * 60
 
 
 @app.post("/settings/blocktimes")
@@ -1578,7 +1579,7 @@ async def settings_blocktimes(request: Request):
         label = DAY_BLOCKS[i][0]
         if not _valid_hhmm30(s) or not _valid_hhmm30(e):
             return JSONResponse(
-                {"ok": False, "error": f"{label} 시간 형식이 잘못됨(HH:MM, 30분 단위)"},
+                {"ok": False, "error": f"{label} 시간 형식이 잘못됨(HH:MM, 15분 단위)"},
                 status_code=400,
             )
         if hhmm_to_min(s) >= hhmm_to_min(e):
@@ -2082,20 +2083,27 @@ async def reflect_add(request: Request):
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
     title = _reflect_title(title, text)
     now = datetime.now(KST).isoformat(timespec="seconds")
-    # 캘린더 일정은 다시 볼 날짜가 있으면 그날, 없으면 기록일에 올린다.
-    cal_date = review_date or event_date
-    # 반영을 시도하되, 실패해도 DB에는 저장해 나중에 재시도할 수 있게 한다.
-    # 제목→구글 summary, 내용→description.
+    # 원본 이벤트는 항상 기록일(event_date)에 올린다.
     try:
-        event_id = gcal_write.create_event(kind, title, text, tags, cal_date)
+        event_id = gcal_write.create_event(kind, title, text, tags, event_date)
     except Exception:
         event_id = None
+    # review_date가 기록일과 다른 경우 그날에 '다시 볼' 이벤트를 별도로 만든다.
+    review_event_id = None
+    if review_date and review_date != event_date:
+        try:
+            review_event_id = gcal_write.create_event(
+                kind, f"다시 볼: {title}", text, tags, review_date
+            )
+        except Exception:
+            review_event_id = None
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO reflection (kind, title, text, tags, event_date, review_date, "
-            "created_at, gcal_event_id, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, gcal_event_id, review_gcal_event_id, synced) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kind, title, text, tags, event_date, review_date, now, event_id,
-             1 if event_id else 0),
+             review_event_id, 1 if event_id else 0),
         )
         new_id = cur.lastrowid
     return JSONResponse({"ok": True, "id": new_id, "synced": bool(event_id)})
@@ -2111,11 +2119,10 @@ def reflect_sync(item_id: int):
             return JSONResponse({"ok": False}, status_code=404)
         if r["synced"] and r["gcal_event_id"]:
             return JSONResponse({"ok": True, "synced": True})
-        cal_date = r["review_date"] or r["event_date"]
         title = _reflect_title(r["title"], r["text"])
         try:
             event_id = gcal_write.create_event(
-                r["kind"], title, r["text"] or "", r["tags"] or "", cal_date
+                r["kind"], title, r["text"] or "", r["tags"] or "", r["event_date"]
             )
         except Exception:
             event_id = None
@@ -2132,14 +2139,29 @@ def reflect_delete(item_id: int):
     """기록을 삭제하고, 캘린더 이벤트가 있으면 함께 지운다."""
     with get_conn() as conn:
         r = conn.execute(
-            "SELECT gcal_event_id FROM reflection WHERE id = ?", (item_id,)
+            "SELECT gcal_event_id, review_gcal_event_id FROM reflection WHERE id = ?",
+            (item_id,),
         ).fetchone()
-        if r and r["gcal_event_id"]:
-            try:
-                gcal_write.delete_event(r["gcal_event_id"])
-            except Exception:
-                pass
+        if r:
+            for eid in (r["gcal_event_id"], r["review_gcal_event_id"]):
+                if eid:
+                    try:
+                        gcal_write.delete_event(eid)
+                    except Exception:
+                        pass
         conn.execute("DELETE FROM reflection WHERE id = ?", (item_id,))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/reflect/review-note/{item_id}")
+async def reflect_review_note(item_id: int, request: Request):
+    """다시 볼 날짜에 남기는 재감상 메모를 저장한다."""
+    form = await request.form()
+    note = (form.get("note") or "").strip()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE reflection SET review_note = ? WHERE id = ?", (note, item_id)
+        )
     return JSONResponse({"ok": True})
 
 

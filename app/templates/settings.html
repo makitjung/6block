@@ -106,14 +106,14 @@
 </section>
 
 <section class="card">
-    <h2 class="card-title">세션(블록) 시간 <span class="card-sub">8블록 시작·끝만 편집 · 30분 단위 · 기록 없는 날부터 자동 적용</span></h2>
+    <h2 class="card-title">세션(블록) 시간 <span class="card-sub">8블록 시작·끝만 편집 · 15분 단위 · 기록 없는 날부터 자동 적용</span></h2>
     <div class="set-blocktimes" id="set-blocktimes">
         {% for b in day_blocks %}
         <div class="set-bt-row" data-order="{{ b.order }}">
             <span class="set-bt-label{% if b.is_core %} core{% endif %}">{{ b.label }}</span>
-            <input type="time" class="set-bt-start" data-order="{{ b.order }}" value="{{ b.start }}" step="1800" aria-label="{{ b.label }} 시작">
+            <input type="time" class="set-bt-start" data-order="{{ b.order }}" value="{{ b.start }}" step="900" aria-label="{{ b.label }} 시작">
             <span class="set-bt-dash">–</span>
-            <input type="time" class="set-bt-end" data-order="{{ b.order }}" value="{{ b.end }}" step="1800" aria-label="{{ b.label }} 끝">
+            <input type="time" class="set-bt-end" data-order="{{ b.order }}" value="{{ b.end }}" step="900" aria-label="{{ b.label }} 끝">
         </div>
         {% endfor %}
     </div>

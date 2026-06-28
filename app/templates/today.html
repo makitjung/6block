@@ -128,13 +128,35 @@
         <h2 class="card-title">오늘 다시 볼 고결감 <span class="card-sub">예전에 다시 볼 날짜로 잡아둔 것 · <a href="/reflect">고결감 탭</a></span></h2>
         <div class="due-list">
             {% for r in due_reflections %}
-            <div class="due-item">
-                <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
-                <span class="due-text">{% if r.title %}{{ r.title }}{% if r.text %} · {{ r.text }}{% endif %}{% else %}{{ r.text }}{% endif %}</span>
-                {% if r.tags %}<span class="due-tags">{{ r.tags }}</span>{% endif %}
+            <div class="due-item" data-reflect-id="{{ r.id }}">
+                <div class="due-item-header">
+                    <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
+                    <span class="due-text">{% if r.title %}{{ r.title }}{% if r.text %} · {{ r.text }}{% endif %}{% else %}{{ r.text }}{% endif %}</span>
+                    {% if r.tags %}<span class="due-tags">{{ r.tags }}</span>{% endif %}
+                    <span class="due-origin">{{ r.event_date }} 기록</span>
+                </div>
+                <div class="due-note-wrap">
+                    <textarea class="due-note-input" rows="2" placeholder="오늘 다시 읽고 드는 생각을 적어두세요">{{ r.review_note or '' }}</textarea>
+                    <button type="button" class="due-note-save ghost-btn">저장</button>
+                </div>
             </div>
             {% endfor %}
         </div>
+        <script>
+        document.querySelectorAll('.due-item').forEach(function(item) {
+            item.querySelector('.due-note-save').addEventListener('click', function() {
+                const id = item.dataset.reflectId;
+                const note = item.querySelector('.due-note-input').value;
+                fetch('/reflect/review-note/' + id, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: 'note=' + encodeURIComponent(note)
+                }).then(r => r.json()).then(d => {
+                    if (d.ok) { this.textContent = '저장됨'; setTimeout(() => { this.textContent = '저장'; }, 1500); }
+                });
+            });
+        });
+        </script>
     </section>
     {% endif %}
 

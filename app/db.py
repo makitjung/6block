@@ -119,6 +119,11 @@ def _migrate(conn: sqlite3.Connection):
     if refl_cols:
         conn.execute("UPDATE reflection SET kind = '감사' WHERE kind = '감상'")
         conn.execute("UPDATE reflection SET kind = '결정' WHERE kind = '결심'")
+    # 고결감 다시볼 날짜에 남기는 메모 + 그날 캘린더 이벤트 ID.
+    if refl_cols and "review_note" not in refl_cols:
+        conn.execute("ALTER TABLE reflection ADD COLUMN review_note TEXT")
+    if refl_cols and "review_gcal_event_id" not in refl_cols:
+        conn.execute("ALTER TABLE reflection ADD COLUMN review_gcal_event_id TEXT")
     # GTD 명료화: 수집함 항목 상태(''=미분류·next·wait·someday·ref). 없으면 추가.
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:
