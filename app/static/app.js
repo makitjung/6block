@@ -1350,9 +1350,8 @@
                 if (!d || !d.ok) return;
                 if (!force) {
                     if (d.sig === lastSig) return;                                    // 변화 없음
-                    if (list.querySelector('.rf-edit-panel:not([hidden])')) return;   // 편집 중 보호
                     const ae = document.activeElement;
-                    if (ae && list.contains(ae)) return;                              // 입력 중 보호
+                    if (ae && list.contains(ae)) return;                              // 입력·인라인수정 중 보호
                 }
                 lastSig = d.sig;
                 if (upcoming) upcoming.innerHTML = d.upcoming_html;
@@ -1399,13 +1398,34 @@
             if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
         }
 
-        // ---- 카드 바인딩(상호이동·삭제·재동기화·인라인편집) ----
-        function enterEdit(card) {
-            const panel = card.querySelector('.rf-inline-edit');
-            if (!panel) return;
-            panel.hidden = false;
-            const ti = panel.querySelector('.rf-edit-tags');
-            if (ti && !ti.dataset.acBound) { bindTagAutocomplete(ti); ti.dataset.acBound = '1'; }
+        // ---- 카드에서 바로 수정(종류 순환·제목/내용/태그 클릭수정·다시 날짜) ----
+        const kindOrder = () => (window._rfKinds && window._rfKinds.length
+            ? window._rfKinds : ['고민', '결정', '감사']);
+
+        function fieldVal(card, name) {
+            const el = card.querySelector('[data-field="' + name + '"]');
+            return el ? (el.innerText || '').trim() : '';
+        }
+        function updateCardSearch(card) {
+            card.dataset.search = (fieldVal(card, 'title') + ' '
+                + fieldVal(card, 'text') + ' ' + fieldVal(card, 'tags')).toLowerCase();
+        }
+        // 카드의 현재값을 모아 변경분(patch)만 덮어써 서버에 저장한다(event_date는 서버가 보존).
+        function saveCard(card, patch) {
+            const body = {
+                kind: card.dataset.kind || '',
+                title: fieldVal(card, 'title'),
+                text: fieldVal(card, 'text'),
+                tags: fieldVal(card, 'tags'),
+                review_date: card.querySelector('.rf-card-review-date')?.value || '',
+            };
+            Object.assign(body, patch);
+            if (!body.title && !body.text) { toast('제목이나 내용을 입력하세요'); return Promise.resolve(false); }
+            body.tags = normalizeTags(body.tags);
+            return fetch('/reflect/update/' + card.dataset.id, {
+                method: 'POST', headers: FORM_HEADERS,
+                body: new URLSearchParams(body).toString(),
+            }).then((r) => r.json()).then((d) => !!(d && d.ok)).catch(() => false);
         }
 
         function bindList() {
@@ -1421,33 +1441,50 @@
                         else toast('캘린더 연동이 아직 설정되지 않았습니다');
                     });
                 }));
-            list.querySelectorAll('.rf-title-view, .rf-body-view').forEach((el) =>
-                el.addEventListener('click', () => enterEdit(el.closest('.rf-card'))));
-            list.querySelectorAll('.rf-edit').forEach((b) =>
-                b.addEventListener('click', () => enterEdit(b.closest('.rf-card'))));
-            list.querySelectorAll('.rf-edit-cancel').forEach((b) =>
-                b.addEventListener('click', () => { b.closest('.rf-inline-edit').hidden = true; }));
-            list.querySelectorAll('.rf-edit-save').forEach((b) =>
-                b.addEventListener('click', () => {
-                    const card = b.closest('.rf-card');
-                    const id = card.dataset.id;
-                    const kind = (card.querySelector('input[name="rek' + id + '"]:checked') || {}).value || '';
-                    const title = (card.querySelector('.rf-edit-title')?.value || '').trim();
-                    const text = (card.querySelector('.rf-edit-text')?.value || '').trim();
-                    const tags = normalizeTags((card.querySelector('.rf-edit-tags')?.value || '').trim());
-                    const review_date = card.querySelector('.rf-edit-review-date')?.value || '';
-                    const event_date = card.querySelector('.rf-edit-event-date')?.value || '';
-                    if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
-                    fetch('/reflect/update/' + id, {
-                        method: 'POST', headers: FORM_HEADERS,
-                        body: new URLSearchParams({ kind, title, text, tags, review_date, event_date }).toString(),
-                    })
-                        .then((r) => r.json())
-                        .then((d) => {
-                            if (!d.ok) { toast('저장 실패'); return; }
-                            toast('저장됨'); refreshReflect(true);
-                        })
-                        .catch(() => toast('저장 실패'));
+
+            // 종류 배지: 누를 때마다 고민→결정→감사 순환(즉시 저장, 카드만 갱신)
+            list.querySelectorAll('.rf-kind-cycle').forEach((btn) =>
+                btn.addEventListener('click', () => {
+                    const card = btn.closest('.rf-card');
+                    const order = kindOrder();
+                    const next = order[(order.indexOf(card.dataset.kind) + 1) % order.length];
+                    saveCard(card, { kind: next }).then((ok) => {
+                        if (!ok) { toast('저장 실패'); return; }
+                        card.dataset.kind = next;
+                        btn.textContent = next; btn.dataset.kind = next;
+                        toast('종류 · ' + next);
+                    });
+                }));
+
+            // 제목·내용·태그: 클릭해 그 자리에서 고치고, 포커스가 빠질 때 저장
+            list.querySelectorAll('.rf-card:not([data-source]) [data-field]').forEach((el) => {
+                el.addEventListener('focus', () => { el.dataset.orig = el.innerText; });
+                el.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') { el.innerText = el.dataset.orig || ''; el.blur(); }
+                    else if (e.key === 'Enter' && el.dataset.field !== 'text') { e.preventDefault(); el.blur(); }
+                });
+                el.addEventListener('blur', () => {
+                    const now = (el.innerText || '').trim();
+                    if (now === (el.dataset.orig || '').trim()) return;   // 변화 없음
+                    const card = el.closest('.rf-card');
+                    const patch = {}; patch[el.dataset.field] = now;
+                    saveCard(card, patch).then((ok) => {
+                        if (!ok) { el.innerText = el.dataset.orig || ''; toast('저장 실패'); return; }
+                        if (el.dataset.field === 'tags') el.innerText = normalizeTags(now);
+                        updateCardSearch(card);
+                        toast('저장됨');
+                    });
+                });
+            });
+
+            // 다시 볼 날짜: 바꾸면 저장(다시보기 사본 생성·삭제가 있어 목록을 다시 그린다)
+            list.querySelectorAll('.rf-card-review-date').forEach((inp) =>
+                inp.addEventListener('change', () => {
+                    const card = inp.closest('.rf-card');
+                    saveCard(card, { review_date: inp.value }).then((ok) => {
+                        if (!ok) { toast('저장 실패'); return; }
+                        toast('다시 볼 날짜 저장'); refreshReflect(true);
+                    });
                 }));
         }
 

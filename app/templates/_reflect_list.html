@@ -5,17 +5,21 @@
     {% if it.source_id %}data-source="{{ it.source_id }}"{% endif %}
     {% if it.review_child_id %}data-child="{{ it.review_child_id }}"{% endif %}
     data-kind="{{ it.kind }}"
+    data-title="{{ it.title or '' }}"
+    data-text="{{ it.text or '' }}"
+    data-tags="{{ it.tags or '' }}"
+    data-review="{{ it.review_date or '' }}"
     data-search="{{ ((it.title or '') ~ ' ' ~ (it.text or '') ~ ' ' ~ (it.tags or '')) | lower }}">
     <div class="rf-card-head">
         <div class="rf-head-meta">
+            {% if it.source_id %}
             <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
+            {% else %}
+            <button type="button" class="rf-badge rf-kind-cycle" data-kind="{{ it.kind }}" data-id="{{ it.id }}" title="클릭하면 종류 변경 (고민→결정→감사)">{{ it.kind }}</button>
+            {% endif %}
             <span class="rf-date mono">{{ it.event_date }}</span>
-            {% if it.review_date and not it.source_id %}
-                {% if it.review_child_id %}
-                <button type="button" class="rf-jump rf-review-badge mono" data-target="{{ it.review_child_id }}" title="다시 볼 날짜로 이동">↻ {{ it.review_date }}</button>
-                {% else %}
-                <span class="rf-review-badge mono" title="다시 볼 날짜">↻ {{ it.review_date }}</span>
-                {% endif %}
+            {% if it.review_child_id and not it.source_id %}
+            <button type="button" class="rf-jump rf-review-badge mono" data-target="{{ it.review_child_id }}" title="다시 볼 날짜로 이동">↻ {{ it.review_date }}</button>
             {% endif %}
             {% if it.source_id %}
             <button type="button" class="rf-jump rf-source-badge" data-target="{{ it.source_id }}" title="원본으로 이동">↩ 다시보기</button>
@@ -27,38 +31,15 @@
             {% endif %}
         </div>
         <div class="rf-head-actions">
-            {% if not it.source_id %}
-            <button type="button" class="rf-edit" data-id="{{ it.id }}" title="편집">편집</button>
-            {% endif %}
             <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
         </div>
     </div>
-    <div class="rf-title-view">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
-    {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
-    {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
-    {% if not it.source_id %}
-    <div class="rf-inline-edit" hidden>
-        <div class="rf-edit-kinds">
-            {% for k in kinds %}
-            <label class="rk-sm">
-                <input type="radio" name="rek{{ it.id }}" value="{{ k }}"{% if it.kind == k %} checked{% endif %}>
-                <span>{{ k }}</span>
-            </label>
-            {% endfor %}
-        </div>
-        <div class="rf-edit-dates">
-            <label class="rf-edit-date-label">날짜<input type="date" class="rf-edit-event-date" value="{{ it.event_date or '' }}"></label>
-            <label class="rf-edit-date-label">다시 볼 날짜<input type="date" class="rf-edit-review-date" value="{{ it.review_date or '' }}"></label>
-        </div>
-        <input type="text" class="rf-edit-title" value="{{ it.title or '' }}" placeholder="제목" autocomplete="off">
-        <textarea class="rf-edit-text" rows="3" placeholder="내용">{{ it.text or '' }}</textarea>
-        <input type="text" class="rf-edit-tags rf-tags" value="{{ it.tags or '' }}" placeholder="#태그" autocomplete="off">
-        <div class="rf-edit-row">
-            <button type="button" class="rf-edit-save primary-btn">저장</button>
-            <button type="button" class="rf-edit-cancel ghost-btn">취소</button>
-        </div>
+    <div class="rf-preview" title="클릭하면 전체 보기·수정">
+        <div class="rf-title-view">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
+        {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
+        {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
+        <span class="rf-more">더보기</span>
     </div>
-    {% endif %}
 </article>
 {% endfor %}
 <div class="ctx-empty rf-no-match" hidden>검색 결과가 없습니다.</div>

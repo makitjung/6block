@@ -27,12 +27,12 @@
             </div>
             <input type="text" id="rf-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸에 들어갑니다)" autocomplete="off">
             <textarea id="rf-text" class="rf-text" rows="3" placeholder="내용 (구글 캘린더 설명칸에 들어갑니다)"></textarea>
+            <div class="rf-tags-wrap">
+                <input type="text" id="rf-tags" class="rf-tags" placeholder="#태그 (#건강 #건강/운동)" autocomplete="off">
+                <div id="rf-tag-drop" class="rf-tag-drop" hidden></div>
+            </div>
             <div class="rf-row">
-                <div class="rf-tags-wrap">
-                    <input type="text" id="rf-tags" class="rf-tags" placeholder="#태그 (#건강 #건강/운동)" autocomplete="off">
-                    <div id="rf-tag-drop" class="rf-tag-drop" hidden></div>
-                </div>
-                <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rf-review" value=""></label>
+                <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시<input type="date" id="rf-review" value=""></label>
                 <button type="button" id="rf-add" class="primary-btn">기록</button>
             </div>
         </section>
@@ -60,5 +60,5 @@
         </div>
     </div>
 </div>
-<script>window._rfTags = {{ all_tags | tojson }};</script>
+<script>window._rfTags = {{ all_tags | tojson }}; window._rfKinds = {{ kinds | tojson }};</script>
 {% endblock %}
