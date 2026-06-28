@@ -1269,6 +1269,53 @@
     }
 
 
+    // ---- 고결감 공용 태그 헬퍼 -------------------------------------------
+    function normalizeTags(val) {
+        if (!val) return '';
+        return val.split(/[\s,]+/).filter(Boolean)
+            .map((t) => (t.startsWith('#') ? t : '#' + t))
+            .join(' ');
+    }
+
+    function bindTagAutocomplete(input) {
+        const tags = (window._rfTags || []);
+        if (!tags.length || !input) return;
+        let drop = input.parentNode.querySelector('.rf-tag-drop');
+        if (!drop) {
+            drop = document.createElement('div');
+            drop.className = 'rf-tag-drop';
+            drop.hidden = true;
+            input.parentNode.style.position = 'relative';
+            input.parentNode.appendChild(drop);
+        }
+        const show = (matches) => {
+            drop.innerHTML = '';
+            if (!matches.length) { drop.hidden = true; return; }
+            matches.slice(0, 8).forEach((t) => {
+                const btn = document.createElement('button');
+                btn.type = 'button'; btn.className = 'rf-tag-opt'; btn.textContent = t;
+                btn.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const v = input.value;
+                    const last = v.lastIndexOf('#');
+                    input.value = (last >= 0 ? v.slice(0, last) : v) + t + ' ';
+                    drop.hidden = true; input.focus();
+                });
+                drop.appendChild(btn);
+            });
+            drop.hidden = false;
+        };
+        input.addEventListener('input', () => {
+            const v = input.value;
+            const last = v.lastIndexOf('#');
+            if (last < 0) { drop.hidden = true; return; }
+            const prefix = v.slice(last);
+            show(tags.filter((t) => t.toLowerCase().startsWith(prefix.toLowerCase())));
+        });
+        input.addEventListener('blur', () => setTimeout(() => { drop.hidden = true; }, 150));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Escape') drop.hidden = true; });
+    }
+
     // ---- 고민·감상 (/reflect) --------------------------------------------
     function bindReflect() {
         const addBtn = document.getElementById('rf-add');
@@ -1282,7 +1329,7 @@
             const text = (ta.value || '').trim();
             if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
             const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
-            const tags = (document.getElementById('rf-tags').value || '').trim();
+            const tags = normalizeTags((document.getElementById('rf-tags').value || '').trim());
             const review_date = document.getElementById('rf-review')?.value || '';
             const op = {
                 id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
@@ -1314,6 +1361,62 @@
                     else toast('캘린더 연동이 아직 설정되지 않았습니다');
                 });
             }));
+        list?.querySelectorAll('.rf-edit').forEach((b) =>
+            b.addEventListener('click', () => {
+                const item = b.closest('.rf-item');
+                const panel = item.querySelector('.rf-edit-panel');
+                panel.hidden = !panel.hidden;
+                if (!panel.hidden) {
+                    const ti = panel.querySelector('.rf-edit-tags');
+                    if (ti && !ti.dataset.acBound) {
+                        bindTagAutocomplete(ti);
+                        ti.dataset.acBound = '1';
+                    }
+                }
+            }));
+        list?.querySelectorAll('.rf-edit-cancel').forEach((b) =>
+            b.addEventListener('click', () => {
+                b.closest('.rf-edit-panel').hidden = true;
+            }));
+        list?.querySelectorAll('.rf-edit-save').forEach((b) =>
+            b.addEventListener('click', () => {
+                const item = b.closest('.rf-item');
+                const id = item.dataset.id;
+                const kind = (item.querySelector(`input[name="rek${id}"]:checked`) || {}).value || '';
+                const ti = item.querySelector('.rf-edit-tags');
+                const tags = normalizeTags((ti?.value || '').trim());
+                fetch('/reflect/update/' + id, {
+                    method: 'POST', headers: FORM_HEADERS,
+                    body: new URLSearchParams({ kind: kind, tags: tags }).toString(),
+                })
+                    .then((r) => r.json())
+                    .then((d) => {
+                        if (!d.ok) { toast('저장 실패'); return; }
+                        const badge = item.querySelector('.rf-badge');
+                        if (badge && kind) { badge.textContent = kind; badge.dataset.kind = kind; }
+                        if (ti) {
+                            let row = item.querySelector('.rf-tags-row');
+                            if (tags) {
+                                if (!row) {
+                                    row = document.createElement('div');
+                                    row.className = 'rf-tags-row';
+                                    item.querySelector('.rf-edit-panel').before(row);
+                                }
+                                row.textContent = tags;
+                            } else { row?.remove(); }
+                            ti.value = tags;
+                        }
+                        item.dataset.search = [
+                            (item.querySelector('.rf-title-row')?.textContent || ''),
+                            (item.querySelector('.rf-body')?.textContent || ''),
+                            tags,
+                        ].join(' ').toLowerCase();
+                        item.querySelector('.rf-edit-panel').hidden = true;
+                        toast('저장됨');
+                    })
+                    .catch(() => toast('저장 실패'));
+            }));
+        bindTagAutocomplete(document.getElementById('rf-tags'));
 
         // 유사검색: 입력 즉시 클라이언트에서 점수(부분일치·부분수열)로 필터·정렬
         const searchInput = document.getElementById('rf-search-input');
@@ -1382,7 +1485,7 @@
             const text = (ta.value || '').trim();
             if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
             const kind = (modal.querySelector('input[name="rmk"]:checked') || {}).value || '고민';
-            const tags = (document.getElementById('rm-tags').value || '').trim();
+            const tags = normalizeTags((document.getElementById('rm-tags').value || '').trim());
             const review_date = document.getElementById('rm-review')?.value || '';
             const op = {
                 id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
@@ -1526,25 +1629,25 @@
         };
 
         const evInput = document.getElementById('ev-input');
-        const evTime = document.getElementById('ev-time');
+        const evDate = document.getElementById('ev-date');
         const addEvent = () => {
             const title = (evInput?.value || '').trim();
             if (!title) return;
-            const time = (evTime?.value || '').trim();
+            const date = (evDate?.value || '').trim() || dateOf();
             fetch('/gcal/event/add', {
                 method: 'POST', headers: FORM_HEADERS,
-                body: new URLSearchParams({ title: title, time: time, date: dateOf() }).toString(),
+                body: new URLSearchParams({ title: title, date: date }).toString(),
             })
                 .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
                 .then(({ ok, d }) => {
                     if (ok && d.ok) {
                         optimistic('agenda-events', () => {
                             const row = el('div', 'agenda-row event');
-                            row.appendChild(el('span', 't', time || '종일'));
+                            row.appendChild(el('span', 't', date !== dateOf() ? date : '종일'));
                             row.appendChild(el('span', 'x', title));
                             return row;
                         });
-                        evInput.value = ''; if (evTime) evTime.value = '';
+                        evInput.value = ''; if (evDate) evDate.value = '';
                         toast('일정 추가 → 구글 캘린더');
                     } else { toast((d && d.error) || '일정 추가 실패'); }
                 })

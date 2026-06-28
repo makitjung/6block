@@ -24,11 +24,26 @@
         <input type="text" id="rf-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸에 들어갑니다)" autocomplete="off">
         <textarea id="rf-text" class="rf-text" rows="4" placeholder="내용 (구글 캘린더 설명칸에 들어갑니다)"></textarea>
         <div class="rf-row">
-            <input type="text" id="rf-tags" class="rf-tags" placeholder="태그 (예: 진로, 건강)" autocomplete="off">
+            <div class="rf-tags-wrap">
+                <input type="text" id="rf-tags" class="rf-tags" placeholder="#태그 (#건강 #건강/운동)" autocomplete="off">
+                <div id="rf-tag-drop" class="rf-tag-drop" hidden></div>
+            </div>
             <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rf-review" value=""></label>
             <button type="button" id="rf-add" class="primary-btn">기록</button>
         </div>
         <p class="rf-hint mono">기록일은 오늘로 자동 저장됩니다. 제목·내용 중 하나만 적어도 됩니다.</p>
+        {% if upcoming_reviews %}
+        <div class="rf-upcoming">
+            <div class="rf-upcoming-head">미도래 다시보기 <span class="rf-count">{{ upcoming_reviews | length }}</span></div>
+            {% for r in upcoming_reviews %}
+            <div class="rf-upcoming-item">
+                <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
+                <span class="rf-upcoming-date mono">↻ {% if r.source_id %}{{ r.event_date }}{% else %}{{ r.review_date }}{% endif %}</span>
+                <span class="rf-upcoming-title">{% if r.title %}{{ r.title }}{% else %}{{ (r.text or '')[:40] }}{% endif %}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </section>
 
     <section class="reflect-right">
@@ -50,17 +65,34 @@
                 <div class="rf-meta">
                     <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
                     <span class="rf-date mono">{{ it.event_date }}</span>
-                    {% if it.review_date %}<span class="rf-review-badge mono" title="다시 볼 날짜">↻ {{ it.review_date }}</span>{% endif %}
+                    {% if it.review_date and not it.source_id %}<span class="rf-review-badge mono" title="다시 볼 날짜">↻ {{ it.review_date }}</span>{% endif %}
+                    {% if it.source_id %}<span class="rf-source-badge">↩ 다시보기</span>{% endif %}
                     {% if it.synced %}
                     <span class="rf-sync ok" title="구글 캘린더에 반영됨">✓ 캘린더</span>
                     {% else %}
                     <button type="button" class="rf-sync retry" data-id="{{ it.id }}" title="캘린더에 다시 반영">⟳ 동기화</button>
                     {% endif %}
+                    <button type="button" class="rf-edit" data-id="{{ it.id }}" title="편집">✏</button>
                     <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
                 </div>
                 {% if it.title %}<div class="rf-title-row">{{ it.title }}</div>{% endif %}
                 {% if it.text %}<div class="rf-body">{{ it.text }}</div>{% endif %}
                 {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
+                <div class="rf-edit-panel" hidden>
+                    <div class="rf-edit-kinds">
+                        {% for k in kinds %}
+                        <label class="rk-sm">
+                            <input type="radio" name="rek{{ it.id }}" value="{{ k }}"{% if it.kind == k %} checked{% endif %}>
+                            <span>{{ k }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="rf-edit-row">
+                        <input type="text" class="rf-edit-tags rf-tags" value="{{ it.tags or '' }}" placeholder="#태그" autocomplete="off">
+                        <button type="button" class="rf-edit-save ghost-btn">저장</button>
+                        <button type="button" class="rf-edit-cancel ghost-btn">취소</button>
+                    </div>
+                </div>
             </article>
             {% endfor %}
             <div class="ctx-empty rf-no-match" hidden>검색 결과가 없습니다.</div>
@@ -70,4 +102,5 @@
         </div>
     </section>
 </div>
+<script>window._rfTags = {{ all_tags | tojson }};</script>
 {% endblock %}
