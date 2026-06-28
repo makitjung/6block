@@ -124,6 +124,9 @@ def _migrate(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE reflection ADD COLUMN review_note TEXT")
     if refl_cols and "review_gcal_event_id" not in refl_cols:
         conn.execute("ALTER TABLE reflection ADD COLUMN review_gcal_event_id TEXT")
+    # 다시보기 항목이 원본과 독립 삭제 가능하도록 출처 ID를 저장한다.
+    if refl_cols and "source_id" not in refl_cols:
+        conn.execute("ALTER TABLE reflection ADD COLUMN source_id INTEGER")
     # GTD 명료화: 수집함 항목 상태(''=미분류·next·wait·someday·ref). 없으면 추가.
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:

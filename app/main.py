@@ -457,8 +457,10 @@ def _day_view(request: Request, date_str: str):
         # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
         due_reflections = conn.execute(
             "SELECT id, kind, title, text, tags, event_date, review_note FROM reflection "
-            "WHERE review_date = ? ORDER BY id DESC",
-            (date_str,),
+            "WHERE (review_date = ? AND source_id IS NULL) "
+            "   OR (source_id IS NOT NULL AND event_date = ?) "
+            "ORDER BY id DESC",
+            (date_str, date_str),
         ).fetchall()
         # 이 날짜 요일의 컨셉(오늘 각 블록 오른쪽에 표시)
         wc = conn.execute(
@@ -2054,8 +2056,28 @@ def reflect_view(request: Request, q: str = "", kind: str = ""):
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY event_date DESC, id DESC LIMIT 500"
+    today = today_str()
     with get_conn() as conn:
         rows = conn.execute(sql, params).fetchall()
+        upcoming = conn.execute(
+            "SELECT * FROM reflection "
+            "WHERE (source_id IS NOT NULL AND event_date > ?) "
+            "   OR (review_date > ? AND source_id IS NULL) "
+            "ORDER BY CASE WHEN source_id IS NOT NULL THEN event_date ELSE review_date END ASC "
+            "LIMIT 20",
+            (today, today),
+        ).fetchall()
+        tag_rows = conn.execute(
+            "SELECT DISTINCT tags FROM reflection WHERE tags IS NOT NULL AND tags != ''"
+        ).fetchall()
+    seen: set[str] = set()
+    all_tags: list[str] = []
+    for tr in tag_rows:
+        for t in (tr["tags"] or "").split():
+            t = t.strip().rstrip(",")
+            if t and t not in seen:
+                seen.add(t)
+                all_tags.append(t)
     return templates.TemplateResponse(
         "reflect.html",
         {
@@ -2064,8 +2086,10 @@ def reflect_view(request: Request, q: str = "", kind: str = ""):
             "kinds": REFLECT_KINDS,
             "q": q,
             "kind": kind,
-            "today": today_str(),
+            "today": today,
             "gcal_write_on": gcal_write.enabled(),
+            "upcoming_reviews": [dict(r) for r in upcoming],
+            "all_tags": all_tags,
         },
     )
 
@@ -2088,24 +2112,31 @@ async def reflect_add(request: Request):
         event_id = gcal_write.create_event(kind, title, text, tags, event_date)
     except Exception:
         event_id = None
-    # review_date가 기록일과 다른 경우 그날에 '다시 볼' 이벤트를 별도로 만든다.
-    review_event_id = None
-    if review_date and review_date != event_date:
-        try:
-            review_event_id = gcal_write.create_event(
-                kind, f"다시 볼: {title}", text, tags, review_date
-            )
-        except Exception:
-            review_event_id = None
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO reflection (kind, title, text, tags, event_date, review_date, "
-            "created_at, gcal_event_id, review_gcal_event_id, synced) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, gcal_event_id, synced) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kind, title, text, tags, event_date, review_date, now, event_id,
-             review_event_id, 1 if event_id else 0),
+             1 if event_id else 0),
         )
         new_id = cur.lastrowid
+        # 다시 볼 날짜가 있으면 별도 '다시보기' 항목을 생성한다(원본과 독립 삭제 가능).
+        if review_date and review_date != event_date:
+            review_title = f"다시보기: {title}"
+            try:
+                rev_event_id = gcal_write.create_event(
+                    kind, review_title, text, tags, review_date
+                )
+            except Exception:
+                rev_event_id = None
+            conn.execute(
+                "INSERT INTO reflection (kind, title, text, tags, event_date, "
+                "created_at, gcal_event_id, source_id, synced) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (kind, review_title, text, tags, review_date, now,
+                 rev_event_id, new_id, 1 if rev_event_id else 0),
+            )
     return JSONResponse({"ok": True, "id": new_id, "synced": bool(event_id)})
 
 
@@ -2132,6 +2163,29 @@ def reflect_sync(item_id: int):
                 (event_id, item_id),
             )
     return JSONResponse({"ok": bool(event_id), "synced": bool(event_id)})
+
+
+@app.post("/reflect/update/{item_id}")
+async def reflect_update(item_id: int, request: Request):
+    """종류(kind)와 태그(tags)를 수정한다."""
+    form = await request.form()
+    kind = (form.get("kind") or "").strip()
+    kind = kind if kind in REFLECT_KINDS else None
+    tags = (form.get("tags") or "").strip()
+    updates: list[str] = []
+    vals: list = []
+    if kind:
+        updates.append("kind = ?")
+        vals.append(kind)
+    updates.append("tags = ?")
+    vals.append(tags)
+    vals.append(item_id)
+    with get_conn() as conn:
+        r = conn.execute("SELECT id FROM reflection WHERE id = ?", (item_id,)).fetchone()
+        if not r:
+            return JSONResponse({"ok": False}, status_code=404)
+        conn.execute(f"UPDATE reflection SET {', '.join(updates)} WHERE id = ?", vals)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/reflect/delete/{item_id}")

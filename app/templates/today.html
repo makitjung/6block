@@ -85,7 +85,7 @@
                 {% if gcal_events_on %}
                 <div class="agenda-add">
                     <input type="text" id="ev-input" placeholder="일정 추가 → 구글 캘린더" autocomplete="off" enterkeyhint="done">
-                    <input type="time" id="ev-time" step="300" aria-label="시간(선택)">
+                    <input type="date" id="ev-date" aria-label="날짜(기본: 오늘)">
                     <button type="button" class="inbox-add" id="ev-add" aria-label="일정 추가">+</button>
                 </div>
                 {% else %}
