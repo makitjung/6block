@@ -2034,6 +2034,10 @@ def _import_gcal_reflections(force: bool = False):
         evs = gcal_write.list_reflection_events(lo, hi)
     except Exception:
         return
+    # 빈 응답(일시적 실패 포함)이면 삭제 reconcile을 돌리지 않는다. 그렇지 않으면 구글이
+    # 잠깐 0건을 돌려줄 때 동기화됐던 로컬 기록이 한꺼번에 삭제될 수 있다.
+    if not evs:
+        return
     by_id = {ev["id"]: ev for ev in evs}
     now = datetime.now(KST).isoformat(timespec="seconds")
     # 막 만든 항목은 구글 목록 반영 지연으로 오삭제될 수 있어 2분간 삭제 대상에서 뺀다.
