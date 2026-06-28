@@ -2272,14 +2272,14 @@ async def reflect_update(item_id: int, request: Request):
         text = (form.get("text") or "").strip()
         tags = (form.get("tags") or "").strip()
         review_date = (form.get("review_date") or "").strip() or None
+        event_date = (form.get("event_date") or "").strip() or r["event_date"]
         if not title and not text:
             return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
         title = _reflect_title(title, text)
-        event_date = r["event_date"]
         conn.execute(
             "UPDATE reflection SET kind = ?, title = ?, text = ?, tags = ?, "
-            "review_date = ? WHERE id = ?",
-            (kind, title, text, tags, review_date, item_id),
+            "review_date = ?, event_date = ? WHERE id = ?",
+            (kind, title, text, tags, review_date, event_date, item_id),
         )
         if r["gcal_event_id"]:
             try:

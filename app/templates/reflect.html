@@ -14,45 +14,51 @@
     {% endif %}
 </section>
 
-<section class="card reflect-compose">
-    <div class="reflect-kind" role="group" aria-label="종류">
-        {% for k in kinds %}
-        <label class="rk-opt">
-            <input type="radio" name="rk" value="{{ k }}" {% if loop.first %}checked{% endif %}>
-            <span>{{ k }}</span>
-        </label>
-        {% endfor %}
+<div class="reflect-layout">
+    <div class="reflect-left">
+        <section class="card reflect-compose">
+            <div class="reflect-kind" role="group" aria-label="종류">
+                {% for k in kinds %}
+                <label class="rk-opt">
+                    <input type="radio" name="rk" value="{{ k }}" {% if loop.first %}checked{% endif %}>
+                    <span>{{ k }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <input type="text" id="rf-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸에 들어갑니다)" autocomplete="off">
+            <textarea id="rf-text" class="rf-text" rows="3" placeholder="내용 (구글 캘린더 설명칸에 들어갑니다)"></textarea>
+            <div class="rf-row">
+                <div class="rf-tags-wrap">
+                    <input type="text" id="rf-tags" class="rf-tags" placeholder="#태그 (#건강 #건강/운동)" autocomplete="off">
+                    <div id="rf-tag-drop" class="rf-tag-drop" hidden></div>
+                </div>
+                <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rf-review" value=""></label>
+                <button type="button" id="rf-add" class="primary-btn">기록</button>
+            </div>
+        </section>
+
+        <section class="reflect-upcoming-wrap" id="reflect-upcoming">
+            {% include "_reflect_upcoming.html" %}
+        </section>
     </div>
-    <input type="text" id="rf-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸에 들어갑니다)" autocomplete="off">
-    <textarea id="rf-text" class="rf-text" rows="3" placeholder="내용 (구글 캘린더 설명칸에 들어갑니다)"></textarea>
-    <div class="rf-row">
-        <div class="rf-tags-wrap">
-            <input type="text" id="rf-tags" class="rf-tags" placeholder="#태그 (#건강 #건강/운동)" autocomplete="off">
-            <div id="rf-tag-drop" class="rf-tag-drop" hidden></div>
+
+    <div class="reflect-right">
+        <div class="reflect-filter">
+            <div class="rf-search">
+                <input type="search" id="rf-search-input" value="{{ q }}" placeholder="유사검색 (오타·부분도 찾음)" autocomplete="off">
+            </div>
+            <nav class="rf-kinds" aria-label="종류 필터">
+                <a href="/reflect?kind=" class="{% if not kind %}is-active{% endif %}">전체</a>
+                {% for k in kinds %}
+                <a href="/reflect?kind={{ k }}" class="{% if kind == k %}is-active{% endif %}">{{ k }}</a>
+                {% endfor %}
+            </nav>
         </div>
-        <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rf-review" value=""></label>
-        <button type="button" id="rf-add" class="primary-btn">기록</button>
+
+        <div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}">
+            {% include "_reflect_list.html" %}
+        </div>
     </div>
-</section>
-
-<section class="reflect-upcoming-wrap" id="reflect-upcoming">
-    {% include "_reflect_upcoming.html" %}
-</section>
-
-<div class="reflect-filter">
-    <div class="rf-search">
-        <input type="search" id="rf-search-input" value="{{ q }}" placeholder="유사검색 (오타·부분도 찾음)" autocomplete="off">
-    </div>
-    <nav class="rf-kinds" aria-label="종류 필터">
-        <a href="/reflect?kind=" class="{% if not kind %}is-active{% endif %}">전체</a>
-        {% for k in kinds %}
-        <a href="/reflect?kind={{ k }}" class="{% if kind == k %}is-active{% endif %}">{{ k }}</a>
-        {% endfor %}
-    </nav>
-</div>
-
-<div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}">
-    {% include "_reflect_list.html" %}
 </div>
 <script>window._rfTags = {{ all_tags | tojson }};</script>
 {% endblock %}

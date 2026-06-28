@@ -7,56 +7,61 @@
     data-kind="{{ it.kind }}"
     data-search="{{ ((it.title or '') ~ ' ' ~ (it.text or '') ~ ' ' ~ (it.tags or '')) | lower }}">
     <div class="rf-card-head">
-        <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
-        <span class="rf-date mono">{{ it.event_date }}</span>
-        {% if it.review_date and not it.source_id %}
-            {% if it.review_child_id %}
-            <button type="button" class="rf-jump rf-review-badge mono" data-target="{{ it.review_child_id }}" title="다시 볼 날짜로 이동">↻ {{ it.review_date }}</button>
-            {% else %}
-            <span class="rf-review-badge mono" title="다시 볼 날짜">↻ {{ it.review_date }}</span>
+        <div class="rf-head-meta">
+            <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
+            <span class="rf-date mono">{{ it.event_date }}</span>
+            {% if it.review_date and not it.source_id %}
+                {% if it.review_child_id %}
+                <button type="button" class="rf-jump rf-review-badge mono" data-target="{{ it.review_child_id }}" title="다시 볼 날짜로 이동">↻ {{ it.review_date }}</button>
+                {% else %}
+                <span class="rf-review-badge mono" title="다시 볼 날짜">↻ {{ it.review_date }}</span>
+                {% endif %}
             {% endif %}
-        {% endif %}
-        {% if it.source_id %}
-        <button type="button" class="rf-jump rf-source-badge" data-target="{{ it.source_id }}" title="원본으로 이동">↩ 다시보기</button>
-        {% endif %}
-        {% if it.synced %}
-        <span class="rf-sync ok" title="구글 캘린더에 반영됨">✓</span>
-        {% else %}
-        <button type="button" class="rf-sync retry" data-id="{{ it.id }}" title="캘린더에 다시 반영">⟳</button>
-        {% endif %}
-    </div>
-    <button type="button" class="rf-card-title">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</button>
-    <div class="rf-card-body">
-        {% if it.text %}<div class="rf-body">{{ it.text }}</div>{% endif %}
-        {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
-        <div class="rf-card-actions">
-            {% if not it.source_id %}<button type="button" class="rf-edit" data-id="{{ it.id }}">편집</button>{% endif %}
-            <button type="button" class="rf-del" data-id="{{ it.id }}">삭제</button>
+            {% if it.source_id %}
+            <button type="button" class="rf-jump rf-source-badge" data-target="{{ it.source_id }}" title="원본으로 이동">↩ 다시보기</button>
+            {% endif %}
+            {% if it.synced %}
+            <span class="rf-sync ok" title="구글 캘린더에 반영됨">✓</span>
+            {% else %}
+            <button type="button" class="rf-sync retry" data-id="{{ it.id }}" title="캘린더에 다시 반영">⟳</button>
+            {% endif %}
         </div>
-        {% if not it.source_id %}
-        <div class="rf-edit-panel" hidden>
-            <div class="rf-edit-kinds">
-                {% for k in kinds %}
-                <label class="rk-sm">
-                    <input type="radio" name="rek{{ it.id }}" value="{{ k }}"{% if it.kind == k %} checked{% endif %}>
-                    <span>{{ k }}</span>
-                </label>
-                {% endfor %}
-            </div>
-            <input type="text" class="rf-edit-title" value="{{ it.title or '' }}" placeholder="제목" autocomplete="off">
-            <textarea class="rf-edit-text" rows="3" placeholder="내용">{{ it.text or '' }}</textarea>
-            <input type="text" class="rf-edit-tags rf-tags" value="{{ it.tags or '' }}" placeholder="#태그" autocomplete="off">
-            <label class="rf-edit-review">다시 볼 날짜<input type="date" class="rf-edit-review-date" value="{{ it.review_date or '' }}"></label>
-            <div class="rf-edit-row">
-                <button type="button" class="rf-edit-save primary-btn">저장</button>
-                <button type="button" class="rf-edit-cancel ghost-btn">취소</button>
-            </div>
+        <div class="rf-head-actions">
+            {% if not it.source_id %}
+            <button type="button" class="rf-edit" data-id="{{ it.id }}" title="편집">편집</button>
+            {% endif %}
+            <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
         </div>
-        {% endif %}
     </div>
+    <div class="rf-title-view">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
+    {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
+    {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
+    {% if not it.source_id %}
+    <div class="rf-inline-edit" hidden>
+        <div class="rf-edit-kinds">
+            {% for k in kinds %}
+            <label class="rk-sm">
+                <input type="radio" name="rek{{ it.id }}" value="{{ k }}"{% if it.kind == k %} checked{% endif %}>
+                <span>{{ k }}</span>
+            </label>
+            {% endfor %}
+        </div>
+        <div class="rf-edit-dates">
+            <label class="rf-edit-date-label">날짜<input type="date" class="rf-edit-event-date" value="{{ it.event_date or '' }}"></label>
+            <label class="rf-edit-date-label">다시 볼 날짜<input type="date" class="rf-edit-review-date" value="{{ it.review_date or '' }}"></label>
+        </div>
+        <input type="text" class="rf-edit-title" value="{{ it.title or '' }}" placeholder="제목" autocomplete="off">
+        <textarea class="rf-edit-text" rows="3" placeholder="내용">{{ it.text or '' }}</textarea>
+        <input type="text" class="rf-edit-tags rf-tags" value="{{ it.tags or '' }}" placeholder="#태그" autocomplete="off">
+        <div class="rf-edit-row">
+            <button type="button" class="rf-edit-save primary-btn">저장</button>
+            <button type="button" class="rf-edit-cancel ghost-btn">취소</button>
+        </div>
+    </div>
+    {% endif %}
 </article>
 {% endfor %}
 <div class="ctx-empty rf-no-match" hidden>검색 결과가 없습니다.</div>
 {% else %}
-<div class="card ctx-empty rf-empty">기록이 없습니다. 위에서 첫 고민·결정·감사를 적어보세요.</div>
+<div class="card ctx-empty rf-empty">기록이 없습니다. 왼쪽에서 첫 고민·결정·감사를 적어보세요.</div>
 {% endif %}

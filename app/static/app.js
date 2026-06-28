@@ -1399,11 +1399,17 @@
             if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
         }
 
-        // ---- 카드 바인딩(펼침·상호이동·삭제·재동기화·편집) ----
+        // ---- 카드 바인딩(상호이동·삭제·재동기화·인라인편집) ----
+        function enterEdit(card) {
+            const panel = card.querySelector('.rf-inline-edit');
+            if (!panel) return;
+            panel.hidden = false;
+            const ti = panel.querySelector('.rf-edit-tags');
+            if (ti && !ti.dataset.acBound) { bindTagAutocomplete(ti); ti.dataset.acBound = '1'; }
+        }
+
         function bindList() {
             if (!list) return;
-            list.querySelectorAll('.rf-card-title').forEach((b) =>
-                b.addEventListener('click', () => b.closest('.rf-card')?.classList.toggle('expanded')));
             list.querySelectorAll('.rf-jump').forEach((b) =>
                 b.addEventListener('click', (e) => { e.stopPropagation(); focusCard(b.dataset.target); }));
             list.querySelectorAll('.rf-del').forEach((b) =>
@@ -1415,20 +1421,12 @@
                         else toast('캘린더 연동이 아직 설정되지 않았습니다');
                     });
                 }));
+            list.querySelectorAll('.rf-title-view, .rf-body-view').forEach((el) =>
+                el.addEventListener('click', () => enterEdit(el.closest('.rf-card'))));
             list.querySelectorAll('.rf-edit').forEach((b) =>
-                b.addEventListener('click', () => {
-                    const card = b.closest('.rf-card');
-                    card.classList.add('expanded');
-                    const panel = card.querySelector('.rf-edit-panel');
-                    if (!panel) return;
-                    panel.hidden = !panel.hidden;
-                    if (!panel.hidden) {
-                        const ti = panel.querySelector('.rf-edit-tags');
-                        if (ti && !ti.dataset.acBound) { bindTagAutocomplete(ti); ti.dataset.acBound = '1'; }
-                    }
-                }));
+                b.addEventListener('click', () => enterEdit(b.closest('.rf-card'))));
             list.querySelectorAll('.rf-edit-cancel').forEach((b) =>
-                b.addEventListener('click', () => { b.closest('.rf-edit-panel').hidden = true; }));
+                b.addEventListener('click', () => { b.closest('.rf-inline-edit').hidden = true; }));
             list.querySelectorAll('.rf-edit-save').forEach((b) =>
                 b.addEventListener('click', () => {
                     const card = b.closest('.rf-card');
@@ -1438,10 +1436,11 @@
                     const text = (card.querySelector('.rf-edit-text')?.value || '').trim();
                     const tags = normalizeTags((card.querySelector('.rf-edit-tags')?.value || '').trim());
                     const review_date = card.querySelector('.rf-edit-review-date')?.value || '';
+                    const event_date = card.querySelector('.rf-edit-event-date')?.value || '';
                     if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
                     fetch('/reflect/update/' + id, {
                         method: 'POST', headers: FORM_HEADERS,
-                        body: new URLSearchParams({ kind, title, text, tags, review_date }).toString(),
+                        body: new URLSearchParams({ kind, title, text, tags, review_date, event_date }).toString(),
                     })
                         .then((r) => r.json())
                         .then((d) => {

@@ -1261,3 +1261,48 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 /* 고결감: 다시보기 원본 링크 배지 */
 .rf-source-badge { font-size: 11px; background: var(--accent-soft); border-radius: 8px;
     padding: 1px 6px; color: var(--accent-soft-text); white-space: nowrap; }
+
+/* 고결감: 2분할 레이아웃 */
+.reflect-layout { display: flex; gap: 16px; align-items: flex-start; }
+.reflect-left { flex: 0 0 340px; min-width: 260px; position: sticky; top: 72px; display: flex; flex-direction: column; gap: 12px; }
+.reflect-right { flex: 1 1 0; min-width: 0; }
+.reflect-right .reflect-grid { grid-template-columns: 1fr; }
+
+/* 고결감: 카드 헤더 */
+.rf-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.rf-head-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.rf-head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.rf-head-actions .rf-edit {
+    font-size: 12px; padding: 2px 8px; border-radius: var(--r-pill);
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.rf-head-actions .rf-edit:hover { background: var(--hover); color: var(--text); }
+.rf-head-actions .rf-del {
+    font-size: 13px; padding: 2px 6px; border-radius: var(--r-pill);
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
+    line-height: 1;
+}
+.rf-head-actions .rf-del:hover { background: #fee2e2; border-color: #f87171; color: #dc2626; }
+
+/* 고결감: 항상 보이는 카드 본문 */
+.rf-title-view { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; cursor: pointer; }
+.rf-title-view:hover { color: var(--accent); }
+.rf-body-view { font-size: 13px; color: var(--text-muted); white-space: pre-wrap; cursor: pointer; margin-bottom: 4px; }
+.rf-body-view:hover { color: var(--text); }
+
+/* 고결감: 인라인 편집 패널 */
+.rf-inline-edit { margin-top: 10px; display: flex; flex-direction: column; gap: 8px;
+    border-top: 1px solid var(--border); padding-top: 10px; }
+.rf-inline-edit[hidden] { display: none; }
+.rf-edit-dates { display: flex; gap: 12px; flex-wrap: wrap; }
+.rf-edit-date-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.rf-edit-date-label input { width: auto; }
+.rf-inline-edit .rf-edit-title { width: 100%; }
+.rf-inline-edit .rf-edit-text { width: 100%; resize: vertical; }
+.rf-inline-edit .rf-edit-tags { width: 100%; }
+
+@media (max-width: 900px) {
+    .reflect-layout { flex-direction: column; }
+    .reflect-left { position: static; flex: none; width: 100%; }
+    .reflect-right .reflect-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+}
