@@ -1398,26 +1398,18 @@
             if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
         }
 
-        // ---- 카드에서 바로 수정(종류 순환·제목/내용/태그 클릭수정·다시 날짜) ----
+        // ---- 카드: 종류 순환 + 미리보기 클릭으로 전체 보기·수정 별도창 ----
         const kindOrder = () => (window._rfKinds && window._rfKinds.length
             ? window._rfKinds : ['고민', '결정', '감사']);
 
-        function fieldVal(card, name) {
-            const el = card.querySelector('[data-field="' + name + '"]');
-            return el ? (el.innerText || '').trim() : '';
-        }
-        function updateCardSearch(card) {
-            card.dataset.search = (fieldVal(card, 'title') + ' '
-                + fieldVal(card, 'text') + ' ' + fieldVal(card, 'tags')).toLowerCase();
-        }
-        // 카드의 현재값을 모아 변경분(patch)만 덮어써 서버에 저장한다(event_date는 서버가 보존).
+        // 종류만 바꿀 때도 다른 칸을 지우지 않도록 카드 데이터로 현재값을 채워 보낸다.
         function saveCard(card, patch) {
             const body = {
                 kind: card.dataset.kind || '',
-                title: fieldVal(card, 'title'),
-                text: fieldVal(card, 'text'),
-                tags: fieldVal(card, 'tags'),
-                review_date: card.querySelector('.rf-card-review-date')?.value || '',
+                title: card.dataset.title || '',
+                text: card.dataset.text || '',
+                tags: card.dataset.tags || '',
+                review_date: card.dataset.review || '',
             };
             Object.assign(body, patch);
             if (!body.title && !body.text) { toast('제목이나 내용을 입력하세요'); return Promise.resolve(false); }
@@ -1426,6 +1418,69 @@
                 method: 'POST', headers: FORM_HEADERS,
                 body: new URLSearchParams(body).toString(),
             }).then((r) => r.json()).then((d) => !!(d && d.ok)).catch(() => false);
+        }
+
+        // 미리보기가 카드를 넘치면 '더보기'를 띄운다.
+        function markClipped() {
+            if (!list) return;
+            list.querySelectorAll('.rf-preview').forEach((p) => {
+                p.classList.toggle('is-clipped', p.scrollHeight - p.clientHeight > 2);
+            });
+        }
+        window.addEventListener('resize', markClipped);
+
+        // ---- 전체 보기·수정 별도창 ----
+        const modal = document.getElementById('rf-edit-modal');
+        function closeModal() { if (modal) { modal.hidden = true; modal.dataset.id = ''; } }
+        function openEditModal(card) {
+            if (!modal || !card) return;
+            const editable = !card.hasAttribute('data-source');
+            modal.dataset.id = card.dataset.id;
+            const set = (sel, v) => { const el = modal.querySelector(sel); if (el) el.value = v; };
+            set('#rf-modal-title', card.dataset.title || '');
+            set('#rf-modal-text', card.dataset.text || '');
+            set('#rf-modal-tags', card.dataset.tags || '');
+            set('#rf-modal-review', card.dataset.review || '');
+            const kind = card.dataset.kind || '';
+            modal.querySelectorAll('input[name="rfmk"]').forEach((r) => { r.checked = (r.value === kind); });
+            // 다시보기 사본은 원본에서만 관리하므로 읽기 전용으로 연다.
+            modal.querySelectorAll('#rf-modal-title, #rf-modal-text, #rf-modal-tags, #rf-modal-review, input[name="rfmk"]')
+                .forEach((el) => { el.disabled = !editable; });
+            const save = modal.querySelector('#rf-modal-save');
+            const del = modal.querySelector('#rf-modal-del');
+            if (save) save.hidden = !editable;
+            if (del) del.hidden = !editable;
+            const note = modal.querySelector('.rf-modal-note');
+            if (note) note.hidden = editable;
+            modal.hidden = false;
+            if (editable) setTimeout(() => modal.querySelector('#rf-modal-title')?.focus(), 30);
+        }
+        if (modal) {
+            modal.querySelector('.rf-modal-close')?.addEventListener('click', closeModal);
+            modal.querySelector('.rf-modal-backdrop')?.addEventListener('click', closeModal);
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
+            bindListEditor(modal.querySelector('#rf-modal-text'));
+            bindTagAutocomplete(modal.querySelector('#rf-modal-tags'));
+            modal.querySelector('#rf-modal-save')?.addEventListener('click', () => {
+                const id = modal.dataset.id;
+                if (!id) return;
+                const kind = (modal.querySelector('input[name="rfmk"]:checked') || {}).value || '';
+                const title = (modal.querySelector('#rf-modal-title').value || '').trim();
+                const text = (modal.querySelector('#rf-modal-text').value || '').trim();
+                const tags = normalizeTags((modal.querySelector('#rf-modal-tags').value || '').trim());
+                const review_date = modal.querySelector('#rf-modal-review').value || '';
+                if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
+                fetch('/reflect/update/' + id, {
+                    method: 'POST', headers: FORM_HEADERS,
+                    body: new URLSearchParams({ kind, title, text, tags, review_date }).toString(),
+                }).then((r) => r.json()).then((d) => {
+                    if (!d || !d.ok) { toast('저장 실패'); return; }
+                    toast('저장됨'); closeModal(); refreshReflect(true);
+                }).catch(() => toast('저장 실패'));
+            });
+            modal.querySelector('#rf-modal-del')?.addEventListener('click', () => {
+                if (modal.dataset.id) deleteItem(modal.dataset.id, closeModal);
+            });
         }
 
         function bindList() {
@@ -1442,7 +1497,7 @@
                     });
                 }));
 
-            // 종류 배지: 누를 때마다 고민→결정→감사 순환(즉시 저장, 카드만 갱신)
+            // 종류 배지: 누를 때마다 고민→결정→감사 순환(즉시 저장)
             list.querySelectorAll('.rf-kind-cycle').forEach((btn) =>
                 btn.addEventListener('click', () => {
                     const card = btn.closest('.rf-card');
@@ -1456,36 +1511,11 @@
                     });
                 }));
 
-            // 제목·내용·태그: 클릭해 그 자리에서 고치고, 포커스가 빠질 때 저장
-            list.querySelectorAll('.rf-card:not([data-source]) [data-field]').forEach((el) => {
-                el.addEventListener('focus', () => { el.dataset.orig = el.innerText; });
-                el.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape') { el.innerText = el.dataset.orig || ''; el.blur(); }
-                    else if (e.key === 'Enter' && el.dataset.field !== 'text') { e.preventDefault(); el.blur(); }
-                });
-                el.addEventListener('blur', () => {
-                    const now = (el.innerText || '').trim();
-                    if (now === (el.dataset.orig || '').trim()) return;   // 변화 없음
-                    const card = el.closest('.rf-card');
-                    const patch = {}; patch[el.dataset.field] = now;
-                    saveCard(card, patch).then((ok) => {
-                        if (!ok) { el.innerText = el.dataset.orig || ''; toast('저장 실패'); return; }
-                        if (el.dataset.field === 'tags') el.innerText = normalizeTags(now);
-                        updateCardSearch(card);
-                        toast('저장됨');
-                    });
-                });
-            });
+            // 미리보기 클릭: 전체 보기·수정 별도창
+            list.querySelectorAll('.rf-preview').forEach((p) =>
+                p.addEventListener('click', () => openEditModal(p.closest('.rf-card'))));
 
-            // 다시 볼 날짜: 바꾸면 저장(다시보기 사본 생성·삭제가 있어 목록을 다시 그린다)
-            list.querySelectorAll('.rf-card-review-date').forEach((inp) =>
-                inp.addEventListener('change', () => {
-                    const card = inp.closest('.rf-card');
-                    saveCard(card, { review_date: inp.value }).then((ok) => {
-                        if (!ok) { toast('저장 실패'); return; }
-                        toast('다시 볼 날짜 저장'); refreshReflect(true);
-                    });
-                }));
+            markClipped();
         }
 
         // ---- 미도래 칩 바인딩(클릭 이동·삭제) ----
