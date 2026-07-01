@@ -1102,6 +1102,9 @@ def _week_view(request: Request, monday: date):
             "WHERE week_start = ?",
             (week_start_str,),
         ).fetchall()
+        wk_templates = conn.execute(
+            "SELECT id, name FROM cat_template ORDER BY display_order, id"
+        ).fetchall()
         # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
         review_inbox = conn.execute(
             "SELECT id, text, status FROM inbox WHERE done = 0 ORDER BY id DESC"
@@ -1189,6 +1192,7 @@ def _week_view(request: Request, monday: date):
             "week_total_hours": len(slots_for_day(get_day_blocks())) * 0.5 * 7,
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
+            "cat_templates": [dict(t) for t in wk_templates],
             "core_labels": CORE_LABELS,
             "week_block_events": week_block_events,
             "week_allday": week_allday,
@@ -1270,6 +1274,52 @@ async def save_week(week_start_str: str, request: Request):
                     (cid, now, sid),
                 )
     return RedirectResponse(url=f"/week/{week_start_str}", status_code=303)
+
+
+@app.post("/week/apply-template")
+async def week_apply_template(request: Request):
+    """선택한 구분 템플릿을 그 주 7일 코어 블록 구분에 일괄 적용한다(평일 월~금·주말 토·일).
+
+    빈 셀은 건너뛰어 기존 구분을 덮지 않는다. 블록 구분은 빈 슬롯에 자동 상속된다.
+    """
+    form = await request.form()
+    ws = (form.get("week_start") or "").strip()
+    try:
+        tid = int(form.get("template_id"))
+        monday = datetime.strptime(ws, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cells: dict[tuple[str, str], int] = {}
+        for r in conn.execute(
+            "SELECT day_type, block_label, category_id FROM cat_template_cell "
+            "WHERE template_id = ?",
+            (tid,),
+        ):
+            if r["category_id"] is not None:
+                cells[(r["day_type"], r["block_label"])] = r["category_id"]
+        if not cells:
+            return JSONResponse(
+                {"ok": False, "error": "empty-template"}, status_code=400
+            )
+        applied = 0
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            ds = d.strftime("%Y-%m-%d")
+            ensure_day_skeleton(conn, ds)
+            day_type = "weekend" if d.weekday() >= 5 else "weekday"
+            for label in CORE_LABELS:
+                cid = cells.get((day_type, label))
+                if cid is None:
+                    continue
+                conn.execute(
+                    "UPDATE blocks SET category_id = ?, updated_at = ? "
+                    "WHERE date = ? AND block_label = ? AND is_core = 1",
+                    (cid, now, ds, label),
+                )
+                applied += 1
+    return JSONResponse({"ok": True, "applied": applied})
 
 
 # -- 장기플랜 ---------------------------------------------------------------
@@ -1778,6 +1828,89 @@ async def settings_weekday(request: Request):
             "ON CONFLICT(weekday) DO UPDATE SET text = excluded.text, "
             "updated_at = excluded.updated_at",
             (wd, text, now),
+        )
+    return JSONResponse({"ok": True})
+
+
+# -- 구분 템플릿 (설정 탭) --------------------------------------------------
+
+_DAY_TYPES = {"weekday", "weekend"}
+
+
+@app.post("/settings/template/add")
+async def settings_template_add(request: Request):
+    """새 구분 템플릿을 빈 상태로 추가하고 생성된 id를 돌려준다."""
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "no-name"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        order = conn.execute(
+            "SELECT COALESCE(MAX(display_order), -1) + 1 FROM cat_template"
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO cat_template (name, display_order, updated_at) "
+            "VALUES (?, ?, ?)",
+            (name, order, now),
+        )
+    return JSONResponse({"ok": True, "id": cur.lastrowid})
+
+
+@app.post("/settings/template/rename")
+async def settings_template_rename(request: Request):
+    """구분 템플릿 이름을 바꾼다."""
+    form = await request.form()
+    try:
+        tid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    name = (form.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "no-name"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE cat_template SET name = ?, updated_at = ? WHERE id = ?",
+            (name, now, tid),
+        )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/template/delete")
+async def settings_template_delete(request: Request):
+    """구분 템플릿과 그 셀을 함께 삭제한다."""
+    form = await request.form()
+    try:
+        tid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM cat_template WHERE id = ?", (tid,))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/template/cell")
+async def settings_template_cell(request: Request):
+    """템플릿 한 칸(평일/주말 × 코어블록)의 구분을 저장한다. 값이 비면 미지정."""
+    form = await request.form()
+    try:
+        tid = int(form.get("template_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    day_type = (form.get("day_type") or "").strip()
+    label = (form.get("block_label") or "").strip()
+    if day_type not in _DAY_TYPES or label not in CORE_LABELS:
+        return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
+    raw = form.get("category_id")
+    cid = int(raw) if raw else None
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO cat_template_cell "
+            "(template_id, day_type, block_label, category_id) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(template_id, day_type, block_label) DO UPDATE SET "
+            "category_id = excluded.category_id",
+            (tid, day_type, label, cid),
         )
     return JSONResponse({"ok": True})
 

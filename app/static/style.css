@@ -1339,3 +1339,19 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     .reflect-left { position: static; flex: none; width: 100%; }
     .reflect-right .reflect-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 }
+
+/* 구분 템플릿 (설정 탭) — 평일/주말 × 코어블록 그리드 */
+.set-template-card { grid-column: 1 / -1; }
+.set-tpl { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface-2); }
+.set-tpl-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.set-tpl-name { flex: 1; font-weight: 600; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.set-tpl-grid { display: grid; grid-template-columns: auto repeat(var(--cols), minmax(60px, 1fr)); gap: 6px; align-items: center; overflow-x: auto; }
+.set-tpl-blabel { font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: center; }
+.set-tpl-daytype { font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; padding-right: 6px; }
+.set-tpl-cell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
+
+/* 주간 탭: 구분 템플릿 적용 컨트롤 */
+.wk-tpl-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wk-tpl-label { font-weight: 600; }
+.wk-tpl-controls { display: flex; align-items: center; gap: 8px; }
+.wk-tpl-controls select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }

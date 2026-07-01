@@ -69,6 +69,25 @@
         </div>
     </details>
 
+    <section class="card wk-tpl-card">
+        <div class="wk-tpl-row">
+            <span class="wk-tpl-label">구분 템플릿 적용 <span class="card-sub">평일·주말 세트로 이번 주 블록 구분을 한 번에 입력</span></span>
+            {% if cat_templates %}
+            <div class="wk-tpl-controls">
+                <select id="wk-apply-tpl-sel" aria-label="적용할 구분 템플릿">
+                    <option value="">템플릿 선택</option>
+                    {% for t in cat_templates %}
+                    <option value="{{ t.id }}">{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="primary-btn" id="wk-apply-tpl-btn" data-week="{{ week_start }}">적용</button>
+            </div>
+            {% else %}
+            <a class="ghost-btn" href="/settings">설정 탭에서 템플릿 만들기</a>
+            {% endif %}
+        </div>
+    </section>
+
     {% if cat_summary %}
     <section class="card">
         <h2 class="card-title">카테고리별 시간 분포</h2>

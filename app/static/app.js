@@ -955,6 +955,38 @@
             });
         });
 
+        // 구분 템플릿: 추가·이름변경·삭제·셀(평일/주말×블록) 저장
+        document.getElementById('set-tpl-add-btn')?.addEventListener('click', () => {
+            const inp = document.getElementById('set-tpl-new-name');
+            const name = (inp.value || '').trim();
+            if (!name) { toast('이름을 입력하세요'); return; }
+            postForm('/settings/template/add', { name: name })
+                .then((d) => { if (d && d.ok) location.reload(); else toast('추가 실패'); });
+        });
+        document.querySelectorAll('.set-tpl-name').forEach((inp) => {
+            inp.addEventListener('change', () => {
+                const v = (inp.value || '').trim();
+                if (!v) return;
+                postForm('/settings/template/rename', { id: inp.dataset.id, name: v })
+                    .then(() => toast('이름 저장'));
+            });
+        });
+        document.querySelectorAll('.set-tpl-del').forEach((b) => {
+            b.addEventListener('click', () => {
+                if (!confirm('이 템플릿을 삭제할까요?')) return;
+                postForm('/settings/template/delete', { id: b.dataset.id })
+                    .then((d) => { if (d && d.ok) location.reload(); });
+            });
+        });
+        document.querySelectorAll('.set-tpl-cell').forEach((sel) => {
+            sel.addEventListener('change', () => {
+                postForm('/settings/template/cell', {
+                    template_id: sel.dataset.tpl, day_type: sel.dataset.daytype,
+                    block_label: sel.dataset.label, category_id: sel.value,
+                }).then(() => toast('저장'));
+            });
+        });
+
         // 구글 일정 쓰기: 캘린더 ID 자동 저장 + 연결 테스트
         const evCal = document.getElementById('set-events-cal');
         const evStatus = document.getElementById('set-events-status');
@@ -1887,6 +1919,21 @@
                 }
             });
         });
+
+        // 주간 탭: 구분 템플릿 일괄 적용
+        const wkApplyBtn = document.getElementById('wk-apply-tpl-btn');
+        wkApplyBtn?.addEventListener('click', () => {
+            const sel = document.getElementById('wk-apply-tpl-sel');
+            const tid = sel && sel.value;
+            if (!tid) { toast('템플릿을 고르세요'); return; }
+            if (!confirm('이 주 전체 코어 블록 구분을 선택한 템플릿으로 채웁니다. 계속할까요?')) return;
+            postForm('/week/apply-template', { week_start: wkApplyBtn.dataset.week, template_id: tid })
+                .then((d) => {
+                    if (d && d.ok) location.reload();
+                    else toast((d && d.error === 'empty-template') ? '템플릿이 비어 있습니다' : '적용 실패');
+                });
+        });
+
         document.querySelectorAll('.slot-play').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();

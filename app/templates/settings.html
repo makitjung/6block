@@ -150,5 +150,39 @@
     <p class="set-events-hint mono">이 캘린더를 구글 캘린더 공유 설정에서 다음 계정에 '변경 권한'으로 공유하세요 · {{ sa_email }}</p>
     {% endif %}
 </section>
+
+<section class="card set-template-card">
+    <h2 class="card-title">구분 템플릿 <span class="card-sub">평일·주말 세트를 만들어 두면 주간 탭에서 42칸 블록 구분을 한 번에 채웁니다</span></h2>
+    <div id="set-tpl-list">
+        {% for t in cat_templates %}
+        <div class="set-tpl" data-id="{{ t.id }}">
+            <div class="set-tpl-head">
+                <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" autocomplete="off" aria-label="템플릿 이름">
+                <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
+            </div>
+            <div class="set-tpl-grid" style="--cols: {{ core_labels | length }}">
+                <div class="set-tpl-corner"></div>
+                {% for lbl in core_labels %}<div class="set-tpl-blabel">{{ lbl }}</div>{% endfor %}
+                {% for dt, dt_label in day_types %}
+                <div class="set-tpl-daytype">{{ dt_label }}</div>
+                {% for lbl in core_labels %}
+                <select class="set-tpl-cell cat-select" data-tpl="{{ t.id }}" data-daytype="{{ dt }}" data-label="{{ lbl }}" aria-label="{{ dt_label }} {{ lbl }} 구분">
+                    <option value="">—</option>
+                    {% for c in active_categories %}
+                    <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if t.cells.get(dt, {}).get(lbl) == c.id %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+                {% endfor %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="ctx-empty" id="set-tpl-empty"{% if cat_templates %} hidden{% endif %}>아직 템플릿이 없습니다. 아래에서 추가하세요.</div>
+    <div class="set-cat-add">
+        <input type="text" id="set-tpl-new-name" placeholder="새 템플릿 이름 (예: 집중주)" autocomplete="off">
+        <button type="button" class="primary-btn" id="set-tpl-add-btn">추가</button>
+    </div>
+</section>
 </div>
 {% endblock %}
