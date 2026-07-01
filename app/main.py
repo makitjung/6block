@@ -1485,6 +1485,27 @@ def _backup_status() -> list[dict]:
     return out
 
 
+def _load_cat_templates(conn) -> list[dict]:
+    """구분 템플릿 목록을 셀(평일/주말 × 코어블록 → 구분)까지 채워 돌려준다."""
+    templates_ = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, name, display_order FROM cat_template "
+            "ORDER BY display_order, id"
+        )
+    ]
+    cmap: dict[int, dict[str, dict[str, int]]] = {}
+    for r in conn.execute(
+        "SELECT template_id, day_type, block_label, category_id FROM cat_template_cell"
+    ):
+        cmap.setdefault(r["template_id"], {}).setdefault(r["day_type"], {})[
+            r["block_label"]
+        ] = r["category_id"]
+    for t in templates_:
+        t["cells"] = cmap.get(t["id"], {})
+    return templates_
+
+
 @app.get("/settings")
 def settings_view(request: Request):
     settings = get_settings()
@@ -1497,15 +1518,21 @@ def settings_view(request: Request):
             r["weekday"]: (r["text"] or "")
             for r in conn.execute("SELECT weekday, text FROM weekday_concept")
         }
+        cat_templates = _load_cat_templates(conn)
     weekday_concepts = [
         {"weekday": i, "label": KO_WEEKDAYS[i], "text": wc_map.get(i, "")}
         for i in range(7)
     ]
+    active_categories = [dict(c) for c in cats if c["is_active"]]
     return templates.TemplateResponse(
         "settings.html",
         {
             "request": request,
             "categories": [dict(c) for c in cats],
+            "active_categories": active_categories,
+            "cat_templates": cat_templates,
+            "core_labels": CORE_LABELS,
+            "day_types": [("weekday", "평일"), ("weekend", "주말")],
             "tones": TONES,
             "settings": settings,
             "weekday_concepts": weekday_concepts,

@@ -131,3 +131,23 @@ CREATE TABLE IF NOT EXISTS weekday_concept (
     text TEXT,
     updated_at TEXT NOT NULL
 );
+
+-- 구분 템플릿(평일/주말 × 코어블록 구분). 주별로 골라 42칸 블록 구분을 일괄 입력한다.
+CREATE TABLE IF NOT EXISTS cat_template (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+-- 템플릿 한 칸: (템플릿, 평일/주말, 코어블록) → 구분. 비어 있으면 그 칸은 미지정.
+CREATE TABLE IF NOT EXISTS cat_template_cell (
+    id INTEGER PRIMARY KEY,
+    template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,
+    day_type TEXT NOT NULL,              -- weekday(평일) | weekend(주말)
+    block_label TEXT NOT NULL,           -- B1..B6
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    UNIQUE(template_id, day_type, block_label)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cat_template_cell ON cat_template_cell(template_id);
