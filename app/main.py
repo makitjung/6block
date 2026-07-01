@@ -1062,11 +1062,13 @@ def _week_view(request: Request, monday: date):
                 "WHERE is_active = 1 ORDER BY display_order"
             )
         ]
+        # 슬롯 구분이 비면(NULL) 그 슬롯이 속한 블록 구분을 따른다(블록→슬롯 상속).
         cat_summary = conn.execute(
             f"""
             SELECT c.name, c.color, c.tone, COUNT(s.id) AS slot_count
             FROM slots s
-            JOIN categories c ON c.id = s.category_id
+            JOIN blocks b ON b.id = s.block_id
+            JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id)
             WHERE s.date IN ({placeholders})
             GROUP BY c.id
             ORDER BY slot_count DESC
@@ -1784,7 +1786,7 @@ def settings_export(start: str, end: str):
             "SELECT s.date, b.block_label, b.name AS bname, s.start_time, c.name AS cat, "
             "       s.do_text, s.did_text, s.done, b.plan_text, b.see_text "
             "FROM slots s JOIN blocks b ON b.id = s.block_id "
-            "LEFT JOIN categories c ON c.id = s.category_id "
+            "LEFT JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
             "WHERE s.date BETWEEN ? AND ? ORDER BY s.date, s.slot_index",
             (start, end),
         ):
@@ -1874,9 +1876,11 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
             days = int(rng)
             start = (today - timedelta(days=days - 1)).strftime("%Y-%m-%d")
             range_label = f"최근 {days}일"
+        # 슬롯 구분이 비면 블록 구분을 따라 집계한다(블록→슬롯 상속).
         cat_rows = conn.execute(
             "SELECT c.name, c.tone, COUNT(s.id) AS cnt "
-            "FROM slots s JOIN categories c ON c.id = s.category_id "
+            "FROM slots s JOIN blocks b ON b.id = s.block_id "
+            "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
             "WHERE s.date >= ? AND s.date <= ? GROUP BY c.id ORDER BY cnt DESC",
             (start, today_s),
         ).fetchall()

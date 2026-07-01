@@ -330,14 +330,28 @@
     // ---- category color stripe ------------------------------------------
     // 카테고리 색은 테마별 톤 변수(--tone-blue/red/black)로 칠해 다크모드에서도 보이게 한다.
     // 슬롯은 왼쪽 띠, 블록·주간 미니블록은 왼쪽 테두리 색으로 구분을 표시한다.
+    // 블록 구분 select(.block-cat)의 현재 선택 색 톤을 읽는다(슬롯 상속 색용).
+    function blockTone(blockEl) {
+        const bc = blockEl && blockEl.querySelector('.block-cat');
+        if (!bc) return '';
+        const opt = bc.options[bc.selectedIndex];
+        return (opt && opt.dataset) ? (opt.dataset.tone || '') : '';
+    }
     function paintCategory(sel) {
         const opt = sel.options[sel.selectedIndex];
-        const tone = (opt && opt.dataset) ? opt.dataset.tone : '';
-        const accent = tone ? `var(--tone-${tone})` : '';
-        sel.style.color = accent;
-        sel.classList.toggle('has-cat', !!accent);   // 색이 지정되면 색 칩 테두리
+        let tone = (opt && opt.dataset) ? opt.dataset.tone : '';
         const slot = sel.closest('.slot');
-        if (slot) { slot.style.setProperty('--row-accent', accent || 'transparent'); return; }
+        // 슬롯 구분이 비면(상속) 그 블록의 구분 색을 따라 왼쪽 띠를 칠한다.
+        let inherited = false;
+        if (slot && !tone) { tone = blockTone(slot.closest('.block')); inherited = !!tone; }
+        const accent = tone ? `var(--tone-${tone})` : '';
+        sel.style.color = inherited ? '' : accent;   // 상속 슬롯은 글자색은 비워 둔다
+        sel.classList.toggle('has-cat', !!accent && !inherited);
+        if (slot) {
+            slot.style.setProperty('--row-accent', accent || 'transparent');
+            slot.classList.toggle('cat-inherited', inherited);
+            return;
+        }
         const block = sel.closest('.block, .mini-block');
         if (block) block.style.borderLeftColor = accent || '';
     }
@@ -1862,7 +1876,16 @@
 
         document.querySelectorAll('select.cat-select').forEach((sel) => {
             paintCategory(sel);
-            sel.addEventListener('change', () => paintCategory(sel));
+            sel.addEventListener('change', () => {
+                paintCategory(sel);
+                // 블록 구분을 바꾸면 그 블록에서 구분이 빈(상속) 슬롯들의 색을 즉시 다시 칠한다.
+                if (sel.classList.contains('block-cat')) {
+                    const blk = sel.closest('.block');
+                    if (blk) blk.querySelectorAll('.slot .cat-select').forEach((s) => {
+                        if (!s.value) paintCategory(s);
+                    });
+                }
+            });
         });
         document.querySelectorAll('.slot-play').forEach((btn) => {
             btn.addEventListener('click', (e) => {
