@@ -2375,28 +2375,28 @@ def _ai_insights(summary, weekday_data, block_pd, cats) -> str | None:
 
 
 def _exec_funnel(conn, start, end):
-    """실행 퍼널: 코어 블록 설계 → 슬롯 구체화 → 슬롯 실행 3단계 비율과,
-    실행 점수(3단계 곱)·실질 실행율(done 슬롯/전체 코어 슬롯)을 [start,end] 기간으로 계산한다.
-    설계 블록 = 구분(category_id)과 PLAN(plan_text)을 둘 다 채운 코어 블록."""
+    """실행 퍼널: 코어 블록 계획(구분) → 슬롯 구체화(DO) → 슬롯 실행(done·한일) 3단계 비율과,
+    실행 점수(3단계 곱)·실질 실행율(실행 슬롯/전체 코어 슬롯)을 [start,end] 기간으로 계산한다.
+    계획된 블록 = 구분(category_id)을 넣은 코어 블록. 실행 = done 체크 또는 '한일'(did_text) 기록."""
     b = conn.execute(
         "SELECT COUNT(*) AS core_blocks, "
-        "SUM(CASE WHEN category_id IS NOT NULL AND TRIM(COALESCE(plan_text,'')) != '' "
-        "         THEN 1 ELSE 0 END) AS designed_blocks "
+        "SUM(CASE WHEN category_id IS NOT NULL THEN 1 ELSE 0 END) AS designed_blocks "
         "FROM blocks WHERE is_core = 1 AND date >= ? AND date <= ?",
         (start, end),
     ).fetchone()
     s = conn.execute(
         "SELECT COUNT(*) AS slots_in_designed, "
         "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' THEN 1 ELSE 0 END) AS detailed_slots, "
-        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' AND s.done = 1 THEN 1 ELSE 0 END) AS executed_detailed "
+        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' "
+        "         AND (s.done = 1 OR TRIM(COALESCE(s.did_text,'')) != '') THEN 1 ELSE 0 END) AS executed_detailed "
         "FROM slots s JOIN blocks b ON b.id = s.block_id "
-        "WHERE b.is_core = 1 AND b.category_id IS NOT NULL AND TRIM(COALESCE(b.plan_text,'')) != '' "
+        "WHERE b.is_core = 1 AND b.category_id IS NOT NULL "
         "  AND s.date >= ? AND s.date <= ?",
         (start, end),
     ).fetchone()
     a = conn.execute(
         "SELECT COUNT(*) AS core_slots, "
-        "SUM(CASE WHEN s.done = 1 THEN 1 ELSE 0 END) AS done_slots "
+        "SUM(CASE WHEN s.done = 1 OR TRIM(COALESCE(s.did_text,'')) != '' THEN 1 ELSE 0 END) AS done_slots "
         "FROM slots s JOIN blocks b ON b.id = s.block_id "
         "WHERE b.is_core = 1 AND s.date >= ? AND s.date <= ?",
         (start, end),

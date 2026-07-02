@@ -23,7 +23,7 @@
         <div class="fn-score">
             <span class="fn-score-label">실행 점수</span>
             <span class="fn-score-val mono"><strong>{{ funnel.exec_score }}</strong>%</span>
-            <span class="fn-score-hint">설계 × 구체화 × 실행</span>
+            <span class="fn-score-hint">계획 × 구체화 × 실행</span>
         </div>
         <div class="fn-score alt">
             <span class="fn-score-label">실질 실행율</span>
@@ -33,19 +33,19 @@
     </div>
     <div class="funnel-steps">
         <div class="fn-step">
-            <div class="fn-step-top"><span class="fn-step-name">① 블록 설계율</span><span class="fn-step-pct mono">{{ funnel.design_pct }}%</span></div>
+            <div class="fn-step-top"><span class="fn-step-name">① 블록 계획율</span><span class="fn-step-pct mono">{{ funnel.design_pct }}%</span></div>
             <div class="fn-track"><span class="fn-fill" style="width: {{ funnel.design_pct }}%"></span></div>
-            <span class="fn-step-sub mono">코어 블록 {{ funnel.designed_blocks }} / {{ funnel.core_blocks }} · 구분+PLAN 입력</span>
+            <span class="fn-step-sub mono">코어 블록 {{ funnel.designed_blocks }} / {{ funnel.core_blocks }} · 구분 입력</span>
         </div>
         <div class="fn-step">
             <div class="fn-step-top"><span class="fn-step-name">② 슬롯 구체화율</span><span class="fn-step-pct mono">{{ funnel.detail_pct }}%</span></div>
             <div class="fn-track"><span class="fn-fill" style="width: {{ funnel.detail_pct }}%"></span></div>
-            <span class="fn-step-sub mono">DO 입력 슬롯 {{ funnel.detailed_slots }} / {{ funnel.slots_in_designed }} · 설계된 블록 안</span>
+            <span class="fn-step-sub mono">DO 입력 슬롯 {{ funnel.detailed_slots }} / {{ funnel.slots_in_designed }} · 계획된 블록 안</span>
         </div>
         <div class="fn-step">
             <div class="fn-step-top"><span class="fn-step-name">③ 슬롯 실행율</span><span class="fn-step-pct mono">{{ funnel.exec_pct }}%</span></div>
             <div class="fn-track"><span class="fn-fill" style="width: {{ funnel.exec_pct }}%"></span></div>
-            <span class="fn-step-sub mono">실행 체크 {{ funnel.executed_detailed }} / {{ funnel.detailed_slots }} · DO 입력 슬롯 중</span>
+            <span class="fn-step-sub mono">실행(done·한일) {{ funnel.executed_detailed }} / {{ funnel.detailed_slots }} · DO 입력 슬롯 중</span>
         </div>
     </div>
     <p class="funnel-note">실행 점수는 세 단계의 곱이라 한 단계만 낮아도 크게 떨어집니다. 실질 실행율은 분모가 그 기간 코어 시간 전체라 계획을 적게 잡아도 올릴 수 없는 정직한 지표입니다. 7일은 주간, 30일은 월간으로 보세요.</p>
