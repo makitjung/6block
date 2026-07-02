@@ -107,6 +107,23 @@
     </div>
 </section>
 
+{% if insights %}
+<section class="card insights-card">
+    <h2 class="card-title">개선점 <span class="card-sub">{{ range_label }} 기록에서 뽑은 제안</span></h2>
+    <ul class="insight-list">
+        {% for s in insights %}
+        <li class="insight-item">{{ s }}</li>
+        {% endfor %}
+    </ul>
+    {% if ai_summary %}
+    <div class="insight-ai">
+        <div class="insight-ai-head">AI 제안</div>
+        <div class="insight-ai-body">{{ ai_summary }}</div>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
 {% if cats %}
 <section class="card">
     <h2 class="card-title">카테고리별 시간 분포</h2>
@@ -148,6 +165,36 @@
             <div class="trend-bar-wrap"><span class="trend-bar pd" style="height: {{ d.pct }}%"></span></div>
             <span class="trend-pct mono">{{ d.pct }}</span>
             <span class="trend-label">{{ d.short }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if days_data %}
+<section class="card">
+    <h2 class="card-title">요일별 완료율 <span class="card-sub">어느 요일을 자주 흘려보내는지</span></h2>
+    <div class="trend">
+        {% for w in weekday_data %}
+        <div class="trend-col" title="{{ w.label }} · {{ w.done }}/{{ w.planned }}">
+            <div class="trend-bar-wrap"><span class="trend-bar" style="height: {{ w.pct }}%"></span></div>
+            <span class="trend-pct mono">{{ w.pct }}</span>
+            <span class="trend-label">{{ w.label }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if block_pd %}
+<section class="card">
+    <h2 class="card-title">블록별 계획 대비 실행 <span class="card-sub">계획한 코어 블록을 그 시간대에 실행한 비율</span></h2>
+    <div class="trend">
+        {% for b in block_pd %}
+        <div class="trend-col" title="{{ b.label }} · {{ b.achieved }}/{{ b.planned }}">
+            <div class="trend-bar-wrap"><span class="trend-bar pd" style="height: {{ b.pct }}%"></span></div>
+            <span class="trend-pct mono">{{ b.pct }}</span>
+            <span class="trend-label">{{ b.label }}</span>
         </div>
         {% endfor %}
     </div>

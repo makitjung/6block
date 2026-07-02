@@ -1371,5 +1371,14 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 /* 터치 기기(호버 없음)에서는 항상 보이게 */
 @media (hover: none) { .pg-decompose { opacity: .7; } }
 
+/* 분석 탭: 개선점 카드 */
+.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.insight-item { position: relative; padding: 8px 10px 8px 26px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 13px; line-height: 1.5; color: var(--text-soft); }
+.insight-item::before { content: "→"; position: absolute; left: 9px; top: 8px; color: var(--accent); font-weight: 700; }
+.insight-ai { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border-focus); border-radius: var(--r-sm); background: var(--surface-2); }
+.insight-ai-head { font-weight: 700; font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+.insight-ai-body { font-size: 13px; line-height: 1.6; color: var(--text-soft); white-space: pre-wrap; }
+
 /* 주간 탭: 블록 테마 자동 채우기 도구 줄 */
 .theme-tools { margin: 2px 0 10px; }

@@ -2301,6 +2301,62 @@ def _on_this_day(today: date):
     return out
 
 
+def _build_insights(summary, weekday_data, block_pd, cats) -> list[str]:
+    """축적 데이터에서 규칙기반 개선점 문장을 만든다(근거가 충분한 항목만)."""
+    out: list[str] = []
+    wd_valid = [w for w in weekday_data if w["planned"] >= 3]
+    if wd_valid:
+        worst = min(wd_valid, key=lambda w: w["pct"])
+        best = max(wd_valid, key=lambda w: w["pct"])
+        if worst["pct"] + 15 <= best["pct"]:
+            out.append(
+                f"{worst['label']}요일 완료율이 {worst['pct']}%로 가장 낮습니다"
+                f"(최고 {best['label']} {best['pct']}%). 그 요일 계획을 줄이거나 "
+                f"쉬운 일부터 배치해 보세요."
+            )
+    bp_valid = [b for b in block_pd if b["planned"] >= 3]
+    if bp_valid:
+        worst_b = min(bp_valid, key=lambda b: b["pct"])
+        if worst_b["pct"] < 60:
+            out.append(
+                f"{worst_b['label']} 블록이 계획 대비 실행 {worst_b['pct']}%로 가장 "
+                f"낮습니다. 그 시간대에 무리한 계획을 잡고 있지 않은지 살펴보세요."
+            )
+    if cats and cats[0]["pct"] >= 40:
+        out.append(
+            f"'{cats[0]['name']}' 구분이 전체 시간의 {cats[0]['pct']}%로 가장 큽니다. "
+            f"구분 배분이 목표와 맞는지 돌아보세요."
+        )
+    if summary["pd_pct"] and summary["pd_pct"] < 50:
+        out.append(
+            f"코어 블록 계획→실행이 {summary['pd_pct']}%입니다. 계획을 줄여 "
+            f"실행률부터 올리는 편이 낫습니다."
+        )
+    if summary["avg_done"] >= 80:
+        out.append(
+            f"평균 완료율 {summary['avg_done']}%로 잘 지키고 있습니다. "
+            f"계획량을 조금 늘려도 좋습니다."
+        )
+    if not out:
+        out.append("아직 개선점을 뽑을 만큼 데이터가 충분하지 않습니다. 기록을 더 쌓아 보세요.")
+    return out
+
+
+def _ai_insights(summary, weekday_data, block_pd, cats) -> str | None:
+    """AI로 지표를 요약한 짧은 개선 제안. 실패·미설정 시 None."""
+    wd = ", ".join(f"{w['label']} {w['pct']}%" for w in weekday_data if w["planned"])
+    bp = ", ".join(f"{b['label']} {b['pct']}%" for b in block_pd)
+    ct = ", ".join(f"{c['name']} {c['pct']}%" for c in cats[:5])
+    metrics = (
+        f"평균 완료율 {summary['avg_done']}%, 코어 계획→실행 {summary['pd_pct']}%, "
+        f"연속기록 {summary['streak']}일.\n요일별 완료율: {wd or '자료 부족'}.\n"
+        f"블록별 계획대비 실행: {bp or '자료 부족'}.\n구분 배분: {ct or '자료 부족'}."
+    )
+    system = ("당신은 개인 시간관리 코치입니다. 아래 지표를 보고 한국어로 구체적이고 "
+              "실천 가능한 개선 제안을 2~3가지, 각 한 문장으로 제시합니다. 군더더기 없이.")
+    return ai.complete(system, metrics, max_tokens=400, temperature=0.5)
+
+
 @app.get("/analytics")
 def analytics_view(request: Request, rng: str = "7", q: str = ""):
     today = datetime.now(KST).date()
@@ -2340,6 +2396,16 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
             "  AND b.date >= ? AND b.date <= ? GROUP BY b.date ORDER BY b.date",
             (start, today_s),
         ).fetchall()
+        # 블록별(B1~B6) 계획 대비 실행: 어느 시간대를 반복적으로 흘려보내는지 본다.
+        block_pd_rows = conn.execute(
+            "SELECT b.block_label AS lbl, MIN(b.block_order) AS ord, COUNT(*) AS planned, "
+            "SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id "
+            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '') OR s.done = 1)) "
+            "    THEN 1 ELSE 0 END) AS achieved "
+            "FROM blocks b WHERE b.is_core = 1 AND TRIM(COALESCE(b.plan_text, '')) != '' "
+            "  AND b.date >= ? AND b.date <= ? GROUP BY b.block_label ORDER BY ord",
+            (start, today_s),
+        ).fetchall()
         rec_dates = {
             r[0]
             for r in conn.execute(
@@ -2374,6 +2440,24 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
         "avg_done": round(sum(d["pct"] for d in days_data) / len(days_data)) if days_data else 0,
         "pd_pct": round(pd_total_a / pd_total_p * 100) if pd_total_p else 0,
     }
+    # 요일별 완료율(어느 요일을 자주 흘려보내는지) — 일자 데이터를 요일로 묶는다.
+    wd_acc = {i: [0, 0] for i in range(7)}
+    for r in day_rows:
+        wd = datetime.strptime(r["date"], "%Y-%m-%d").date().weekday()
+        wd_acc[wd][0] += r["done_cnt"] or 0
+        wd_acc[wd][1] += r["planned_cnt"] or 0
+    weekday_data = [
+        {"label": KO_WEEKDAYS[i], "done": wd_acc[i][0], "planned": wd_acc[i][1],
+         "pct": round(wd_acc[i][0] / wd_acc[i][1] * 100) if wd_acc[i][1] else 0}
+        for i in range(7)
+    ]
+    block_pd = [
+        {"label": r["lbl"], "planned": r["planned"], "achieved": r["achieved"],
+         "pct": round(r["achieved"] / r["planned"] * 100) if r["planned"] else 0}
+        for r in block_pd_rows
+    ]
+    insights = _build_insights(summary, weekday_data, block_pd, cats)
+    ai_summary = _ai_insights(summary, weekday_data, block_pd, cats) if ai.enabled() else None
     # 분석·검색 병합: 검색어가 있으면 지난 슬롯/블록 기록을 같은 화면에서 함께 보여준다.
     q = (q or "").strip()
     s_slots, s_blocks = _search_records(q)
@@ -2388,6 +2472,10 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
             "cats": cats,
             "days_data": days_data,
             "pd_data": pd_data,
+            "weekday_data": weekday_data,
+            "block_pd": block_pd,
+            "insights": insights,
+            "ai_summary": ai_summary,
             "summary": summary,
             "q": q,
             "s_slots": s_slots,
