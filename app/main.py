@@ -2374,6 +2374,54 @@ def _ai_insights(summary, weekday_data, block_pd, cats) -> str | None:
     return ai.complete(system, metrics, max_tokens=400, temperature=0.5)
 
 
+def _exec_funnel(conn, start, end):
+    """실행 퍼널: 코어 블록 설계 → 슬롯 구체화 → 슬롯 실행 3단계 비율과,
+    실행 점수(3단계 곱)·실질 실행율(done 슬롯/전체 코어 슬롯)을 [start,end] 기간으로 계산한다.
+    설계 블록 = 구분(category_id)과 PLAN(plan_text)을 둘 다 채운 코어 블록."""
+    b = conn.execute(
+        "SELECT COUNT(*) AS core_blocks, "
+        "SUM(CASE WHEN category_id IS NOT NULL AND TRIM(COALESCE(plan_text,'')) != '' "
+        "         THEN 1 ELSE 0 END) AS designed_blocks "
+        "FROM blocks WHERE is_core = 1 AND date >= ? AND date <= ?",
+        (start, end),
+    ).fetchone()
+    s = conn.execute(
+        "SELECT COUNT(*) AS slots_in_designed, "
+        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' THEN 1 ELSE 0 END) AS detailed_slots, "
+        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' AND s.done = 1 THEN 1 ELSE 0 END) AS executed_detailed "
+        "FROM slots s JOIN blocks b ON b.id = s.block_id "
+        "WHERE b.is_core = 1 AND b.category_id IS NOT NULL AND TRIM(COALESCE(b.plan_text,'')) != '' "
+        "  AND s.date >= ? AND s.date <= ?",
+        (start, end),
+    ).fetchone()
+    a = conn.execute(
+        "SELECT COUNT(*) AS core_slots, "
+        "SUM(CASE WHEN s.done = 1 THEN 1 ELSE 0 END) AS done_slots "
+        "FROM slots s JOIN blocks b ON b.id = s.block_id "
+        "WHERE b.is_core = 1 AND s.date >= ? AND s.date <= ?",
+        (start, end),
+    ).fetchone()
+    core_blocks = b["core_blocks"] or 0
+    designed = b["designed_blocks"] or 0
+    slots_in_designed = s["slots_in_designed"] or 0
+    detailed = s["detailed_slots"] or 0
+    executed = s["executed_detailed"] or 0
+    core_slots = a["core_slots"] or 0
+    done_slots = a["done_slots"] or 0
+    design_r = designed / core_blocks if core_blocks else 0
+    detail_r = detailed / slots_in_designed if slots_in_designed else 0
+    exec_r = executed / detailed if detailed else 0
+    return {
+        "core_blocks": core_blocks, "designed_blocks": designed,
+        "slots_in_designed": slots_in_designed, "detailed_slots": detailed,
+        "executed_detailed": executed, "core_slots": core_slots, "done_slots": done_slots,
+        "design_pct": round(design_r * 100), "detail_pct": round(detail_r * 100),
+        "exec_pct": round(exec_r * 100),
+        "exec_score": round(design_r * detail_r * exec_r * 100),
+        "real_exec": round(done_slots / core_slots * 100) if core_slots else 0,
+    }
+
+
 @app.get("/analytics")
 def analytics_view(request: Request, rng: str = "7", q: str = ""):
     today = datetime.now(KST).date()
@@ -2430,6 +2478,7 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
                 "WHERE (do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1"
             )
         }
+        funnel = _exec_funnel(conn, start, today_s)
     cat_total = sum(r["cnt"] for r in cat_rows)
     cats = [
         {"name": r["name"], "tone": r["tone"], "hours": r["cnt"] * 0.5,
@@ -2494,6 +2543,7 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
             "insights": insights,
             "ai_summary": ai_summary,
             "summary": summary,
+            "funnel": funnel,
             "q": q,
             "s_slots": s_slots,
             "s_blocks": s_blocks,
