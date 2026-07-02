@@ -99,6 +99,7 @@
             <textarea class="pg-input" rows="2"
                       data-level="{{ level }}" data-period="{{ col.key }}" data-area="{{ area.id }}"
                       placeholder="">{{ grid.get(area.id, {}).get(col.key, '') or '' }}</textarea>
+            {% if level != 'week' %}<button type="button" class="pg-decompose" data-level="{{ level }}" data-period="{{ col.key }}" data-area="{{ area.id }}" title="이 칸을 아래 단위로 세분화 (빈 칸만 채움)">⤵ 세분화</button>{% endif %}
         </div>
         {% endfor %}
         {% endfor %}

@@ -1362,6 +1362,145 @@ async def week_apply_template(request: Request):
     return JSONResponse({"ok": True, "applied": applied})
 
 
+# -- 자동 세분화 (규칙기반 기본 + 선택적 AI) --------------------------------
+
+
+def _child_periods(level: str, period_key: str):
+    """상위 (level, period_key)의 바로 아래 단위와 자식 기간 목록.
+
+    반환 (child_level, [(period_key, label), ...]). 세분화 불가면 (None, []).
+    """
+    try:
+        if level == "year":
+            y = int(period_key)
+            return "quarter", [(f"{y}-Q{q}", f"{q}분기") for q in range(1, 5)]
+        if level == "quarter":
+            ys, qs = period_key.split("-Q")
+            y, q = int(ys), int(qs)
+            m0 = (q - 1) * 3 + 1
+            return "month", [(f"{y}-{m:02d}", f"{m}월") for m in range(m0, m0 + 3)]
+        if level == "month":
+            y, m = (int(x) for x in period_key.split("-"))
+            first = date(y, m, 1)
+            last = (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
+            monday = first - timedelta(days=first.weekday())
+            out = []
+            while monday <= last:
+                out.append((monday.strftime("%Y-%m-%d"), f"{monday.month}/{monday.day} 주"))
+                monday += timedelta(days=7)
+            return "week", out
+    except (ValueError, AttributeError):
+        return None, []
+    return None, []
+
+
+def _child_anchor(level: str, period_key: str) -> str:
+    """세분화 후 이동할 자식 단위 화면의 anchor(날짜 문자열)."""
+    if level == "year":
+        return f"{period_key}-01-01"
+    if level == "quarter":
+        ys, qs = period_key.split("-Q")
+        return f"{int(ys)}-{(int(qs) - 1) * 3 + 1:02d}-01"
+    return f"{period_key}-01"  # month → 그 달 1일
+
+
+def _rule_distribute(parent_text: str, n: int) -> list[str]:
+    """부모 텍스트를 자식 n개 내용으로 나눈다. 여러 줄이면 분배, 한 줄이면 참고로 복제."""
+    lines = [ln.strip() for ln in (parent_text or "").splitlines() if ln.strip()]
+    if not lines:
+        return [""] * n
+    if len(lines) == 1:
+        return [lines[0]] * n
+    buckets: list[list[str]] = [[] for _ in range(n)]
+    for i, ln in enumerate(lines):
+        buckets[i % n].append(ln)
+    return ["\n".join(b) for b in buckets]
+
+
+def _ai_split(parent_text: str, labels: list[str], area_name: str,
+              parent_label: str) -> list[str] | None:
+    """AI로 상위 계획을 각 자식 기간(labels)별 내용으로 나눈다. 실패·미설정 시 None."""
+    n = len(labels)
+    system = ("당신은 개인 시간관리 코치입니다. 상위 계획을 하위 기간별 구체적 "
+              "실행 항목으로 나눕니다. 한국어로 간결하게 답합니다.")
+    user = (
+        f"영역: {area_name or '(없음)'}\n"
+        f"상위({parent_label}) 계획:\n{parent_text}\n\n"
+        f"이 계획을 다음 {n}개 기간에 나눠, 각 기간에 할 구체적 항목 1~3개를 "
+        f"제시하세요: {', '.join(labels)}.\n"
+        f"반드시 길이 {n}의 JSON 문자열 배열만 출력하세요. "
+        "각 원소는 그 기간 내용이며 여러 항목은 줄바꿈으로 구분합니다."
+    )
+    reply = ai.complete(system, user, max_tokens=800, temperature=0.5)
+    if not reply:
+        return None
+    try:
+        arr = json.loads(reply[reply.index("["):reply.rindex("]") + 1])
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(arr, list) or not arr:
+        return None
+    arr = [str(x).strip() for x in arr]
+    return (arr + [""] * n)[:n]
+
+
+@app.post("/week/decompose-themes")
+async def week_decompose_themes(request: Request):
+    """이번 주 계획(주간 목표 + 장기 주 계획)을 B1~B6 블록 테마로 나눈다. 빈 테마만 채운다."""
+    form = await request.form()
+    ws = (form.get("week_start") or "").strip()
+    try:
+        datetime.strptime(ws, "%Y-%m-%d")
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        wm = conn.execute(
+            "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (ws,)
+        ).fetchone()
+        goal = ((wm["weekly_goal"] if wm else "") or "").strip()
+        wk_plans = [
+            (r["content"] or "").strip()
+            for r in conn.execute(
+                "SELECT content FROM lt_plan WHERE level='week' AND period_key=?", (ws,)
+            )
+            if (r["content"] or "").strip()
+        ]
+        context = "\n".join([goal] + wk_plans).strip()
+        if not context:
+            return JSONResponse(
+                {"ok": False, "error": "주간 목표나 이 주 계획을 먼저 적어 주세요"},
+                status_code=400,
+            )
+        existing = {
+            r["block_label"]: (r["theme_text"] or "")
+            for r in conn.execute(
+                "SELECT block_label, theme_text FROM weekly_block_themes WHERE week_start=?",
+                (ws,),
+            )
+        }
+        contents = _ai_split(context, CORE_LABELS, "", "주") if ai.enabled() else None
+        used_ai = contents is not None
+        if contents is None:
+            contents = _rule_distribute(context, len(CORE_LABELS))
+        filled = 0
+        for label, gen in zip(CORE_LABELS, contents):
+            if existing.get(label, "").strip():
+                continue
+            gen = (gen or "").strip()
+            if not gen:
+                continue
+            conn.execute(
+                "INSERT INTO weekly_block_themes (week_start, block_label, theme_text, "
+                "updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(week_start, block_label) DO UPDATE SET "
+                "theme_text = excluded.theme_text, updated_at = excluded.updated_at",
+                (ws, label, gen, now),
+            )
+            filled += 1
+    return JSONResponse({"ok": True, "filled": filled, "used_ai": used_ai})
+
+
 # -- 장기플랜 ---------------------------------------------------------------
 
 
@@ -1469,6 +1608,77 @@ async def plan_cell_save(request: Request):
                 (level, period_key, area_id),
             )
     return JSONResponse({"ok": True})
+
+
+@app.post("/plan/decompose")
+async def plan_decompose(request: Request):
+    """장기 칸(연/분기/월)을 바로 아래 단위로 세분화한다. 빈 자식 칸만 채운다."""
+    form = await request.form()
+    level = (form.get("level") or "").strip()
+    period_key = (form.get("period_key") or "").strip()
+    try:
+        area_id = int(form.get("area_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    if level not in ("year", "quarter", "month"):
+        return JSONResponse(
+            {"ok": False, "error": "이 단위는 세분화할 수 없습니다"}, status_code=400
+        )
+    child_level, children = _child_periods(level, period_key)
+    if not children:
+        return JSONResponse({"ok": False, "error": "no-children"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        prow = conn.execute(
+            "SELECT content FROM lt_plan WHERE level=? AND period_key=? AND area_id=?",
+            (level, period_key, area_id),
+        ).fetchone()
+        parent_text = ((prow["content"] if prow else "") or "").strip()
+        if not parent_text:
+            return JSONResponse(
+                {"ok": False, "error": "상위 계획을 먼저 적어 주세요"}, status_code=400
+            )
+        arow = conn.execute(
+            "SELECT name FROM lt_area WHERE id=?", (area_id,)
+        ).fetchone()
+        area_name = arow["name"] if arow else ""
+        keys = [k for k, _ in children]
+        ph = ",".join("?" * len(keys))
+        existing = {
+            r["period_key"]: (r["content"] or "")
+            for r in conn.execute(
+                f"SELECT period_key, content FROM lt_plan "
+                f"WHERE level=? AND area_id=? AND period_key IN ({ph})",
+                (child_level, area_id, *keys),
+            )
+        }
+        labels = [lbl for _, lbl in children]
+        contents = (
+            _ai_split(parent_text, labels, area_name, PLAN_LEVEL_LABELS[level])
+            if ai.enabled() else None
+        )
+        used_ai = contents is not None
+        if contents is None:
+            contents = _rule_distribute(parent_text, len(children))
+        filled = 0
+        for (key, _lbl), gen in zip(children, contents):
+            if existing.get(key, "").strip():
+                continue
+            gen = (gen or "").strip()
+            if not gen:
+                continue
+            conn.execute(
+                "INSERT INTO lt_plan (level, period_key, area_id, content, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(level, period_key, area_id) DO UPDATE "
+                "SET content = excluded.content, updated_at = excluded.updated_at",
+                (child_level, key, area_id, gen, now),
+            )
+            filled += 1
+    return JSONResponse({
+        "ok": True, "child_level": child_level,
+        "child_anchor": _child_anchor(level, period_key),
+        "filled": filled, "used_ai": used_ai,
+    })
 
 
 @app.post("/plan/area/add")

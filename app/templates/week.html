@@ -79,6 +79,9 @@
 
     <details class="card theme-fold">
         <summary class="card-title">이번 주 블록 이름 <span class="card-sub">여기서 정한 이름이 그 주의 일간 블록에 표시됩니다</span></summary>
+        <div class="theme-tools">
+            <button type="button" class="ghost-btn" id="wk-fill-themes" data-week="{{ week_start }}" title="주간 목표·이 주 장기 계획을 B1~B6 테마로 나눠 빈 칸만 채웁니다">이번 주 계획으로 블록 테마 자동 채우기</button>
+        </div>
         <div class="theme-grid">
             {% for lbl in core_labels %}
             <label class="theme-card">

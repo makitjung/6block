@@ -1122,6 +1122,24 @@
             });
         });
 
+        // 세분화: 이 칸을 아래 단위로 나눠 빈 자식 칸을 채우고 그 단위 화면으로 이동
+        grid.querySelectorAll('.pg-decompose').forEach((b) => {
+            b.addEventListener('click', () => {
+                b.disabled = true;
+                postForm('/plan/decompose', {
+                    level: b.dataset.level, period_key: b.dataset.period, area_id: b.dataset.area,
+                }).then((d) => {
+                    b.disabled = false;
+                    if (d && d.ok) {
+                        toast((d.used_ai ? 'AI 세분화 · ' : '세분화 · ') + d.filled + '칸 채움');
+                        location.href = '/plan?level=' + d.child_level + '&anchor=' + d.child_anchor;
+                    } else {
+                        toast((d && d.error) || '세분화 실패');
+                    }
+                });
+            });
+        });
+
         // 화면 밀도(축소/확대): data-zoom 0..3을 localStorage에 보존
         const ZKEY = '6block-plan-zoom';
         let z = parseInt(localStorage.getItem(ZKEY), 10);
@@ -1955,6 +1973,22 @@
                 .then((d) => {
                     if (d && d.ok) location.reload();
                     else toast((d && d.error === 'empty-template') ? '템플릿이 비어 있습니다' : '적용 실패');
+                });
+        });
+
+        // 주간 탭: 이번 주 계획으로 블록 테마(B1~B6) 자동 채우기(빈 칸만)
+        const wkFillThemes = document.getElementById('wk-fill-themes');
+        wkFillThemes?.addEventListener('click', () => {
+            wkFillThemes.disabled = true;
+            postForm('/week/decompose-themes', { week_start: wkFillThemes.dataset.week })
+                .then((d) => {
+                    wkFillThemes.disabled = false;
+                    if (d && d.ok) {
+                        toast((d.used_ai ? 'AI ' : '') + '블록 테마 ' + d.filled + '칸 채움');
+                        if (d.filled) location.reload();
+                    } else {
+                        toast((d && d.error) || '자동 채우기 실패');
+                    }
                 });
         });
 
