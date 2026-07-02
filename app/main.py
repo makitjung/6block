@@ -181,13 +181,16 @@ def _plan_columns(level: str, anchor: date):
                          "drill_anchor": f"{y}-{(q - 1) * 3 + 1:02d}-01"})
         header = f"{y}년"
     elif level == "month":
+        # 기본은 anchor가 속한 분기의 3개월만 포커싱해 보여준다(← → 로 분기 단위 이동).
         y = anchor.year
-        for m in range(1, 13):
+        q = (anchor.month - 1) // 3 + 1
+        m0 = (q - 1) * 3 + 1
+        for m in range(m0, m0 + 3):
             cols.append({"key": f"{y}-{m:02d}", "label": f"{m}월", "sub": "",
                          "current": y == today.year and m == today.month,
                          "week_link": None,
                          "drill_level": "week", "drill_anchor": f"{y}-{m:02d}-01"})
-        header = f"{y}년"
+        header = f"{y}년 {q}분기 ({m0}~{m0 + 2}월)"
     else:  # week
         y, m = anchor.year, anchor.month
         first = date(y, m, 1)
@@ -211,8 +214,15 @@ def _plan_nav(level: str, anchor: date):
     """현재 단위에서 이전/다음 기간으로 이동할 anchor(YYYY-MM-DD 문자열) 쌍."""
     if level == "year":
         return f"{anchor.year - 6:04d}-01-01", f"{anchor.year + 6:04d}-01-01"
-    if level in ("quarter", "month"):
+    if level == "quarter":
         return f"{anchor.year - 1:04d}-01-01", f"{anchor.year + 1:04d}-01-01"
+    if level == "month":
+        # 월 뷰는 분기(3개월) 단위로 앞뒤 이동한다.
+        q = (anchor.month - 1) // 3 + 1
+        m0 = (q - 1) * 3 + 1
+        prev_q = date(anchor.year - 1, 10, 1) if m0 == 1 else date(anchor.year, m0 - 3, 1)
+        next_q = date(anchor.year + 1, 1, 1) if m0 == 10 else date(anchor.year, m0 + 3, 1)
+        return prev_q.strftime("%Y-%m-%d"), next_q.strftime("%Y-%m-%d")
     y, m = anchor.year, anchor.month
     prev_last = date(y, m, 1) - timedelta(days=1)          # 지난달 말일
     next_first = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
@@ -1105,6 +1115,23 @@ def _week_view(request: Request, monday: date):
         wk_templates = conn.execute(
             "SELECT id, name FROM cat_template ORDER BY display_order, id"
         ).fetchall()
+        # 장기 계획 맥락: 이 주가 속한 연·분기·월 계획과 장기 탭의 이 주(주 단위) 계획을 함께 보여준다.
+        wk_areas = conn.execute(
+            "SELECT id, name FROM lt_area WHERE is_active = 1 ORDER BY display_order"
+        ).fetchall()
+        ctx_q = (monday.month - 1) // 3 + 1
+        ctx_levels = [
+            ("year", str(monday.year), "연"),
+            ("quarter", f"{monday.year}-Q{ctx_q}", "분기"),
+            ("month", f"{monday.year}-{monday.month:02d}", "월"),
+            ("week", week_start_str, "주"),
+        ]
+        lt_rows = conn.execute(
+            "SELECT area_id, level, content FROM lt_plan "
+            "WHERE (level='year' AND period_key=?) OR (level='quarter' AND period_key=?) "
+            "   OR (level='month' AND period_key=?) OR (level='week' AND period_key=?)",
+            (ctx_levels[0][1], ctx_levels[1][1], ctx_levels[2][1], ctx_levels[3][1]),
+        ).fetchall()
         # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
         review_inbox = conn.execute(
             "SELECT id, text, status FROM inbox WHERE done = 0 ORDER BY id DESC"
@@ -1159,6 +1186,18 @@ def _week_view(request: Request, monday: date):
         week_allday[ds] = allday
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
+    # 장기 계획 맥락을 영역별로 묶는다(연·분기·월·주 중 내용 있는 것만).
+    lt_map = {(r["area_id"], r["level"]): (r["content"] or "") for r in lt_rows}
+    plan_context = []
+    for ar in wk_areas:
+        rows = [
+            {"level": lv, "level_label": lv_label, "anchor": week_start_str,
+             "content": (lt_map.get((ar["id"], lv)) or "").strip()}
+            for lv, _key, lv_label in ctx_levels
+            if (lt_map.get((ar["id"], lv)) or "").strip()
+        ]
+        if rows:
+            plan_context.append({"name": ar["name"], "rows": rows})
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = WEEK_CORE_BLOCKS
 
@@ -1193,6 +1232,7 @@ def _week_view(request: Request, monday: date):
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
             "cat_templates": [dict(t) for t in wk_templates],
+            "plan_context": plan_context,
             "core_labels": CORE_LABELS,
             "week_block_events": week_block_events,
             "week_allday": week_allday,
