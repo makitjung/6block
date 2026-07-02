@@ -151,6 +151,24 @@
     {% endif %}
 </section>
 
+<section class="card">
+    <h2 class="card-title">AI 연결 <span class="card-sub">선택 · 자동 세분화와 개선점 문장에 사용 · 없으면 규칙기반으로 동작</span></h2>
+    <div class="set-data-row">
+        <span class="set-label">base URL</span>
+        <input type="text" id="set-ai-base" value="{{ ai_status.base }}" placeholder="예: https://api.deepseek.com/v1" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">모델</span>
+        <input type="text" id="set-ai-model" value="{{ ai_status.model }}" placeholder="예: deepseek-chat" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">상태</span>
+        <span class="set-events-status {% if ai_status.enabled %}ok{% else %}bad{% endif %}" id="set-ai-status">{% if ai_status.enabled %}켜짐 · 연결됨{% elif ai_status.has_key %}주소·모델 입력 필요{% else %}꺼짐 · .env AI_API_KEY 필요{% endif %}</span>
+        <button type="button" class="ghost-btn" id="set-ai-test">연결 테스트</button>
+    </div>
+    <p class="set-events-hint mono">API 키는 보안상 프로젝트 .env 파일에 AI_API_KEY=... 로 넣고 서버를 재시작하세요. base URL·모델은 여기서 저장됩니다.</p>
+</section>
+
 <section class="card set-template-card">
     <h2 class="card-title">구분 템플릿 <span class="card-sub">평일·주말 세트를 만들어 두면 주간 탭에서 42칸 블록 구분을 한 번에 채웁니다</span></h2>
     <div id="set-tpl-list">

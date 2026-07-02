@@ -37,7 +37,7 @@ from app.db import (
     init_db,
     set_setting,
 )
-from app.integrations import gcal, gcal_write, things
+from app.integrations import ai, gcal, gcal_write, things
 
 KST = ZoneInfo("Asia/Seoul")
 BASE_DIR = Path(__file__).parent
@@ -1633,6 +1633,7 @@ def settings_view(request: Request):
             "events_calendar_id": gcal_write.events_calendar_id(),
             "gcal_events_on": gcal_write.events_enabled(),
             "sa_email": gcal_write.service_account_email(),
+            "ai_status": ai.status(),
         },
     )
 
@@ -1953,6 +1954,34 @@ async def settings_template_cell(request: Request):
             (tid, day_type, label, cid),
         )
     return JSONResponse({"ok": True})
+
+
+# -- AI 연결 (선택) --------------------------------------------------------
+
+
+@app.post("/settings/ai/save")
+async def settings_ai_save(request: Request):
+    """AI 연결의 base URL·모델을 저장한다(키는 보안상 .env AI_API_KEY로만 관리)."""
+    form = await request.form()
+    set_setting("ai_base_url", (form.get("base_url") or "").strip())
+    set_setting("ai_model", (form.get("model") or "").strip())
+    return JSONResponse({"ok": True, "status": ai.status()})
+
+
+@app.post("/settings/ai/test")
+async def settings_ai_test():
+    """현재 설정으로 AI에 짧은 호출을 보내 연결을 확인한다."""
+    if not ai.enabled():
+        return JSONResponse(
+            {"ok": False, "error": ".env의 AI_API_KEY와 base URL·모델을 확인하세요"}
+        )
+    reply = ai.complete("You reply with a single word.",
+                        "Reply with the word OK.", max_tokens=5, temperature=0)
+    if reply:
+        return JSONResponse({"ok": True, "reply": reply[:40]})
+    return JSONResponse(
+        {"ok": False, "error": "호출 실패 · 키·주소·모델·잔액을 확인하세요"}
+    )
 
 
 @app.post("/settings/backup")

@@ -54,6 +54,13 @@ GCAL_CALENDARS = [
     if c["url"]
 ]
 
+# 선택적 AI 연결(자동 세분화·개선점 문장 생성). OpenAI 호환 chat/completions 엔드포인트를 쓴다.
+# 키는 보안상 .env(AI_API_KEY)에만 두고, 주소·모델은 설정 탭에서 덮어쓸 수 있다(app_settings).
+# 셋 중 하나라도 비면 AI는 비활성이고 규칙기반으로만 동작한다.
+AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
+AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip()   # 예: https://api.deepseek.com/v1
+AI_MODEL = os.getenv("AI_MODEL", "").strip()          # 예: deepseek-chat
+
 # (block_label, is_core, start, end)
 DAY_BLOCKS = [
     ("B1",   True,  "07:30", "09:30"),
@@ -110,6 +117,8 @@ DEFAULT_SETTINGS = {
     "show_location": "1",       # 오늘 블록 장소 콤보박스 표시(0/1)
     "show_did": "1",            # 슬롯 '한'(실제로 한 일) 버튼 표시(0/1)
     "show_reflect": "1",        # 슬롯 '고민' 버튼 표시(0/1)
+    "ai_base_url": "",          # AI 연결 base URL(설정 탭에서 입력, .env AI_BASE_URL 대체 가능)
+    "ai_model": "",             # AI 모델 이름(설정 탭에서 입력, .env AI_MODEL 대체 가능)
 }
 
 

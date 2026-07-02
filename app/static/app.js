@@ -1012,6 +1012,30 @@
             });
         });
 
+        // AI 연결: base URL·모델 저장 + 연결 테스트 (키는 .env)
+        const aiBase = document.getElementById('set-ai-base');
+        const aiModel = document.getElementById('set-ai-model');
+        const aiStatus = document.getElementById('set-ai-status');
+        const setAiStatus = (st) => {
+            if (!aiStatus || !st) return;
+            aiStatus.textContent = st.enabled ? '켜짐 · 연결됨'
+                : (st.has_key ? '주소·모델 입력 필요' : '꺼짐 · .env AI_API_KEY 필요');
+            aiStatus.classList.toggle('ok', !!st.enabled);
+            aiStatus.classList.toggle('bad', !st.enabled);
+        };
+        const saveAi = () => postForm('/settings/ai/save', {
+            base_url: (aiBase?.value || '').trim(), model: (aiModel?.value || '').trim(),
+        }).then((d) => { if (d) { setAiStatus(d.status); toast('AI 설정 저장'); } });
+        aiBase?.addEventListener('change', saveAi);
+        aiModel?.addEventListener('change', saveAi);
+        document.getElementById('set-ai-test')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget; btn.disabled = true;
+            postForm('/settings/ai/test', {}).then((d) => {
+                btn.disabled = false;
+                toast(d && d.ok ? ('연결 OK · ' + (d.reply || '')) : ((d && d.error) || '연결 실패'));
+            });
+        });
+
         document.getElementById('set-backup-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget; btn.disabled = true;
             postForm('/settings/backup', {}).then((d) => {
