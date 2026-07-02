@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS daily_meta (
     today_goal TEXT,
     daily_plan TEXT,
     memo TEXT,
-    vow TEXT
+    vow TEXT,
+    gratitude TEXT
 );
 
 CREATE TABLE IF NOT EXISTS weekly_meta (

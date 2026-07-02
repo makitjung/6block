@@ -268,7 +268,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .ctx-empty { font-size: 12px; color: var(--text-subtle); }
 
 /* 목표 3 · 계획 3 */
-.goal-plan { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.goal-plan { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .goal-plan { gap: 9px; } }
 .gp-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .gp-col > .field-label { margin-bottom: 2px; }
 .gp-row { display: flex; align-items: center; gap: 8px; }
@@ -277,7 +278,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     background: var(--surface-3); color: var(--text-muted); font-size: 11px; font-weight: 700;
     display: inline-flex; align-items: center; justify-content: center;
 }
-.gp-row input { flex: 1; }
+/* 목표·달성·감사반성 칸: 평소 한 줄로 잘려 보이고, 누르면(포커스) 전체가 펼쳐진다 */
+.gp-row .gp-input {
+    flex: 1; min-width: 0;
+    min-height: 0; height: auto; resize: none; overflow: hidden;
+    white-space: nowrap; line-height: 1.45;
+}
+.gp-row .gp-input:focus { white-space: normal; overflow-wrap: anywhere; }
 
 /* 메모·각오 접이식 */
 .ctx-extra { margin: 12px 0 2px; }
@@ -315,6 +322,14 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .agenda-add input[type="date"] { flex: 0 0 auto; width: 130px; }
 .agenda-hint { font-size: 11px; color: var(--text-subtle); margin: 6px 0; line-height: 1.4; }
 @media (max-width: 720px) { .agenda-2 { grid-template-columns: 1fr; } }
+/* 일정·할 일이 많을 때 3개만 보이고 '더보기'로 나머지를 펼친다 */
+.agenda.collapsed .agenda-row:nth-child(n+4) { display: none; }
+.agenda-more {
+    appearance: none; background: none; border: none;
+    color: var(--accent); font: inherit; font-size: 12px; font-weight: 700;
+    cursor: pointer; padding: 4px 2px; margin-top: 2px;
+}
+.agenda-more:hover { text-decoration: underline; }
 /* 블록 PLAN 이월(내일로) 버튼 */
 .block-rollover {
     margin-left: auto; font-size: 12px; padding: 3px 9px; cursor: pointer;

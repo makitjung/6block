@@ -27,16 +27,25 @@
                 {% for i in range(3) %}
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
-                    <input type="text" name="goal{{ i + 1 }}" value="{{ goals[i] }}" placeholder="목표 {{ i + 1 }}" autocomplete="off">
+                    <textarea name="goal{{ i + 1 }}" rows="1" class="gp-input" placeholder="목표 {{ i + 1 }}" autocomplete="off">{{ goals[i] }}</textarea>
                 </div>
                 {% endfor %}
             </div>
             <div class="gp-col">
-                <span class="field-label">오늘 계획</span>
+                <span class="field-label">오늘 달성</span>
                 {% for i in range(3) %}
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
-                    <input type="text" name="dplan{{ i + 1 }}" value="{{ plans[i] }}" placeholder="계획 {{ i + 1 }}" autocomplete="off">
+                    <textarea name="dplan{{ i + 1 }}" rows="1" class="gp-input" placeholder="달성 {{ i + 1 }}" autocomplete="off">{{ plans[i] }}</textarea>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="gp-col">
+                <span class="field-label">감사 · 반성</span>
+                {% for i in range(3) %}
+                <div class="gp-row">
+                    <span class="gp-no">{{ i + 1 }}</span>
+                    <textarea name="grat{{ i + 1 }}" rows="1" class="gp-input" placeholder="감사 · 반성 {{ i + 1 }}" autocomplete="off">{{ grats[i] }}</textarea>
                 </div>
                 {% endfor %}
             </div>
@@ -100,6 +109,7 @@
                     {% endfor %}
                     {% if not cal_events %}<div class="ctx-empty agenda-empty">오늘 일정이 없습니다.</div>{% endif %}
                 </div>
+                <button type="button" class="agenda-more" data-target="agenda-events" hidden></button>
             </div>
             <div class="agenda-col">
                 <div class="ctx-head">Things3 할 일</div>
@@ -119,6 +129,7 @@
                     {% endfor %}
                     {% if not task_list %}<div class="ctx-empty agenda-empty">Things3 Today가 비어 있습니다.</div>{% endif %}
                 </div>
+                <button type="button" class="agenda-more" data-target="agenda-tasks" hidden></button>
             </div>
         </div>
     </section>
@@ -202,14 +213,13 @@
             </header>
 
             {% if b.is_core %}
-            <!-- 블록 반복분: 오늘 목표·계획 (접힘, 펼치기 토글) -->
-            {% set has_gp = (goals | select | list) or (plans | select | list) %}
+            <!-- 블록 반복분: 오늘 목표만 상기(달성·감사반성은 회고용이라 제외) -->
+            {% set has_gp = (goals | select | list) %}
             {% if has_gp %}
             <details class="block-reminder">
-                <summary>오늘 목표 · 계획</summary>
+                <summary>오늘 목표</summary>
                 <div class="br-grid">
                     {% for g in goals if g %}<div class="br-item goal"><span>목표</span>{{ g }}</div>{% endfor %}
-                    {% for p in plans if p %}<div class="br-item plan"><span>계획</span>{{ p }}</div>{% endfor %}
                 </div>
             </details>
             {% endif %}

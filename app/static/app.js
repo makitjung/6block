@@ -745,6 +745,39 @@
         if (text != null) e.textContent = text;
         return e;
     }
+    // 일정·할 일 목록을 3개까지만 보여주고, 3개를 넘으면 '더보기'로 접는다.
+    const agendaExpanded = { 'agenda-events': false, 'agenda-tasks': false };
+    function setupAgendaMore(boxId) {
+        const box = document.getElementById(boxId);
+        if (!box) return;
+        const btn = document.querySelector('.agenda-more[data-target="' + boxId + '"]');
+        if (!btn) return;
+        const n = box.querySelectorAll('.agenda-row').length;
+        if (n <= 3) { btn.hidden = true; box.classList.remove('collapsed'); return; }
+        btn.hidden = false;
+        const open = !!agendaExpanded[boxId];
+        box.classList.toggle('collapsed', !open);
+        btn.textContent = open ? '접기' : ('+' + (n - 3) + '개 더보기');
+    }
+    function setupAgendaMoreAll() { setupAgendaMore('agenda-events'); setupAgendaMore('agenda-tasks'); }
+
+    // 목표·달성·감사반성 칸: 포커스하면 전체가 보이게 높이를 늘리고, 벗어나면 한 줄로 접는다.
+    // Enter 는 줄바꿈 대신 저장(블러)로 처리해 한 칸이 여러 줄로 저장되지 않게 한다.
+    function bindGpInputs() {
+        document.querySelectorAll('textarea.gp-input').forEach((ta) => {
+            if (ta.dataset.gpBound) return;
+            ta.dataset.gpBound = '1';
+            // 포커스 이벤트에서 직접 줄바꿈을 켜(:focus 의사클래스에 의존하지 않음) 전체 높이로 늘린다.
+            const grow = () => { ta.style.whiteSpace = 'normal'; ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+            ta.addEventListener('focus', grow);
+            ta.addEventListener('input', () => { if (document.activeElement === ta) grow(); });
+            ta.addEventListener('blur', () => { ta.style.whiteSpace = ''; ta.style.height = ''; });
+            ta.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); ta.blur(); }
+            });
+        });
+    }
+
     function renderAgenda(data) {
         // 구글 일정과 Things3 할 일을 각각의 칸에 따로 그린다(분리 표시).
         const evBox = document.getElementById('agenda-events');
@@ -773,6 +806,7 @@
             });
             if (!tasks.length) taskBox.appendChild(el('div', 'ctx-empty agenda-empty', 'Things3 Today가 비어 있습니다.'));
         }
+        setupAgendaMoreAll();
     }
     function renderBlockAgendas(data) {
         // 각 블록 '일정' 호버 팝오버: 그 시간대 캘린더 일정만 갱신
@@ -1854,6 +1888,7 @@
                             return row;
                         });
                         evInput.value = ''; if (evDate) evDate.value = '';
+                        setupAgendaMore('agenda-events');
                         toast('일정 추가 → 구글 캘린더');
                     } else { toast((d && d.error) || '일정 추가 실패'); }
                 })
@@ -1881,6 +1916,7 @@
                             return row;
                         });
                         taskInput.value = '';
+                        setupAgendaMore('agenda-tasks');
                         toast('할일 추가 → Things3');
                     } else { toast((d && d.error) || '할일 추가 실패'); }
                 })
@@ -2044,6 +2080,16 @@
             toast('동기화');
         });
 
+        // 일정·할 일 '더보기' 토글 + 초기 접힘 계산
+        document.querySelectorAll('.agenda-more').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.target;
+                agendaExpanded[id] = !agendaExpanded[id];
+                setupAgendaMore(id);
+            });
+        });
+        setupAgendaMoreAll();
+
         bindSlotChecks();
         bindBlockTools();
         bindSettings();
@@ -2075,7 +2121,8 @@
         bindForm();
         bindAutosaveAll();
         // 모든 텍스트 입력창에 애플노트 스타일 마크다운(자동번호/들여쓰기/하위레벨) 적용.
-        document.querySelectorAll('textarea').forEach((ta) => bindListEditor(ta));
+        document.querySelectorAll('textarea:not(.gp-input)').forEach((ta) => bindListEditor(ta));
+        bindGpInputs();
 
         // 대기열 자동 전송: 로드 직후 + 30초마다 재시도 + 연결 복구 이벤트 때
         updateNetStatus();

@@ -70,6 +70,10 @@ def _migrate(conn: sqlite3.Connection):
     for new_col in ("vow", "memo"):
         if new_col not in cols:
             conn.execute(f"ALTER TABLE weekly_meta ADD COLUMN {new_col} TEXT")
+    # 오늘 감사·반성(3줄, 줄바꿈으로 합쳐 저장). 없으면 추가.
+    meta_cols = {r[1] for r in conn.execute("PRAGMA table_info(daily_meta)").fetchall()}
+    if "gratitude" not in meta_cols:
+        conn.execute("ALTER TABLE daily_meta ADD COLUMN gratitude TEXT")
     # 슬롯 실행 체크박스(DO 완료 여부)
     slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)").fetchall()}
     if "done" not in slot_cols:

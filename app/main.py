@@ -364,8 +364,12 @@ def _split3(s) -> list[str]:
 
 
 def _join3(form, prefix: str) -> str:
-    """폼의 prefix1/2/3 값을 줄바꿈으로 합친다. 모두 비면 빈 문자열."""
-    vals = [(form.get(f"{prefix}{i}", "") or "").strip() for i in (1, 2, 3)]
+    """폼의 prefix1/2/3 값을 줄바꿈으로 합친다. 각 칸 내부의 줄바꿈은 공백으로 눌러
+    3칸 구분(줄바꿈)이 깨지지 않게 한다. 모두 비면 빈 문자열."""
+    vals = [
+        (form.get(f"{prefix}{i}", "") or "").replace("\r", " ").replace("\n", " ").strip()
+        for i in (1, 2, 3)
+    ]
     joined = "\n".join(vals)
     return joined if joined.strip() else ""
 
@@ -514,9 +518,10 @@ def _day_view(request: Request, date_str: str):
     # 시각이 있는 항목만 해당 시간 블록의 아젠다로 배치한다.
     cal_events, task_list, block_events = _day_agenda(blocks, d, is_today)
 
-    # 오늘 목표/계획을 각각 3개로 분리(줄바꿈 저장, 레거시 1줄도 호환).
+    # 오늘 목표/달성/감사·반성을 각각 3개로 분리(줄바꿈 저장, 레거시 1줄도 호환).
     goals = _split3(meta["today_goal"] if meta else "")
     plans = _split3(meta["daily_plan"] if meta else "")
+    grats = _split3(meta["gratitude"] if meta else "")
 
     return templates.TemplateResponse(
         "today.html",
@@ -532,6 +537,7 @@ def _day_view(request: Request, date_str: str):
             "meta": meta,
             "goals": goals,
             "plans": plans,
+            "grats": grats,
             "themes_by_label": themes_by_label,
             "block_name_by_id": block_name_by_id,
             "block_events": block_events,
@@ -623,13 +629,14 @@ async def save_day(date_str: str, request: Request):
                 )
         conn.execute(
             """
-            INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow, gratitude)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(date) DO UPDATE SET
                 today_goal = excluded.today_goal,
                 daily_plan = excluded.daily_plan,
                 memo = excluded.memo,
-                vow = excluded.vow
+                vow = excluded.vow,
+                gratitude = excluded.gratitude
             """,
             (
                 date_str,
@@ -637,6 +644,7 @@ async def save_day(date_str: str, request: Request):
                 _join3(form, "dplan"),
                 form.get("memo", ""),
                 form.get("vow", ""),
+                _join3(form, "grat"),
             ),
         )
     return RedirectResponse(url=f"/day/{date_str}", status_code=303)
@@ -727,21 +735,30 @@ async def save_field(request: Request):
                     % (field, field, field),
                     (date_str, value),
                 )
-            elif field.startswith("goal") or field.startswith("dplan"):
-                # 목표/계획 3칸: 같은 prefix의 3값을 읽어 들여, 바뀐 한 칸만 갱신한 뒤
-                # 줄바꿈 합친 전체를 다시 저장한다(클라이언트가 나머지 두 값을 같이 보냄).
-                prefix = "goal" if field.startswith("goal") else "dplan"
-                vals = [form.get(f"{prefix}{i}", "") or "" for i in (1, 2, 3)]
-                # 폼에서 안 온 칸이 있을 수 있으니 기존 값으로 보충
-                col = "today_goal" if prefix == "goal" else "daily_plan"
+            elif field.startswith("goal") or field.startswith("dplan") or field.startswith("grat"):
+                # 목표/달성/감사·반성 3칸: 바뀐 한 칸과 나머지 두 칸(클라이언트가 함께 보냄)을
+                # 합쳐 줄바꿈으로 저장한다. 클라이언트는 세 값을 숫자 키(1/2/3)로, 폼 전체 저장 등은
+                # prefix+번호 키로 보낼 수 있어 둘 다 받는다. 각 칸 내부 줄바꿈은 공백으로 눌러 3칸 구분 보호.
+                if field.startswith("goal"):
+                    prefix, col = "goal", "today_goal"
+                elif field.startswith("dplan"):
+                    prefix, col = "dplan", "daily_plan"
+                else:
+                    prefix, col = "grat", "gratitude"
                 existing = conn.execute(
                     f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
                 ).fetchone()
                 parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
                 parts = (parts + ["", "", ""])[:3]
                 for i in range(3):
-                    if f"{prefix}{i+1}" in form:
-                        parts[i] = form.get(f"{prefix}{i+1}", "") or ""
+                    pre_key, num_key = f"{prefix}{i+1}", str(i + 1)
+                    if pre_key in form:
+                        raw = form.get(pre_key, "") or ""
+                    elif num_key in form:
+                        raw = form.get(num_key, "") or ""
+                    else:
+                        continue
+                    parts[i] = raw.replace("\r", " ").replace("\n", " ")
                 joined = "\n".join(p.strip() for p in parts)
                 joined = joined if joined.strip() else ""
                 conn.execute(
