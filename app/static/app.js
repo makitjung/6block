@@ -522,11 +522,6 @@
                     el.dataset.asPrefix = 'dplan';
                     el.dataset.asIdx = m[1];
                     bindAutoSave(el, 'meta', dateStr, 'dplan' + m[1], { groupPrefix: 'dplan' });
-                } else if ((m = name.match(/^(goaltag|plantag|grattag)([123])$/))) {
-                    // 목표/달성/감사 각 줄의 자유 태그(직접 입력). 텍스트처럼 그룹으로 묶어 자동저장.
-                    el.dataset.asPrefix = m[1];
-                    el.dataset.asIdx = m[2];
-                    bindAutoSave(el, 'meta', dateStr, m[1] + m[2], { groupPrefix: m[1] });
                 } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
                 else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
             });
@@ -789,6 +784,49 @@
             ta.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); ta.blur(); }
             });
+        });
+    }
+
+    // ---- 태그 입력 모달: 목표·달성·감사 각 줄의 '＃' 버튼을 누르면 별도 창에서 태그를 입력한다.
+    // 값은 숨김 필드(goaltag1 등)에 담겨 저장 버튼(전체 폼)과 함께 가고, 모달 저장 시 즉시 자동저장도 한다.
+    function setupTagModal() {
+        const modal = document.getElementById('tag-modal');
+        if (!modal) return;
+        const dayForm = document.querySelector('form.day-form');
+        const dateStr = dayForm ? dayForm.dataset.date : null;
+        const input = document.getElementById('tag-modal-input');
+        const titleEl = document.getElementById('tag-modal-title');
+        let curBtn = null;
+        const hiddenOf = (btn) => document.querySelector('input[name="' + btn.dataset.group + btn.dataset.idx + '"]');
+        const close = () => { modal.hidden = true; curBtn = null; };
+        const open = (btn) => {
+            curBtn = btn;
+            const hid = hiddenOf(btn);
+            input.value = hid ? hid.value : '';
+            if (titleEl) titleEl.textContent = (btn.getAttribute('aria-label') || '태그');
+            modal.hidden = false;
+            setTimeout(() => { input.focus(); input.select(); }, 30);
+        };
+        const save = () => {
+            if (!curBtn) return;
+            const group = curBtn.dataset.group, idx = curBtn.dataset.idx;
+            const val = input.value.replace(/\s+/g, ' ').trim();
+            const hid = hiddenOf(curBtn);
+            if (hid) hid.value = val;
+            curBtn.textContent = val || '＃';
+            curBtn.classList.toggle('has-tag', !!val);
+            if (dateStr) saveField('meta', dateStr, group, val, { [group + idx]: val });
+            close();
+        };
+        document.querySelectorAll('.gp-tag-btn').forEach((btn) => {
+            btn.addEventListener('click', () => open(btn));
+        });
+        document.getElementById('tag-modal-save')?.addEventListener('click', save);
+        document.getElementById('tag-modal-close')?.addEventListener('click', close);
+        modal.querySelector('.rm-backdrop')?.addEventListener('click', close);
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save(); }
+            else if (e.key === 'Escape') { e.preventDefault(); close(); }
         });
     }
 
@@ -2221,6 +2259,7 @@
         // 모든 텍스트 입력창에 애플노트 스타일 마크다운(자동번호/들여쓰기/하위레벨) 적용.
         document.querySelectorAll('textarea:not(.gp-input)').forEach((ta) => bindListEditor(ta));
         bindGpInputs();
+        setupTagModal();
 
         // 대기열 자동 전송: 로드 직후 + 30초마다 재시도 + 연결 복구 이벤트 때
         updateNetStatus();

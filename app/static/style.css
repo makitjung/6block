@@ -272,7 +272,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 @media (max-width: 560px) { .goal-plan { gap: 9px; } }
 .gp-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .gp-col > .field-label { margin-bottom: 2px; }
-.gp-row { display: flex; align-items: center; gap: 6px; }
+.gp-row { display: flex; align-items: center; gap: 8px; }
 .gp-no {
     flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
     background: var(--surface-3); color: var(--text-muted); font-size: 11px; font-weight: 700;
@@ -285,17 +285,18 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     white-space: nowrap; line-height: 1.45;
 }
 .gp-row .gp-input:focus { white-space: normal; overflow-wrap: anywhere; }
-/* 목표·달성·감사 각 줄의 자유 태그 입력: 본문(목차)이 중요하니 태그는 아주 좁게(작게) 두고,
-   포커스할 때만 넓어져 편집한다. 본문 textarea가 flex:1 로 남은 폭을 최대한 차지한다. */
-.gp-tag {
-    flex: 0 0 auto; width: 38px;
+/* 목표·달성·감사 각 줄의 태그 버튼: 누르면 별도 창에서 입력한다. 본문(목차)이 폭을 거의 다 쓰도록
+   버튼은 내용(태그 또는 ＃)에 맞춰 작게, 길면 최대 64px에서 말줄임. 본문 textarea는 flex:1 로 남은 폭 차지. */
+.gp-tag-btn {
+    flex: 0 0 auto; max-width: 64px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     border: 1px solid transparent; background: transparent;
-    font-size: 10px; padding: 2px 4px; border-radius: var(--r-pill);
-    color: var(--text-subtle); transition: width .15s ease, background .15s ease;
+    font-size: 11px; padding: 2px 6px; border-radius: var(--r-pill);
+    color: var(--text-subtle); cursor: pointer; line-height: 1.5;
 }
-.gp-tag::placeholder { color: var(--text-subtle); }
-.gp-tag:hover { border-color: var(--border); }
-.gp-tag:focus { width: 132px; background: var(--surface); border-color: var(--border-focus); color: var(--text-soft); }
+.gp-tag-btn:hover { border-color: var(--border); color: var(--text-soft); }
+.gp-tag-btn.has-tag { color: var(--accent); font-weight: 700; background: var(--surface-3); }
+.tag-modal-box { width: min(360px, 92vw); display: flex; flex-direction: column; gap: 10px; }
 
 /* 메모·각오 접이식 */
 .ctx-extra { margin: 12px 0 2px; }

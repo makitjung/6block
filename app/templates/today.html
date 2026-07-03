@@ -28,7 +28,8 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     <textarea name="goal{{ i + 1 }}" rows="1" class="gp-input" placeholder="목표 {{ i + 1 }}" autocomplete="off">{{ goals[i] }}</textarea>
-                    <input type="text" name="goaltag{{ i + 1 }}" class="gp-tag" value="{{ goal_tags[i] }}" placeholder="태그" autocomplete="off" aria-label="목표 {{ i + 1 }} 태그">
+                    <input type="hidden" name="goaltag{{ i + 1 }}" value="{{ goal_tags[i] }}">
+                    <button type="button" class="gp-tag-btn{% if goal_tags[i] %} has-tag{% endif %}" data-group="goaltag" data-idx="{{ i + 1 }}" aria-label="목표 {{ i + 1 }} 태그">{{ goal_tags[i] if goal_tags[i] else '＃' }}</button>
                 </div>
                 {% endfor %}
             </div>
@@ -38,7 +39,8 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     <textarea name="dplan{{ i + 1 }}" rows="1" class="gp-input" placeholder="달성 {{ i + 1 }}" autocomplete="off">{{ plans[i] }}</textarea>
-                    <input type="text" name="plantag{{ i + 1 }}" class="gp-tag" value="{{ plan_tags[i] }}" placeholder="태그" autocomplete="off" aria-label="달성 {{ i + 1 }} 태그">
+                    <input type="hidden" name="plantag{{ i + 1 }}" value="{{ plan_tags[i] }}">
+                    <button type="button" class="gp-tag-btn{% if plan_tags[i] %} has-tag{% endif %}" data-group="plantag" data-idx="{{ i + 1 }}" aria-label="달성 {{ i + 1 }} 태그">{{ plan_tags[i] if plan_tags[i] else '＃' }}</button>
                 </div>
                 {% endfor %}
             </div>
@@ -48,7 +50,8 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     <textarea name="grat{{ i + 1 }}" rows="1" class="gp-input" placeholder="감사 · 반성 {{ i + 1 }}" autocomplete="off">{{ grats[i] }}</textarea>
-                    <input type="text" name="grattag{{ i + 1 }}" class="gp-tag" value="{{ grat_tags[i] }}" placeholder="태그" autocomplete="off" aria-label="감사 · 반성 {{ i + 1 }} 태그">
+                    <input type="hidden" name="grattag{{ i + 1 }}" value="{{ grat_tags[i] }}">
+                    <button type="button" class="gp-tag-btn{% if grat_tags[i] %} has-tag{% endif %}" data-group="grattag" data-idx="{{ i + 1 }}" aria-label="감사 · 반성 {{ i + 1 }} 태그">{{ grat_tags[i] if grat_tags[i] else '＃' }}</button>
                 </div>
                 {% endfor %}
             </div>
@@ -364,6 +367,18 @@
             <input type="text" id="rm-tags" class="rf-tags" placeholder="태그 (선택)" autocomplete="off">
             <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시 볼 날짜<input type="date" id="rm-review" value=""></label>
             <button type="button" id="rm-save" class="primary-btn">기록</button>
+        </div>
+    </div>
+</div>
+
+<!-- 목표·달성·감사 각 줄의 '＃' 버튼으로 여는 태그 입력창(별도 팝업) -->
+<div id="tag-modal" class="reflect-modal" hidden>
+    <div class="rm-backdrop"></div>
+    <div class="rm-box tag-modal-box" role="dialog" aria-label="태그 입력">
+        <div class="rm-head"><span id="tag-modal-title">태그</span> <button type="button" class="rm-close" id="tag-modal-close" aria-label="닫기">✕</button></div>
+        <input type="text" id="tag-modal-input" class="rf-title" placeholder="예: 독서, 인강, 생각" autocomplete="off">
+        <div class="rf-row">
+            <button type="button" id="tag-modal-save" class="primary-btn">저장</button>
         </div>
     </div>
 </div>
