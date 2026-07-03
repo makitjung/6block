@@ -1862,7 +1862,8 @@ def settings_view(request: Request):
             "gcal_events_on": gcal_write.events_enabled(),
             "sa_email": gcal_write.service_account_email(),
             "ai_status": ai.status(),
-            "env_path": str(BASE_DIR.parent / ".env"),
+            "env_path": str(_env_file_path()),
+            "env_content": _read_env_text(),
         },
     )
 
