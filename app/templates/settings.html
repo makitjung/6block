@@ -189,12 +189,12 @@
                 <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" autocomplete="off" aria-label="템플릿 이름">
                 <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
             </div>
-            <div class="set-tpl-grid" style="--cols: {{ core_labels | length }}">
+            <div class="set-tpl-grid" style="--cols: {{ weekdays | length }}">
                 <div class="set-tpl-corner"></div>
-                {% for lbl in core_labels %}<div class="set-tpl-blabel">{{ lbl }}</div>{% endfor %}
-                {% for wd, wd_label in weekdays %}
-                <div class="set-tpl-daytype">{{ wd_label }}</div>
+                {% for wd, wd_label in weekdays %}<div class="set-tpl-blabel">{{ wd_label }}</div>{% endfor %}
                 {% for lbl in core_labels %}
+                <div class="set-tpl-daytype">{{ lbl }}</div>
+                {% for wd, wd_label in weekdays %}
                 <select class="set-tpl-cell cat-select" data-tpl="{{ t.id }}" data-weekday="{{ wd }}" data-label="{{ lbl }}" aria-label="{{ wd_label }} {{ lbl }} 구분">
                     <option value="">—</option>
                     {% for c in active_categories %}
