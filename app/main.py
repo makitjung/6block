@@ -531,6 +531,10 @@ def _day_view(request: Request, date_str: str):
     goals = _split3(meta["today_goal"] if meta else "")
     plans = _split3(meta["daily_plan"] if meta else "")
     grats = _split3(meta["gratitude"] if meta else "")
+    # 각 3줄에 붙인 구분(카테고리) id도 같은 방식으로 3칸으로 분리.
+    goal_cats = _split3(meta["goal_cats"] if meta else "")
+    plan_cats = _split3(meta["plan_cats"] if meta else "")
+    grat_cats = _split3(meta["grat_cats"] if meta else "")
 
     return templates.TemplateResponse(
         "today.html",
@@ -547,6 +551,9 @@ def _day_view(request: Request, date_str: str):
             "goals": goals,
             "plans": plans,
             "grats": grats,
+            "goal_cats": goal_cats,
+            "plan_cats": plan_cats,
+            "grat_cats": grat_cats,
             "themes_by_label": themes_by_label,
             "block_name_by_id": block_name_by_id,
             "block_events": block_events,
@@ -638,14 +645,18 @@ async def save_day(date_str: str, request: Request):
                 )
         conn.execute(
             """
-            INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow, gratitude)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow, gratitude,
+                                    goal_cats, plan_cats, grat_cats)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date) DO UPDATE SET
                 today_goal = excluded.today_goal,
                 daily_plan = excluded.daily_plan,
                 memo = excluded.memo,
                 vow = excluded.vow,
-                gratitude = excluded.gratitude
+                gratitude = excluded.gratitude,
+                goal_cats = excluded.goal_cats,
+                plan_cats = excluded.plan_cats,
+                grat_cats = excluded.grat_cats
             """,
             (
                 date_str,
@@ -654,6 +665,9 @@ async def save_day(date_str: str, request: Request):
                 form.get("memo", ""),
                 form.get("vow", ""),
                 _join3(form, "grat"),
+                _join3(form, "goalcat"),
+                _join3(form, "plancat"),
+                _join3(form, "gratcat"),
             ),
         )
     return RedirectResponse(url=f"/day/{date_str}", status_code=303)
@@ -743,6 +757,31 @@ async def save_field(request: Request):
                     "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
                     % (field, field, field),
                     (date_str, value),
+                )
+            elif field.startswith("goalcat") or field.startswith("plancat") or field.startswith("gratcat"):
+                # 목표/달성/감사 각 줄의 구분 칩 3칸. 바뀐 select(change)가 그룹 3값을 함께 보낸다.
+                if field.startswith("goalcat"):
+                    prefix, col = "goalcat", "goal_cats"
+                elif field.startswith("plancat"):
+                    prefix, col = "plancat", "plan_cats"
+                else:
+                    prefix, col = "gratcat", "grat_cats"
+                existing = conn.execute(
+                    f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
+                ).fetchone()
+                parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
+                parts = (parts + ["", "", ""])[:3]
+                for i in range(3):
+                    key = f"{prefix}{i + 1}"
+                    if key in form:
+                        parts[i] = (form.get(key, "") or "").strip()
+                joined = "\n".join(parts)
+                joined = joined if joined.strip() else ""
+                conn.execute(
+                    "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
+                    "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
+                    % (col, col, col),
+                    (date_str, joined),
                 )
             elif field.startswith("goal") or field.startswith("dplan") or field.startswith("grat"):
                 # 목표/달성/감사·반성 3칸: 바뀐 한 칸과 나머지 두 칸(클라이언트가 함께 보냄)을
@@ -1056,6 +1095,7 @@ def api_day(date_str: str):
                     "title": t["title"],
                     "deadline": t["deadline"],
                     "overdue": t["overdue"],
+                    "tags": t.get("tags", []),
                 }
                 for t in task_list
             ],

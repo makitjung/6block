@@ -7,12 +7,17 @@ from datetime import date
 _CACHE_TTL = 20  # 초. 폴링과 함께 Things Today를 거의 실시간으로 반영.
 _cache: dict = {"at": 0.0, "items": None}
 
-# Today 항목 이름을 줄바꿈으로 직렬화해 반환 (제목 안의 쉼표 문제 회피)
+# Today 항목을 '이름<TAB>태그' 한 줄씩으로 직렬화해 반환(제목 안의 쉼표 문제 회피).
+# 태그는 Things에서 쉼표로 구분된 문자열로 오고, 태그가 없으면 빈칸이다.
 _SCRIPT = (
     'set out to ""\n'
     'tell application "Things3"\n'
     '    repeat with t in to dos of list "Today"\n'
-    '        set out to out & (name of t) & linefeed\n'
+    '        set tg to ""\n'
+    '        try\n'
+    '            set tg to tag names of t\n'
+    '        end try\n'
+    '        set out to out & (name of t) & tab & tg & linefeed\n'
     '    end repeat\n'
     "end tell\n"
     "return out"
@@ -37,7 +42,17 @@ def _today_names():
     rc, out = _run(_SCRIPT)
     if rc != 0:
         return None
-    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+    items = []
+    for ln in out.splitlines():
+        if not ln.strip():
+            continue
+        name, _, tagstr = ln.partition("\t")
+        name = name.strip()
+        if not name:
+            continue
+        tags = [t.strip() for t in tagstr.split(",") if t.strip()]
+        items.append({"name": name, "tags": tags})
+    return items
 
 
 def today_tasks(target: date, include_overdue: bool = True) -> list[dict]:
@@ -60,8 +75,9 @@ def today_tasks(target: date, include_overdue: bool = True) -> list[dict]:
         else:
             names = _cache["items"] or []
     return [
-        {"title": n, "time": None, "time_min": None, "deadline": None, "overdue": False}
-        for n in names
+        {"title": it["name"], "time": None, "time_min": None,
+         "deadline": None, "overdue": False, "tags": it["tags"]}
+        for it in names
     ]
 
 

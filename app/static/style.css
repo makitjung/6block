@@ -285,6 +285,15 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     white-space: nowrap; line-height: 1.45;
 }
 .gp-row .gp-input:focus { white-space: normal; overflow-wrap: anywhere; }
+/* 목표·달성·감사 각 줄의 구분 칩: 화면이 꽉 차 있어 최소 폭 · 색으로만 구분을 드러낸다. */
+.gp-cat {
+    flex: 0 0 auto; max-width: 70px;
+    border: 1px solid transparent; background: transparent;
+    font-size: 11px; padding: 2px 2px; border-radius: var(--r-sm);
+    color: var(--text-subtle); cursor: pointer;
+}
+.gp-cat:hover { border-color: var(--border); }
+.gp-cat.has-cat { font-weight: 700; border-color: currentColor; }
 
 /* 메모·각오 접이식 */
 .ctx-extra { margin: 12px 0 2px; }
@@ -314,6 +323,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .agenda-row.event .t { color: var(--accent); }
 .agenda-row.task .t { color: var(--text-muted); }
 .agenda-row .x { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+/* Things3 할일에 달린 태그(표시 전용). */
+.task-tag {
+    flex: 0 0 auto; font-size: 10px; line-height: 1.6;
+    padding: 0 6px; border-radius: var(--r-pill);
+    background: var(--surface-3); color: var(--text-muted); white-space: nowrap;
+}
 /* 오늘: 구글 일정 / Things3 할일 2열 분리 + 빠른 추가 */
 .agenda-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .agenda-2 .agenda { grid-template-columns: 1fr; }

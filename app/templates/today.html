@@ -28,6 +28,12 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     <textarea name="goal{{ i + 1 }}" rows="1" class="gp-input" placeholder="목표 {{ i + 1 }}" autocomplete="off">{{ goals[i] }}</textarea>
+                    <select name="goalcat{{ i + 1 }}" class="cat-select gp-cat" aria-label="목표 {{ i + 1 }} 구분">
+                        <option value=""></option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if goal_cats[i] == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 {% endfor %}
             </div>
@@ -37,6 +43,12 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     <textarea name="dplan{{ i + 1 }}" rows="1" class="gp-input" placeholder="달성 {{ i + 1 }}" autocomplete="off">{{ plans[i] }}</textarea>
+                    <select name="plancat{{ i + 1 }}" class="cat-select gp-cat" aria-label="달성 {{ i + 1 }} 구분">
+                        <option value=""></option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if plan_cats[i] == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 {% endfor %}
             </div>
@@ -46,6 +58,12 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     <textarea name="grat{{ i + 1 }}" rows="1" class="gp-input" placeholder="감사 · 반성 {{ i + 1 }}" autocomplete="off">{{ grats[i] }}</textarea>
+                    <select name="gratcat{{ i + 1 }}" class="cat-select gp-cat" aria-label="감사 · 반성 {{ i + 1 }} 구분">
+                        <option value=""></option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if grat_cats[i] == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 {% endfor %}
             </div>
@@ -124,6 +142,7 @@
                     <div class="agenda-row task">
                         {% if t.time %}<span class="t">{{ t.time }}</span>{% endif %}
                         <span class="x">{{ t.title }}</span>
+                        {% for tg in (t.tags or []) %}<span class="task-tag">{{ tg }}</span>{% endfor %}
                         {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
                     </div>
                     {% endfor %}

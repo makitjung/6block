@@ -86,6 +86,10 @@ def _migrate(conn: sqlite3.Connection):
     meta_cols = {r[1] for r in conn.execute("PRAGMA table_info(daily_meta)").fetchall()}
     if "gratitude" not in meta_cols:
         conn.execute("ALTER TABLE daily_meta ADD COLUMN gratitude TEXT")
+    # 목표·달성·감사반성 각 3줄의 구분(카테고리) id를 줄바꿈으로 저장. 없으면 추가.
+    for _cats_col in ("goal_cats", "plan_cats", "grat_cats"):
+        if _cats_col not in meta_cols:
+            conn.execute(f"ALTER TABLE daily_meta ADD COLUMN {_cats_col} TEXT")
     # 슬롯 실행 체크박스(DO 완료 여부)
     slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)").fetchall()}
     if "done" not in slot_cols:

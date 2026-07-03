@@ -530,6 +530,15 @@
                 let m;
                 if ((m = name.match(/^bcat_(\d+)$/))) el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
                 else if ((m = name.match(/^cat_(\d+)$/))) el.addEventListener('change', () => saveField('slot', m[1], 'cat', el.value));
+                else if ((m = name.match(/^(goalcat|plancat|gratcat)[123]$/))) {
+                    // 목표/달성/감사 구분 칩: 바뀌면 그 열 3개 값을 함께 보내 서버에서 3칸으로 합친다.
+                    const grp = m[1];
+                    el.addEventListener('change', () => {
+                        const extra = {};
+                        document.querySelectorAll('select[name^="' + grp + '"]').forEach((g) => { extra[g.name] = g.value; });
+                        saveField('meta', dateStr, grp, el.value, extra);
+                    });
+                }
             });
         }
 
@@ -809,6 +818,7 @@
                 const row = el('div', 'agenda-row task');
                 if (t.time) row.appendChild(el('span', 't', t.time));
                 row.appendChild(el('span', 'x', t.title));
+                (t.tags || []).forEach((tg) => row.appendChild(el('span', 'task-tag', tg)));
                 if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
                 else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));
                 taskBox.appendChild(row);
