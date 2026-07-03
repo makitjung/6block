@@ -2183,6 +2183,51 @@ async def settings_template_cell(request: Request):
     return JSONResponse({"ok": True})
 
 
+# -- .env 편집 (설정 탭) ----------------------------------------------------
+
+# 설정 탭의 .env 편집기가 프로젝트 루트 .env를 그대로 보여주고 저장한다. 값은 서버 재시작
+# 후 반영된다(config.py가 기동 시 load_dotenv). 개인용(테일스케일 내부) 단일 사용자 전제라
+# 시크릿을 화면엔 보여주되 서버 로그에는 남기지 않고, 백업은 레포 밖(6block-data)에 둔다.
+def _env_file_path() -> Path:
+    """프로젝트 루트의 .env 경로."""
+    return BASE_DIR.parent / ".env"
+
+
+def _read_env_text() -> str:
+    """.env 내용을 문자열로 읽는다(없으면 빈 문자열)."""
+    try:
+        return _env_file_path().read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+@app.post("/settings/env/save")
+async def settings_env_save(request: Request):
+    """.env 전체 내용을 저장한다. 직전 내용을 6block-data에 백업하고 임시파일로 원자적
+    교체하며 권한 0o600을 유지한다. 저장 후 서버를 재시작해야 값이 반영된다."""
+    form = await request.form()
+    content = form.get("content")
+    if content is None:
+        return JSONResponse({"ok": False, "error": "no-content"}, status_code=400)
+    if len(content) > 100_000:
+        return JSONResponse({"ok": False, "error": "too-large"}, status_code=400)
+    text = content.replace("\r\n", "\n")
+    env_path = _env_file_path()
+    tmp = env_path.with_name(".env.tmp")
+    try:
+        if env_path.exists():
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            bak = BACKUP_DIR / ".env.bak"       # 레포 밖(6block-data/backups)에 백업
+            bak.write_bytes(env_path.read_bytes())
+            os.chmod(bak, 0o600)
+        tmp.write_text(text, encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, env_path)
+    except OSError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return JSONResponse({"ok": True})
+
+
 # -- 서버 재시작 (launchd) --------------------------------------------------
 
 # 이 앱은 launchd 서비스(io.6block.uvicorn, KeepAlive)로 상시 구동된다. 설정의 재시작

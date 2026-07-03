@@ -166,7 +166,18 @@
         <span class="set-events-status {% if ai_status.enabled %}ok{% else %}bad{% endif %}" id="set-ai-status">{% if ai_status.enabled %}켜짐 · 연결됨{% elif ai_status.has_key %}주소·모델 입력 필요{% else %}꺼짐 · .env AI_API_KEY 필요{% endif %}</span>
         <button type="button" class="ghost-btn" id="set-ai-test">연결 테스트</button>
     </div>
-    <p class="set-events-hint mono">API 키는 보안상 프로젝트 .env 파일에 AI_API_KEY=... 로 넣고 서버를 재시작하세요. base URL·모델은 여기서 저장됩니다.</p>
+    <p class="set-events-hint">API 키(AI_API_KEY)는 아래 '.env 편집' 카드에 넣고 저장 후 재시작하세요. base URL·모델은 여기서 저장하거나 .env에 함께 넣어도 됩니다.</p>
+</section>
+
+<section class="card">
+    <h2 class="card-title">.env 편집 <span class="card-sub">API 키·환경변수를 여기서 직접 보고 고칩니다 · 저장 후 재시작해야 반영됩니다</span></h2>
+    <textarea id="set-env-text" class="set-env-text mono" rows="10" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label=".env 내용">{{ env_content }}</textarea>
+    <div class="set-env-actions">
+        <span class="set-bt-msg" id="set-env-msg"></span>
+        <button type="button" class="primary-btn" id="set-env-save">저장 후 재시작</button>
+    </div>
+    <p class="set-events-hint mono">{{ env_path }}</p>
+    <p class="set-events-hint">한 줄에 하나씩 KEY=값 형식입니다. 예) AI_API_KEY=sk-… · AI_BASE_URL=https://api.deepseek.com/v1 · AI_MODEL=deepseek-chat. 이 편집기는 개인용(테일스케일 내부)에서만 열립니다.</p>
 </section>
 
 <section class="card set-template-card">

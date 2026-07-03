@@ -1367,6 +1367,10 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .set-tpl-daytype { font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; padding-right: 6px; }
 .set-tpl-cell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 
+/* 설정 .env 편집기: 파일 내용을 그대로 보여주는 텍스트영역 */
+.set-env-text { width: 100%; box-sizing: border-box; resize: vertical; min-height: 180px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+.set-env-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+
 /* 주간 탭 7일보기 헤더: 제목 + 컴팩트 구분 템플릿 적용 컨트롤 */
 .wk7-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .wk7-head .card-title { margin: 0; }

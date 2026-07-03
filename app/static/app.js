@@ -1064,6 +1064,30 @@
                 });
         });
 
+        // .env 편집: 저장 후 서버 재시작(값은 재시작해야 반영됨)
+        const envSaveBtn = document.getElementById('set-env-save');
+        const envText = document.getElementById('set-env-text');
+        const envMsg = document.getElementById('set-env-msg');
+        envSaveBtn?.addEventListener('click', () => {
+            if (!confirm('.env를 저장하고 서버를 재시작할까요? 몇 초간 화면이 끊긴 뒤 자동 새로고침됩니다.')) return;
+            envSaveBtn.disabled = true;
+            if (envMsg) envMsg.textContent = '저장 중…';
+            postForm('/settings/env/save', { content: envText ? envText.value : '' })
+                .then((d) => {
+                    if (!d || !d.ok) {
+                        envSaveBtn.disabled = false;
+                        if (envMsg) envMsg.textContent = '저장 실패' + (d && d.error ? ' · ' + d.error : '');
+                        return null;
+                    }
+                    if (envMsg) envMsg.textContent = '저장됨 · 재시작 중… 서버가 올라오면 자동 새로고침';
+                    return postForm('/settings/restart', {}).then(() => waitServerUp());
+                })
+                .catch(() => {
+                    if (envMsg) envMsg.textContent = '재시작 중… 서버가 올라오면 자동 새로고침';
+                    waitServerUp();
+                });
+        });
+
         // 구글 일정 쓰기: 캘린더 ID 자동 저장 + 연결 테스트
         const evCal = document.getElementById('set-events-cal');
         const evStatus = document.getElementById('set-events-status');
