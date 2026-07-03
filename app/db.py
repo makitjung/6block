@@ -177,6 +177,12 @@ def _migrate(conn: sqlite3.Connection):
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cat_template_cell ON cat_template_cell(template_id)"
         )
+    # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.
+    conn.execute(
+        "UPDATE blocks SET category_id = (SELECT id FROM categories WHERE name = '기타' LIMIT 1) "
+        "WHERE block_label IN ('점심', '저녁') AND category_id IS NULL "
+        "AND EXISTS (SELECT 1 FROM categories WHERE name = '기타')"
+    )
 
 
 @contextmanager

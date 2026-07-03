@@ -312,15 +312,22 @@ def ensure_day_skeleton(conn, date_str: str):
         conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
     day_blocks = get_day_blocks()
+    # 점심·저녁 버퍼 블록은 기본 구분을 '기타'로 시드해 시간 분포 통계에 잡히게 한다.
+    etc_row = conn.execute(
+        "SELECT id FROM categories WHERE name = '기타' LIMIT 1"
+    ).fetchone()
+    etc_id = etc_row["id"] if etc_row else None
+    default_cat = {"점심": etc_id, "저녁": etc_id}
     block_ids = {}
     for order, (label, is_core, start, end) in enumerate(day_blocks):
         cur = conn.execute(
             """
             INSERT INTO blocks (date, block_order, block_label, is_core,
-                                start_time, end_time, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                start_time, end_time, category_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (date_str, order, label, 1 if is_core else 0, start, end, now),
+            (date_str, order, label, 1 if is_core else 0, start, end,
+             default_cat.get(label), now),
         )
         block_ids[label] = cur.lastrowid
     for slot_idx, label, s_t, e_t in slots_for_day(day_blocks):
