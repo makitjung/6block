@@ -293,7 +293,10 @@ def _day_has_content(conn, date_str: str) -> bool:
         conn.execute(
             "SELECT 1 FROM blocks WHERE date = ? AND ("
             "TRIM(COALESCE(plan_text,'')) != '' OR TRIM(COALESCE(see_text,'')) != '' "
-            "OR category_id IS NOT NULL OR TRIM(COALESCE(name,'')) != '') LIMIT 1",
+            # 점심·저녁 버퍼 블록은 기본 구분이 '기타'로 자동 세팅되므로 사용자 내용이 아니다.
+            # 코어 블록의 구분만 사용자 내용으로 친다(안 그러면 모든 날이 '내용 있음'이 돼
+            # 세션 시간 변경이 빈 날에도 반영되지 않는다).
+            "OR (is_core = 1 AND category_id IS NOT NULL) OR TRIM(COALESCE(name,'')) != '') LIMIT 1",
             (date_str,),
         ).fetchone()
     )
