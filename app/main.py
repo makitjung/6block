@@ -3,7 +3,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import signal
 import threading
 import urllib.parse
 from contextlib import asynccontextmanager
@@ -2184,25 +2184,14 @@ async def settings_template_cell(request: Request):
 
 # -- 서버 재시작 (launchd) --------------------------------------------------
 
-# 이 앱은 launchd 서비스(io.6block.uvicorn)로 상시 구동된다. 설정의 재시작 버튼이 이
-# 엔드포인트를 부르면 응답을 먼저 돌려준 뒤 launchctl kickstart -k 로 프로세스를 새로
-# 띄운다(코드·.env 변경 반영). 새 세션으로 분리해 부모가 죽어도 재시작이 끝까지 진행된다.
-LAUNCHD_LABEL = "io.6block.uvicorn"
-
-
+# 이 앱은 launchd 서비스(io.6block.uvicorn, KeepAlive)로 상시 구동된다. 설정의 재시작
+# 버튼이 이 엔드포인트를 부르면 응답을 먼저 돌려준 뒤 약 1초 뒤 자기 자신에게 SIGTERM을
+# 보낸다. 정상 종료(SIGKILL 아님)라 SQLite 연결·WAL이 깨끗이 닫히고, launchd가 KeepAlive로
+# 새 프로세스를 띄워 코드·.env 변경을 반영한다.
 @app.post("/settings/restart")
 async def settings_restart():
-    """이 서버(launchd 서비스)를 재시작한다. 응답을 먼저 보내고 약 1초 뒤 kickstart."""
-    target = f"gui/{os.getuid()}/{LAUNCHD_LABEL}"
-    try:
-        subprocess.Popen(
-            ["/bin/sh", "-c", f"sleep 1; launchctl kickstart -k {target}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    """이 서버를 재시작한다(응답 후 SIGTERM 자기 종료 → launchd가 KeepAlive로 재기동)."""
+    threading.Timer(1.0, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
     return JSONResponse({"ok": True})
 
 
