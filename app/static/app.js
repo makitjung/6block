@@ -522,6 +522,11 @@
                     el.dataset.asPrefix = 'dplan';
                     el.dataset.asIdx = m[1];
                     bindAutoSave(el, 'meta', dateStr, 'dplan' + m[1], { groupPrefix: 'dplan' });
+                } else if ((m = name.match(/^(goaltag|plantag|grattag)([123])$/))) {
+                    // 목표/달성/감사 각 줄의 자유 태그(직접 입력). 텍스트처럼 그룹으로 묶어 자동저장.
+                    el.dataset.asPrefix = m[1];
+                    el.dataset.asIdx = m[2];
+                    bindAutoSave(el, 'meta', dateStr, m[1] + m[2], { groupPrefix: m[1] });
                 } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
                 else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
             });
@@ -530,15 +535,6 @@
                 let m;
                 if ((m = name.match(/^bcat_(\d+)$/))) el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
                 else if ((m = name.match(/^cat_(\d+)$/))) el.addEventListener('change', () => saveField('slot', m[1], 'cat', el.value));
-                else if ((m = name.match(/^(goalcat|plancat|gratcat)[123]$/))) {
-                    // 목표/달성/감사 구분 칩: 바뀌면 그 열 3개 값을 함께 보내 서버에서 3칸으로 합친다.
-                    const grp = m[1];
-                    el.addEventListener('change', () => {
-                        const extra = {};
-                        document.querySelectorAll('select[name^="' + grp + '"]').forEach((g) => { extra[g.name] = g.value; });
-                        saveField('meta', dateStr, grp, el.value, extra);
-                    });
-                }
             });
         }
 

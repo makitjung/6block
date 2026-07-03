@@ -285,15 +285,16 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     white-space: nowrap; line-height: 1.45;
 }
 .gp-row .gp-input:focus { white-space: normal; overflow-wrap: anywhere; }
-/* 목표·달성·감사 각 줄의 구분 칩: 화면이 꽉 차 있어 최소 폭 · 색으로만 구분을 드러낸다. */
-.gp-cat {
-    flex: 0 0 auto; max-width: 70px;
+/* 목표·달성·감사 각 줄의 자유 태그 입력: 화면이 꽉 차 있어 좁게 두고 포커스 때만 넓어진다. */
+.gp-tag {
+    flex: 0 0 auto; width: 64px;
     border: 1px solid transparent; background: transparent;
-    font-size: 11px; padding: 2px 2px; border-radius: var(--r-sm);
-    color: var(--text-subtle); cursor: pointer;
+    font-size: 11px; padding: 2px 5px; border-radius: var(--r-pill);
+    color: var(--text-soft); transition: width .15s ease, background .15s ease;
 }
-.gp-cat:hover { border-color: var(--border); }
-.gp-cat.has-cat { font-weight: 700; border-color: currentColor; }
+.gp-tag::placeholder { color: var(--text-subtle); }
+.gp-tag:hover { border-color: var(--border); }
+.gp-tag:focus { width: 120px; background: var(--surface); border-color: var(--border-focus); }
 
 /* 메모·각오 접이식 */
 .ctx-extra { margin: 12px 0 2px; }

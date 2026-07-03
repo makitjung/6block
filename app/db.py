@@ -86,10 +86,17 @@ def _migrate(conn: sqlite3.Connection):
     meta_cols = {r[1] for r in conn.execute("PRAGMA table_info(daily_meta)").fetchall()}
     if "gratitude" not in meta_cols:
         conn.execute("ALTER TABLE daily_meta ADD COLUMN gratitude TEXT")
-    # 목표·달성·감사반성 각 3줄의 구분(카테고리) id를 줄바꿈으로 저장. 없으면 추가.
-    for _cats_col in ("goal_cats", "plan_cats", "grat_cats"):
-        if _cats_col not in meta_cols:
-            conn.execute(f"ALTER TABLE daily_meta ADD COLUMN {_cats_col} TEXT")
+    # 목표·달성·감사반성 각 3줄의 자유 태그(직접 입력, 줄바꿈 3칸). 이전 구분칩 컬럼(*_cats)이
+    # 있으면 자유태그(*_tags)로 이름만 바꾸고, 없으면 새로 추가한다. 멱등.
+    meta_cols_now = {r[1] for r in conn.execute("PRAGMA table_info(daily_meta)").fetchall()}
+    for _old, _new in (("goal_cats", "goal_tags"), ("plan_cats", "plan_tags"),
+                       ("grat_cats", "grat_tags")):
+        if _new in meta_cols_now:
+            continue
+        if _old in meta_cols_now:
+            conn.execute(f"ALTER TABLE daily_meta RENAME COLUMN {_old} TO {_new}")
+        else:
+            conn.execute(f"ALTER TABLE daily_meta ADD COLUMN {_new} TEXT")
     # 그날 성과 캘린더 이벤트 id(재저장 시 갱신·중복 방지). 없으면 추가.
     if "achieve_event_id" not in meta_cols:
         conn.execute("ALTER TABLE daily_meta ADD COLUMN achieve_event_id TEXT")

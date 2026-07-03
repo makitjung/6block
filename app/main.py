@@ -531,10 +531,10 @@ def _day_view(request: Request, date_str: str):
     goals = _split3(meta["today_goal"] if meta else "")
     plans = _split3(meta["daily_plan"] if meta else "")
     grats = _split3(meta["gratitude"] if meta else "")
-    # 각 3줄에 붙인 구분(카테고리) id도 같은 방식으로 3칸으로 분리.
-    goal_cats = _split3(meta["goal_cats"] if meta else "")
-    plan_cats = _split3(meta["plan_cats"] if meta else "")
-    grat_cats = _split3(meta["grat_cats"] if meta else "")
+    # 각 3줄에 직접 입력한 자유 태그도 같은 방식으로 3칸으로 분리.
+    goal_tags = _split3(meta["goal_tags"] if meta else "")
+    plan_tags = _split3(meta["plan_tags"] if meta else "")
+    grat_tags = _split3(meta["grat_tags"] if meta else "")
 
     return templates.TemplateResponse(
         "today.html",
@@ -551,9 +551,9 @@ def _day_view(request: Request, date_str: str):
             "goals": goals,
             "plans": plans,
             "grats": grats,
-            "goal_cats": goal_cats,
-            "plan_cats": plan_cats,
-            "grat_cats": grat_cats,
+            "goal_tags": goal_tags,
+            "plan_tags": plan_tags,
+            "grat_tags": grat_tags,
             "themes_by_label": themes_by_label,
             "block_name_by_id": block_name_by_id,
             "block_events": block_events,
@@ -646,7 +646,7 @@ async def save_day(date_str: str, request: Request):
         conn.execute(
             """
             INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow, gratitude,
-                                    goal_cats, plan_cats, grat_cats)
+                                    goal_tags, plan_tags, grat_tags)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date) DO UPDATE SET
                 today_goal = excluded.today_goal,
@@ -654,9 +654,9 @@ async def save_day(date_str: str, request: Request):
                 memo = excluded.memo,
                 vow = excluded.vow,
                 gratitude = excluded.gratitude,
-                goal_cats = excluded.goal_cats,
-                plan_cats = excluded.plan_cats,
-                grat_cats = excluded.grat_cats
+                goal_tags = excluded.goal_tags,
+                plan_tags = excluded.plan_tags,
+                grat_tags = excluded.grat_tags
             """,
             (
                 date_str,
@@ -665,9 +665,9 @@ async def save_day(date_str: str, request: Request):
                 form.get("memo", ""),
                 form.get("vow", ""),
                 _join3(form, "grat"),
-                _join3(form, "goalcat"),
-                _join3(form, "plancat"),
-                _join3(form, "gratcat"),
+                _join3(form, "goaltag"),
+                _join3(form, "plantag"),
+                _join3(form, "grattag"),
             ),
         )
     # 저장 후: 오늘 달성 3줄을 '성과' 캘린더에 종일 이벤트로 자동 반영(설명란 1. 2. 3.).
@@ -777,23 +777,29 @@ async def save_field(request: Request):
                     % (field, field, field),
                     (date_str, value),
                 )
-            elif field.startswith("goalcat") or field.startswith("plancat") or field.startswith("gratcat"):
-                # 목표/달성/감사 각 줄의 구분 칩 3칸. 바뀐 select(change)가 그룹 3값을 함께 보낸다.
-                if field.startswith("goalcat"):
-                    prefix, col = "goalcat", "goal_cats"
-                elif field.startswith("plancat"):
-                    prefix, col = "plancat", "plan_cats"
+            elif field.startswith("goaltag") or field.startswith("plantag") or field.startswith("grattag"):
+                # 목표/달성/감사 각 줄의 자유 태그 3칸(직접 입력). 바뀐 칸과 그룹 나머지 값을 함께 받아
+                # 합친다. 클라이언트는 prefix+번호(goaltag1) 또는 숫자 키(1/2/3)로 보낼 수 있어 둘 다 받는다.
+                if field.startswith("goaltag"):
+                    prefix, col = "goaltag", "goal_tags"
+                elif field.startswith("plantag"):
+                    prefix, col = "plantag", "plan_tags"
                 else:
-                    prefix, col = "gratcat", "grat_cats"
+                    prefix, col = "grattag", "grat_tags"
                 existing = conn.execute(
                     f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
                 ).fetchone()
                 parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
                 parts = (parts + ["", "", ""])[:3]
                 for i in range(3):
-                    key = f"{prefix}{i + 1}"
-                    if key in form:
-                        parts[i] = (form.get(key, "") or "").strip()
+                    pre_key, num_key = f"{prefix}{i + 1}", str(i + 1)
+                    if pre_key in form:
+                        raw = form.get(pre_key, "") or ""
+                    elif num_key in form:
+                        raw = form.get(num_key, "") or ""
+                    else:
+                        continue
+                    parts[i] = raw.replace("\r", " ").replace("\n", " ").strip()
                 joined = "\n".join(parts)
                 joined = joined if joined.strip() else ""
                 conn.execute(
@@ -1979,12 +1985,12 @@ def data_view(request: Request):
     )
 
 
-def _valid_hhmm30(s: str) -> bool:
-    """'HH:MM' 이고 분이 00/15/30/45, 00:00~24:00 범위인지(15분 슬롯 경계 유지)."""
+def _valid_hhmm(s: str) -> bool:
+    """'HH:MM' 이고 00:00~24:00 범위인지. 분은 자유 — 세션 30분 단위는 블록 길이(30분 배수)로 보장한다."""
     if not re.match(r"^\d{2}:\d{2}$", s or ""):
         return False
     h, m = int(s[:2]), int(s[3:5])
-    return 0 <= h <= 24 and m in (0, 15, 30, 45) and (h * 60 + m) <= 24 * 60
+    return 0 <= h <= 24 and 0 <= m <= 59 and (h * 60 + m) <= 24 * 60
 
 
 @app.post("/settings/blocktimes")
@@ -1998,14 +2004,19 @@ async def settings_blocktimes(request: Request):
         s = (form.get(f"start_{i}") or "").strip()
         e = (form.get(f"end_{i}") or "").strip()
         label = DAY_BLOCKS[i][0]
-        if not _valid_hhmm30(s) or not _valid_hhmm30(e):
+        if not _valid_hhmm(s) or not _valid_hhmm(e):
             return JSONResponse(
-                {"ok": False, "error": f"{label} 시간 형식이 잘못됨(HH:MM, 15분 단위)"},
+                {"ok": False, "error": f"{label} 시간 형식이 잘못됨(HH:MM)"},
                 status_code=400,
             )
         if hhmm_to_min(s) >= hhmm_to_min(e):
             return JSONResponse(
                 {"ok": False, "error": f"{label}: 시작이 끝보다 빨라야 합니다"},
+                status_code=400,
+            )
+        if (hhmm_to_min(e) - hhmm_to_min(s)) % 30 != 0:
+            return JSONResponse(
+                {"ok": False, "error": f"{label}: 블록 길이가 30분 단위여야 합니다(세션 30분 유지)"},
                 status_code=400,
             )
         if prev_end is not None and hhmm_to_min(s) < prev_end:
