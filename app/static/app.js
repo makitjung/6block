@@ -1123,6 +1123,31 @@
             });
         });
 
+        // 성과 캘린더 쓰기: 캘린더 ID 자동 저장 + 연결 테스트
+        const achCal = document.getElementById('set-achieve-cal');
+        const achStatus = document.getElementById('set-achieve-status');
+        const setAchStatus = (on) => {
+            if (!achStatus) return;
+            achStatus.textContent = on ? '켜짐 · 연결됨' : '꺼짐 · ID 입력 필요';
+            achStatus.classList.toggle('ok', !!on);
+            achStatus.classList.toggle('bad', !on);
+        };
+        achCal?.addEventListener('change', () => {
+            postForm('/settings/achieve-calendar', { value: achCal.value.trim() }).then((d) => {
+                if (!d) return;
+                setAchStatus(d.enabled);
+                toast('성과 캘린더 ID 저장');
+            });
+        });
+        document.getElementById('set-achieve-test')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget; btn.disabled = true;
+            postForm('/settings/achieve-calendar/test', {}).then((d) => {
+                btn.disabled = false;
+                if (d && d.ok) toast(d.warn || '연결 OK · 테스트 이벤트 생성/삭제 성공');
+                else toast((d && d.error) || '연결 실패');
+            });
+        });
+
         // AI 연결: base URL·모델 저장 + 연결 테스트 (키는 .env)
         const aiBase = document.getElementById('set-ai-base');
         const aiModel = document.getElementById('set-ai-model');

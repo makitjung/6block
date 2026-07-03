@@ -670,6 +670,25 @@ async def save_day(date_str: str, request: Request):
                 _join3(form, "gratcat"),
             ),
         )
+    # 저장 후: 오늘 달성 3줄을 '성과' 캘린더에 종일 이벤트로 자동 반영(설명란 1. 2. 3.).
+    # 캘린더 I/O는 DB 잠금 밖에서 하고, 실패해도 저장은 그대로 둔다.
+    if gcal_write.achieve_enabled():
+        try:
+            items = [(form.get(f"dplan{i}", "") or "").strip() for i in (1, 2, 3)]
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT achieve_event_id FROM daily_meta WHERE date = ?", (date_str,)
+                ).fetchone()
+            existing = row["achieve_event_id"] if row else None
+            new_id = gcal_write.upsert_achievement_event(date_str, items, existing)
+            if new_id != existing:
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE daily_meta SET achieve_event_id = ? WHERE date = ?",
+                        (new_id, date_str),
+                    )
+        except Exception:
+            pass
     return RedirectResponse(url=f"/day/{date_str}", status_code=303)
 
 
@@ -1907,6 +1926,8 @@ def settings_view(request: Request):
             ],
             "events_calendar_id": gcal_write.events_calendar_id(),
             "gcal_events_on": gcal_write.events_enabled(),
+            "achieve_calendar_id": gcal_write.achieve_calendar_id(),
+            "gcal_achieve_on": gcal_write.achieve_enabled(),
             "sa_email": gcal_write.service_account_email(),
             "ai_status": ai.status(),
             "env_path": str(_env_file_path()),
@@ -2017,6 +2038,21 @@ async def settings_events_calendar(request: Request):
 async def settings_events_calendar_test():
     """저장된 일정용 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
     return JSONResponse(gcal_write.test_events_write())
+
+
+@app.post("/settings/achieve-calendar")
+async def settings_achieve_calendar(request: Request):
+    """오늘 '달성'을 쓸 성과 캘린더 ID를 저장한다(빈 값이면 성과 쓰기 해제)."""
+    form = await request.form()
+    value = (form.get("value") or "").strip()
+    set_setting("gcal_achieve_calendar_id", value)
+    return JSONResponse({"ok": True, "enabled": gcal_write.achieve_enabled()})
+
+
+@app.post("/settings/achieve-calendar/test")
+async def settings_achieve_calendar_test():
+    """저장된 성과 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
+    return JSONResponse(gcal_write.test_achieve_write())
 
 
 @app.post("/settings/category/add")

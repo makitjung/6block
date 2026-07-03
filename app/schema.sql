@@ -51,9 +51,10 @@ CREATE TABLE IF NOT EXISTS daily_meta (
     memo TEXT,
     vow TEXT,
     gratitude TEXT,
-    goal_cats TEXT,     -- 오늘 목표 3줄의 구분(카테고리) id를 줄바꿈으로 저장
-    plan_cats TEXT,     -- 오늘 달성 3줄의 구분 id
-    grat_cats TEXT      -- 감사·반성 3줄의 구분 id
+    goal_cats TEXT,         -- 오늘 목표 3줄의 구분(카테고리) id를 줄바꿈으로 저장
+    plan_cats TEXT,         -- 오늘 달성 3줄의 구분 id
+    grat_cats TEXT,         -- 감사·반성 3줄의 구분 id
+    achieve_event_id TEXT   -- 그날 성과 캘린더 종일 이벤트 id(재저장 갱신·중복 방지)
 );
 
 CREATE TABLE IF NOT EXISTS weekly_meta (

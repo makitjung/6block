@@ -90,6 +90,9 @@ def _migrate(conn: sqlite3.Connection):
     for _cats_col in ("goal_cats", "plan_cats", "grat_cats"):
         if _cats_col not in meta_cols:
             conn.execute(f"ALTER TABLE daily_meta ADD COLUMN {_cats_col} TEXT")
+    # 그날 성과 캘린더 이벤트 id(재저장 시 갱신·중복 방지). 없으면 추가.
+    if "achieve_event_id" not in meta_cols:
+        conn.execute("ALTER TABLE daily_meta ADD COLUMN achieve_event_id TEXT")
     # 슬롯 실행 체크박스(DO 완료 여부)
     slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)").fetchall()}
     if "done" not in slot_cols:

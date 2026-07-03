@@ -152,6 +152,23 @@
 </section>
 
 <section class="card">
+    <h2 class="card-title">성과 캘린더 쓰기 <span class="card-sub">오늘 '달성' 3줄을 종일 이벤트로 · 설명란에 1. 2. 3.</span></h2>
+    <div class="set-data-row">
+        <span class="set-label">캘린더 ID</span>
+        <input type="text" id="set-achieve-cal" value="{{ achieve_calendar_id }}" placeholder="...@group.calendar.google.com" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="set-data-row">
+        <span class="set-label">상태</span>
+        <span class="set-events-status {% if gcal_achieve_on %}ok{% else %}bad{% endif %}" id="set-achieve-status">{% if gcal_achieve_on %}켜짐 · 연결됨{% else %}꺼짐 · ID 입력 필요{% endif %}</span>
+        <button type="button" class="ghost-btn" id="set-achieve-test">연결 테스트</button>
+    </div>
+    {% if sa_email %}
+    <p class="set-events-hint mono">이 캘린더를 구글 캘린더 공유 설정에서 다음 계정에 '변경 권한'으로 공유하세요 · {{ sa_email }}</p>
+    {% endif %}
+    <p class="set-events-hint">오늘 탭에서 저장할 때마다 그날 달성이 이 캘린더에 자동으로 올라가고, 다시 저장하면 같은 날 이벤트가 갱신됩니다.</p>
+</section>
+
+<section class="card">
     <h2 class="card-title">AI 연결 <span class="card-sub">선택 · 자동 세분화와 개선점 문장에 사용 · 없으면 규칙기반으로 동작</span></h2>
     <div class="set-data-row">
         <span class="set-label">base URL</span>
