@@ -1,4 +1,5 @@
 # SQLite 연결과 스키마 초기화, 누락 컬럼 자동 마이그레이션을 담당하는 데이터 액세스 헬퍼
+import fcntl
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -19,16 +20,27 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        # WAL은 읽기(60초 폴링)와 쓰기(저장)가 겹쳐도 서로 막지 않게 해 'database is locked'를
-        # 줄인다. 파일 헤더에 한 번 기록되면 계속 유지되므로 시작 시 한 번만 켠다.
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        _migrate(conn)
-        _seed_categories(conn)
-        _seed_areas(conn)
-        _seed_settings(conn)
-        conn.commit()
+    # 재시작 시 프로세스가 두 개 이상 겹쳐 뜨면 스키마 초기화·마이그레이션(테이블 재구성 DDL)이
+    # 동시에 돌아 데이터가 깨질 수 있다. 파일 락으로 한 프로세스씩만 실행하게 직렬화한다.
+    # 뒤에 온 프로세스는 기다렸다가 이미 끝난 마이그레이션을 조건 검사로 건너뛴다.
+    lock_file = open(DB_PATH.parent / ".init.lock", "w")
+    try:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+        except OSError:
+            pass  # 락 미지원 환경이면 최선 노력으로 진행
+        with sqlite3.connect(DB_PATH) as conn:
+            # WAL은 읽기(60초 폴링)와 쓰기(저장)가 겹쳐도 서로 막지 않게 해 'database is locked'를
+            # 줄인다. 파일 헤더에 한 번 기록되면 계속 유지되므로 시작 시 한 번만 켠다.
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            _migrate(conn)
+            _seed_categories(conn)
+            _seed_areas(conn)
+            _seed_settings(conn)
+            conn.commit()
+    finally:
+        lock_file.close()
 
 
 def _seed_categories(conn: sqlite3.Connection):
@@ -135,6 +147,36 @@ def _migrate(conn: sqlite3.Connection):
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:
         conn.execute("ALTER TABLE inbox ADD COLUMN status TEXT NOT NULL DEFAULT ''")
+    # 구분 템플릿 셀: 평일/주말(day_type) 2행 → 요일(weekday 0~6) 7행으로 무손실 전환.
+    # 기존 평일값은 월~금(0~4), 주말값은 토·일(5~6)로 펼쳐 기존 템플릿을 그대로 보존한다.
+    cell_cols = {r[1] for r in conn.execute("PRAGMA table_info(cat_template_cell)").fetchall()}
+    if cell_cols and "day_type" in cell_cols and "weekday" not in cell_cols:
+        conn.execute("ALTER TABLE cat_template_cell RENAME TO _cat_template_cell_old")
+        conn.execute(
+            "CREATE TABLE cat_template_cell ("
+            " id INTEGER PRIMARY KEY,"
+            " template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,"
+            " weekday INTEGER NOT NULL,"
+            " block_label TEXT NOT NULL,"
+            " category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,"
+            " UNIQUE(template_id, weekday, block_label))"
+        )
+        conn.execute(
+            "INSERT INTO cat_template_cell (template_id, weekday, block_label, category_id) "
+            "SELECT o.template_id, wd.n, o.block_label, o.category_id FROM _cat_template_cell_old o "
+            "JOIN (SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4) wd "
+            "WHERE o.day_type = 'weekday'"
+        )
+        conn.execute(
+            "INSERT INTO cat_template_cell (template_id, weekday, block_label, category_id) "
+            "SELECT o.template_id, wd.n, o.block_label, o.category_id FROM _cat_template_cell_old o "
+            "JOIN (SELECT 5 AS n UNION SELECT 6) wd "
+            "WHERE o.day_type = 'weekend'"
+        )
+        conn.execute("DROP TABLE _cat_template_cell_old")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cat_template_cell ON cat_template_cell(template_id)"
+        )
 
 
 @contextmanager

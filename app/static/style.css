@@ -738,6 +738,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 /* 구분이 지정되면 그 색으로 테두리를 칠해 색 칩처럼 보이게 한다(글자색=톤색). */
 .cat-select.has-cat { border-color: currentColor; font-weight: 700; }
+/* 슬롯이 블록 구분을 상속하면 그 이름·색을 옅게 보여 개별 지정과 구분한다. */
+.cat-select.cat-inherited-sel { opacity: .68; font-style: italic; }
 
 /* 오늘 블록 헤더 장소 콤보박스(홈·회사·독서실·카페·기타) */
 .block-loc {
@@ -1365,11 +1367,13 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .set-tpl-daytype { font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; padding-right: 6px; }
 .set-tpl-cell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 
-/* 주간 탭: 구분 템플릿 적용 컨트롤 */
-.wk-tpl-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.wk-tpl-label { font-weight: 600; }
-.wk-tpl-controls { display: flex; align-items: center; gap: 8px; }
-.wk-tpl-controls select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+/* 주간 탭 7일보기 헤더: 제목 + 컴팩트 구분 템플릿 적용 컨트롤 */
+.wk7-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.wk7-head .card-title { margin: 0; }
+.wk-tpl-inline { display: flex; align-items: center; gap: 6px; }
+.wk-tpl-inline select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; max-width: 44vw; }
+.wk-tpl-inline .wk-tpl-apply { padding: 5px 12px; font-size: 13px; }
+.wk-tpl-edit { color: var(--text-muted); text-decoration: none; font-size: 12px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; }
 
 /* 주간 탭: 장기 계획 맥락 행의 장기 탭 바로가기 */
 .pctx-go { margin-left: auto; flex: 0 0 auto; color: var(--text-muted); text-decoration: none; }

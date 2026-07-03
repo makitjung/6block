@@ -1,7 +1,9 @@
 # 오늘/주간 입력과 PWA 서빙, 포모도로 정적 자원을 제공하는 FastAPI 메인 애플리케이션
 import hashlib
 import json
+import os
 import re
+import subprocess
 import threading
 import urllib.parse
 from contextlib import asynccontextmanager
@@ -1335,7 +1337,7 @@ async def save_week(week_start_str: str, request: Request):
 
 @app.post("/week/apply-template")
 async def week_apply_template(request: Request):
-    """선택한 구분 템플릿을 그 주 7일 코어 블록 구분에 일괄 적용한다(평일 월~금·주말 토·일).
+    """선택한 구분 템플릿을 그 주 7일 코어 블록 구분에 요일별로 일괄 적용한다.
 
     빈 셀은 건너뛰어 기존 구분을 덮지 않는다. 블록 구분은 빈 슬롯에 자동 상속된다.
     """
@@ -1348,14 +1350,14 @@ async def week_apply_template(request: Request):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
-        cells: dict[tuple[str, str], int] = {}
+        cells: dict[tuple[int, str], int] = {}
         for r in conn.execute(
-            "SELECT day_type, block_label, category_id FROM cat_template_cell "
+            "SELECT weekday, block_label, category_id FROM cat_template_cell "
             "WHERE template_id = ?",
             (tid,),
         ):
             if r["category_id"] is not None:
-                cells[(r["day_type"], r["block_label"])] = r["category_id"]
+                cells[(r["weekday"], r["block_label"])] = r["category_id"]
         if not cells:
             return JSONResponse(
                 {"ok": False, "error": "empty-template"}, status_code=400
@@ -1365,9 +1367,8 @@ async def week_apply_template(request: Request):
             d = monday + timedelta(days=i)
             ds = d.strftime("%Y-%m-%d")
             ensure_day_skeleton(conn, ds)
-            day_type = "weekend" if d.weekday() >= 5 else "weekday"
             for label in CORE_LABELS:
-                cid = cells.get((day_type, label))
+                cid = cells.get((d.weekday(), label))
                 if cid is None:
                     continue
                 conn.execute(
@@ -1803,7 +1804,7 @@ def _backup_status() -> list[dict]:
 
 
 def _load_cat_templates(conn) -> list[dict]:
-    """구분 템플릿 목록을 셀(평일/주말 × 코어블록 → 구분)까지 채워 돌려준다."""
+    """구분 템플릿 목록을 셀(요일 0~6 × 코어블록 → 구분)까지 채워 돌려준다."""
     templates_ = [
         dict(r)
         for r in conn.execute(
@@ -1811,11 +1812,11 @@ def _load_cat_templates(conn) -> list[dict]:
             "ORDER BY display_order, id"
         )
     ]
-    cmap: dict[int, dict[str, dict[str, int]]] = {}
+    cmap: dict[int, dict[int, dict[str, int]]] = {}
     for r in conn.execute(
-        "SELECT template_id, day_type, block_label, category_id FROM cat_template_cell"
+        "SELECT template_id, weekday, block_label, category_id FROM cat_template_cell"
     ):
-        cmap.setdefault(r["template_id"], {}).setdefault(r["day_type"], {})[
+        cmap.setdefault(r["template_id"], {}).setdefault(r["weekday"], {})[
             r["block_label"]
         ] = r["category_id"]
     for t in templates_:
@@ -1849,7 +1850,7 @@ def settings_view(request: Request):
             "active_categories": active_categories,
             "cat_templates": cat_templates,
             "core_labels": CORE_LABELS,
-            "day_types": [("weekday", "평일"), ("weekend", "주말")],
+            "weekdays": list(enumerate(KO_WEEKDAYS)),
             "tones": TONES,
             "settings": settings,
             "weekday_concepts": weekday_concepts,
@@ -1861,6 +1862,7 @@ def settings_view(request: Request):
             "gcal_events_on": gcal_write.events_enabled(),
             "sa_email": gcal_write.service_account_email(),
             "ai_status": ai.status(),
+            "env_path": str(BASE_DIR.parent / ".env"),
         },
     )
 
@@ -2102,9 +2104,6 @@ async def settings_weekday(request: Request):
 
 # -- 구분 템플릿 (설정 탭) --------------------------------------------------
 
-_DAY_TYPES = {"weekday", "weekend"}
-
-
 @app.post("/settings/template/add")
 async def settings_template_add(request: Request):
     """새 구분 템플릿을 빈 상태로 추가하고 생성된 id를 돌려준다."""
@@ -2160,26 +2159,50 @@ async def settings_template_delete(request: Request):
 
 @app.post("/settings/template/cell")
 async def settings_template_cell(request: Request):
-    """템플릿 한 칸(평일/주말 × 코어블록)의 구분을 저장한다. 값이 비면 미지정."""
+    """템플릿 한 칸(요일 0~6 × 코어블록)의 구분을 저장한다. 값이 비면 미지정."""
     form = await request.form()
     try:
         tid = int(form.get("template_id"))
+        weekday = int(form.get("weekday"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
-    day_type = (form.get("day_type") or "").strip()
     label = (form.get("block_label") or "").strip()
-    if day_type not in _DAY_TYPES or label not in CORE_LABELS:
+    if not (0 <= weekday <= 6) or label not in CORE_LABELS:
         return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
     raw = form.get("category_id")
     cid = int(raw) if raw else None
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO cat_template_cell "
-            "(template_id, day_type, block_label, category_id) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(template_id, day_type, block_label) DO UPDATE SET "
+            "(template_id, weekday, block_label, category_id) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(template_id, weekday, block_label) DO UPDATE SET "
             "category_id = excluded.category_id",
-            (tid, day_type, label, cid),
+            (tid, weekday, label, cid),
         )
+    return JSONResponse({"ok": True})
+
+
+# -- 서버 재시작 (launchd) --------------------------------------------------
+
+# 이 앱은 launchd 서비스(io.6block.uvicorn)로 상시 구동된다. 설정의 재시작 버튼이 이
+# 엔드포인트를 부르면 응답을 먼저 돌려준 뒤 launchctl kickstart -k 로 프로세스를 새로
+# 띄운다(코드·.env 변경 반영). 새 세션으로 분리해 부모가 죽어도 재시작이 끝까지 진행된다.
+LAUNCHD_LABEL = "io.6block.uvicorn"
+
+
+@app.post("/settings/restart")
+async def settings_restart():
+    """이 서버(launchd 서비스)를 재시작한다. 응답을 먼저 보내고 약 1초 뒤 kickstart."""
+    target = f"gui/{os.getuid()}/{LAUNCHD_LABEL}"
+    try:
+        subprocess.Popen(
+            ["/bin/sh", "-c", f"sleep 1; launchctl kickstart -k {target}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     return JSONResponse({"ok": True})
 
 

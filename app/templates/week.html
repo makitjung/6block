@@ -92,25 +92,6 @@
         </div>
     </details>
 
-    <section class="card wk-tpl-card">
-        <div class="wk-tpl-row">
-            <span class="wk-tpl-label">구분 템플릿 적용 <span class="card-sub">평일·주말 세트로 이번 주 블록 구분을 한 번에 입력</span></span>
-            {% if cat_templates %}
-            <div class="wk-tpl-controls">
-                <select id="wk-apply-tpl-sel" aria-label="적용할 구분 템플릿">
-                    <option value="">템플릿 선택</option>
-                    {% for t in cat_templates %}
-                    <option value="{{ t.id }}">{{ t.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="button" class="primary-btn" id="wk-apply-tpl-btn" data-week="{{ week_start }}">적용</button>
-            </div>
-            {% else %}
-            <a class="ghost-btn" href="/settings">설정 탭에서 템플릿 만들기</a>
-            {% endif %}
-        </div>
-    </section>
-
     {% if cat_summary %}
     <section class="card">
         <h2 class="card-title">카테고리별 시간 분포</h2>
@@ -195,7 +176,23 @@
     </section>
 
     <section class="card">
-        <h2 class="card-title">7일 보기 <span class="card-sub">블록을 누르면 그 날짜의 해당 블록으로 이동</span></h2>
+        <div class="wk7-head">
+            <h2 class="card-title">7일 보기 <span class="card-sub">칸에서 구분을 바로 고르고, 시간을 누르면 그 날짜로 이동</span></h2>
+            {% if cat_templates %}
+            <div class="wk-tpl-inline">
+                <select id="wk-apply-tpl-sel" aria-label="적용할 구분 템플릿">
+                    <option value="">구분 템플릿</option>
+                    {% for t in cat_templates %}
+                    <option value="{{ t.id }}">{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="ghost-btn wk-tpl-apply" id="wk-apply-tpl-btn" data-week="{{ week_start }}">적용</button>
+                <a class="wk-tpl-edit" href="/settings#set-tpl-list" title="설정 탭에서 템플릿 편집">편집</a>
+            </div>
+            {% else %}
+            <a class="ghost-btn" href="/settings#set-tpl-list">구분 템플릿 만들기</a>
+            {% endif %}
+        </div>
         <div class="week-grid">
             {% for d in dates %}
             <article class="day-col">

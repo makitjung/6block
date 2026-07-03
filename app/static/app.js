@@ -331,22 +331,31 @@
     // 카테고리 색은 테마별 톤 변수(--tone-blue/red/black)로 칠해 다크모드에서도 보이게 한다.
     // 슬롯은 왼쪽 띠, 블록·주간 미니블록은 왼쪽 테두리 색으로 구분을 표시한다.
     // 블록 구분 select(.block-cat)의 현재 선택 색 톤을 읽는다(슬롯 상속 색용).
-    function blockTone(blockEl) {
+    // 블록 구분 select(.block-cat)의 현재 선택 톤·이름을 읽는다(슬롯 상속 표시용).
+    function blockCat(blockEl) {
         const bc = blockEl && blockEl.querySelector('.block-cat');
-        if (!bc) return '';
+        if (!bc || !bc.value) return { tone: '', name: '' };
         const opt = bc.options[bc.selectedIndex];
-        return (opt && opt.dataset) ? (opt.dataset.tone || '') : '';
+        if (!opt) return { tone: '', name: '' };
+        return { tone: (opt.dataset ? opt.dataset.tone || '' : ''), name: (opt.textContent || '').trim() };
     }
     function paintCategory(sel) {
         const opt = sel.options[sel.selectedIndex];
         let tone = (opt && opt.dataset) ? opt.dataset.tone : '';
         const slot = sel.closest('.slot');
-        // 슬롯 구분이 비면(상속) 그 블록의 구분 색을 따라 왼쪽 띠를 칠한다.
+        // 슬롯 구분이 비면(상속) 그 블록의 구분 이름·색을 드롭다운에 그대로 표시한다(값은 빈칸=상속 유지).
         let inherited = false;
-        if (slot && !tone) { tone = blockTone(slot.closest('.block')); inherited = !!tone; }
+        if (slot && !sel.value) {
+            const bc = blockCat(slot.closest('.block'));
+            tone = bc.tone;
+            inherited = !!bc.tone;
+            const blank = sel.options[0];
+            if (blank && blank.value === '') blank.textContent = inherited ? bc.name : '';
+        }
         const accent = tone ? `var(--tone-${tone})` : '';
-        sel.style.color = inherited ? '' : accent;   // 상속 슬롯은 글자색은 비워 둔다
-        sel.classList.toggle('has-cat', !!accent && !inherited);
+        sel.style.color = accent;
+        sel.classList.toggle('has-cat', !!accent && !inherited);   // 개별 지정한 슬롯만 굵게
+        sel.classList.toggle('cat-inherited-sel', inherited);       // 상속(블록 따라감)은 옅게 표시
         if (slot) {
             slot.style.setProperty('--row-accent', accent || 'transparent');
             slot.classList.toggle('cat-inherited', inherited);
@@ -1015,10 +1024,44 @@
         document.querySelectorAll('.set-tpl-cell').forEach((sel) => {
             sel.addEventListener('change', () => {
                 postForm('/settings/template/cell', {
-                    template_id: sel.dataset.tpl, day_type: sel.dataset.daytype,
+                    template_id: sel.dataset.tpl, weekday: sel.dataset.weekday,
                     block_label: sel.dataset.label, category_id: sel.value,
                 }).then(() => toast('저장'));
             });
+        });
+
+        // 서버(launchd) 재시작: 요청 후 서버가 다시 올라오면 자동 새로고침
+        const restartBtn = document.getElementById('set-restart-btn');
+        const restartMsg = document.getElementById('set-restart-msg');
+        const waitServerUp = () => {
+            let tries = 0;
+            const ping = () => {
+                tries += 1;
+                fetch('/static/manifest.json', { cache: 'no-store' })
+                    .then((r) => { if (r.ok) location.reload(); else throw 0; })
+                    .catch(() => { if (tries < 30) setTimeout(ping, 1000); else location.reload(); });
+            };
+            setTimeout(ping, 2500);
+        };
+        restartBtn?.addEventListener('click', () => {
+            if (!confirm('서버를 재시작할까요? 몇 초간 화면이 잠시 끊긴 뒤 자동으로 새로고침됩니다.')) return;
+            restartBtn.disabled = true;
+            if (restartMsg) restartMsg.textContent = '재시작 요청 중…';
+            postForm('/settings/restart', {})
+                .then((d) => {
+                    if (d && d.ok) {
+                        if (restartMsg) restartMsg.textContent = '재시작 중… 서버가 올라오면 자동 새로고침';
+                        waitServerUp();
+                    } else {
+                        restartBtn.disabled = false;
+                        if (restartMsg) restartMsg.textContent = '재시작 실패' + (d && d.error ? ' · ' + d.error : '');
+                    }
+                })
+                .catch(() => {
+                    // 요청 도중 서버가 이미 내려갔을 수 있다. 올라오면 새로고침.
+                    if (restartMsg) restartMsg.textContent = '재시작 중… 서버가 올라오면 자동 새로고침';
+                    waitServerUp();
+                });
         });
 
         // 구글 일정 쓰기: 캘린더 ID 자동 저장 + 연결 테스트
