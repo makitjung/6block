@@ -1773,18 +1773,27 @@
             list.querySelectorAll('.rf-preview').forEach((p) =>
                 p.addEventListener('click', () => openEditModal(p.closest('.rf-card'))));
 
-            // 다시보기 사본: 원본과 별개의 '다시보기 내용'을 원본 review_note에 저장
-            list.querySelectorAll('.rf-revisit-save').forEach((b) =>
-                b.addEventListener('click', () => {
-                    const ta = b.closest('.rf-revisit').querySelector('.rf-revisit-input');
-                    fetch('/reflect/review-note/' + b.dataset.target, {
+            // 다시보기 사본: '다시보기 내용'을 버튼 없이 자동 저장(원본 review_note + 사본 캘린더 반영)
+            list.querySelectorAll('.rf-revisit-input').forEach((ta) => {
+                if (ta.dataset.rfnote) return;
+                ta.dataset.rfnote = '1';
+                let timer = null, sent = ta.value;
+                const flush = () => {
+                    if (timer) { clearTimeout(timer); timer = null; }
+                    if (ta.value === sent) return;
+                    sent = ta.value;
+                    fetch('/reflect/review-note/' + ta.dataset.target, {
                         method: 'POST', headers: FORM_HEADERS,
                         body: new URLSearchParams({ note: ta.value }).toString(),
                     }).then((r) => r.json()).then((d) => {
-                        if (d && d.ok) { b.textContent = '저장됨'; setTimeout(() => { b.textContent = '저장'; }, 1500); }
+                        if (d && d.ok) { if (typeof autosaveToast === 'function') autosaveToast(); }
                         else toast('저장 실패');
                     }).catch(() => toast('저장 실패'));
-                }));
+                };
+                ta.addEventListener('change', flush);
+                ta.addEventListener('blur', flush);
+                ta.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(flush, 1200); });
+            });
 
             markClipped();
         }

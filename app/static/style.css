@@ -1343,19 +1343,17 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 
 /* 고결감: 일정한 크기의 카드 + 미리보기(넘치면 '더보기') */
 .reflect-right .rf-card { height: 230px; overflow: hidden; }
-/* 다시보기 사본 카드: 원본(참고) + 새 내용(분리 입력)을 모두 보여주려 높이를 자동으로 푼다 */
+/* 다시보기 사본 카드: 다시보기 내용(위) + 원본(아래 참고). 고정 높이를 풀어 안 잘리게 한다 */
 .reflect-right .rf-card[data-source] { height: auto; overflow: visible; }
-.rf-ref-label { display: inline-block; margin: 4px 0 2px; font-size: 11px; font-weight: 700;
-    color: var(--text-muted); letter-spacing: .02em; }
-.rf-revisit { margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--border);
-    display: flex; flex-direction: column; gap: 6px; }
+.rf-revisit { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
 .rf-revisit-label { font-size: 12px; font-weight: 700; color: var(--accent); }
 .rf-revisit-sub { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
-.rf-revisit-row { display: flex; gap: 8px; align-items: flex-start; }
-.rf-revisit-input { flex: 1; min-width: 0; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border);
+.rf-revisit-input { width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border);
     border-radius: 8px; background: var(--accent-soft); color: var(--text); resize: vertical; }
 .rf-revisit-input:focus { outline: none; border-color: var(--accent); }
-.rf-revisit-save { align-self: flex-start; flex: 0 0 auto; font-size: 12px; padding: 5px 12px; }
+.rf-card[data-source] .rf-ref { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 8px; opacity: .8; }
+.rf-ref-label { display: inline-block; margin-bottom: 3px; font-size: 11px; font-weight: 700;
+    color: var(--text-muted); letter-spacing: .02em; }
 button.rf-badge.rf-kind-cycle { border: none; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border); }
 .rf-preview { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; cursor: pointer; }
