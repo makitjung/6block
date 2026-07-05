@@ -2827,6 +2827,10 @@ def _import_gcal_reflections(force: bool = False):
         # 1) 추가·수정: 구글 이벤트를 로컬에 맞춘다(로컬 전용 필드 review_date·source_id는 보존).
         for eid, ev in by_id.items():
             r = local_by_event.get(eid)
+            # 다시보기 사본은 설명이 '다시보기 내용 우선 + 원본'이라 6block이 관리한다.
+            # 구글 설명을 로컬 text로 되덮으면 원본 참조가 깨지므로 역동기화에서 뺀다(삭제 감지는 유지).
+            if r is not None and r["source_id"]:
+                continue
             if r is None:
                 conn.execute(
                     "INSERT INTO reflection (kind, title, text, tags, event_date, "
@@ -3080,8 +3084,8 @@ async def reflect_update(item_id: int, request: Request):
             review_title = f"다시보기: {title}"
             if child is None:
                 try:
-                    rev_eid = gcal_write.create_event(
-                        kind, review_title, text, tags, review_date
+                    rev_eid = gcal_write.create_review_copy(
+                        kind, review_title, r["review_note"], text, tags, review_date
                     )
                 except Exception:
                     rev_eid = None
@@ -3100,8 +3104,8 @@ async def reflect_update(item_id: int, request: Request):
                     except Exception:
                         pass
                 try:
-                    rev_eid = gcal_write.create_event(
-                        kind, review_title, text, tags, review_date
+                    rev_eid = gcal_write.create_review_copy(
+                        kind, review_title, r["review_note"], text, tags, review_date
                     )
                 except Exception:
                     rev_eid = None
@@ -3114,8 +3118,9 @@ async def reflect_update(item_id: int, request: Request):
             else:
                 if child["gcal_event_id"]:
                     try:
-                        gcal_write.update_event(
-                            child["gcal_event_id"], kind, review_title, text, tags
+                        gcal_write.update_review_copy(
+                            child["gcal_event_id"], kind, review_title,
+                            r["review_note"], text, tags
                         )
                     except Exception:
                         pass
@@ -3173,13 +3178,29 @@ def reflect_delete(item_id: int):
 
 @app.post("/reflect/review-note/{item_id}")
 async def reflect_review_note(item_id: int, request: Request):
-    """다시 볼 날짜에 남기는 재감상 메모를 저장한다."""
+    """다시보기 내용을 저장하고, 사본 캘린더 이벤트에 다시보기 내용을 우선 반영한다."""
     form = await request.form()
     note = (form.get("note") or "").strip()
     with get_conn() as conn:
         conn.execute(
             "UPDATE reflection SET review_note = ? WHERE id = ?", (note, item_id)
         )
+        orig = conn.execute(
+            "SELECT kind, title, text, tags FROM reflection WHERE id = ?", (item_id,)
+        ).fetchone()
+        child = conn.execute(
+            "SELECT gcal_event_id FROM reflection WHERE source_id = ?", (item_id,)
+        ).fetchone()
+    # 사본(다시보기) 캘린더 이벤트 설명을 '다시보기 내용 우선 + 원본'으로 갱신(있을 때만).
+    if orig and child and child["gcal_event_id"] and gcal_write.enabled():
+        try:
+            gcal_write.update_review_copy(
+                child["gcal_event_id"], orig["kind"],
+                f"다시보기: {(orig['title'] or '').strip()}",
+                note, orig["text"] or "", orig["tags"] or "",
+            )
+        except Exception:
+            pass
     return JSONResponse({"ok": True})
 
 

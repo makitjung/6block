@@ -345,6 +345,29 @@ def update_event(event_id: str, kind: str, title: str, content: str, tags: str) 
         return False
 
 
+def _review_copy_content(review_note: str, original_text: str) -> str:
+    """다시보기 사본 이벤트 본문. 다시보기 내용을 위에, 원본을 아래에 둔다(다시보기 우선)."""
+    note = (review_note or "").strip()
+    orig = (original_text or "").strip()
+    if note and orig:
+        return note + "\n\n── 원본 ──\n" + orig
+    return note or orig
+
+
+def create_review_copy(kind, title, review_note, original_text, tags, event_date):
+    """다시보기 사본 이벤트를 만든다(설명 = 다시보기 내용 우선 + 원본)."""
+    return create_event(
+        kind, title, _review_copy_content(review_note, original_text), tags, event_date
+    )
+
+
+def update_review_copy(event_id, kind, title, review_note, original_text, tags) -> bool:
+    """다시보기 사본 이벤트의 설명을 다시보기 내용 우선으로 갱신한다."""
+    return update_event(
+        event_id, kind, title, _review_copy_content(review_note, original_text), tags
+    )
+
+
 def delete_event(event_id: str) -> bool:
     """이벤트를 삭제한다. 성공 여부를 돌려준다(없거나 비활성이면 False)."""
     svc = _svc()
