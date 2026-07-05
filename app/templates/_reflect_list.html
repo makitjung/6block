@@ -36,10 +36,20 @@
     </div>
     <div class="rf-preview" title="클릭하면 전체 보기·수정">
         <div class="rf-title-view">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
+        {% if it.source_id %}<span class="rf-ref-label">원본 내용</span>{% endif %}
         {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
         {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
         <span class="rf-more">더보기</span>
     </div>
+    {% if it.source_id %}
+    <div class="rf-revisit">
+        <span class="rf-revisit-label">다시보기 내용 <span class="rf-revisit-sub">원본과 별개로 기록</span></span>
+        <div class="rf-revisit-row">
+            <textarea class="rf-revisit-input" rows="2" data-target="{{ it.source_id }}" placeholder="다시 보며 드는 생각을 적어두세요">{{ it.parent_review_note or '' }}</textarea>
+            <button type="button" class="rf-revisit-save ghost-btn" data-target="{{ it.source_id }}">저장</button>
+        </div>
+    </div>
+    {% endif %}
 </article>
 {% endfor %}
 <div class="ctx-empty rf-no-match" hidden>검색 결과가 없습니다.</div>

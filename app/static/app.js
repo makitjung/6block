@@ -1773,6 +1773,19 @@
             list.querySelectorAll('.rf-preview').forEach((p) =>
                 p.addEventListener('click', () => openEditModal(p.closest('.rf-card'))));
 
+            // 다시보기 사본: 원본과 별개의 '다시보기 내용'을 원본 review_note에 저장
+            list.querySelectorAll('.rf-revisit-save').forEach((b) =>
+                b.addEventListener('click', () => {
+                    const ta = b.closest('.rf-revisit').querySelector('.rf-revisit-input');
+                    fetch('/reflect/review-note/' + b.dataset.target, {
+                        method: 'POST', headers: FORM_HEADERS,
+                        body: new URLSearchParams({ note: ta.value }).toString(),
+                    }).then((r) => r.json()).then((d) => {
+                        if (d && d.ok) { b.textContent = '저장됨'; setTimeout(() => { b.textContent = '저장'; }, 1500); }
+                        else toast('저장 실패');
+                    }).catch(() => toast('저장 실패'));
+                }));
+
             markClipped();
         }
 

@@ -720,6 +720,8 @@ async def save_field(request: Request):
         except (TypeError, ValueError):
             return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
 
+    # 달성(dplan) 자동저장이면 저장 뒤 성과 캘린더에 반영할 날짜를 담는다(없으면 None).
+    achieve_date = None
     with get_conn() as conn:
         if entity == "block":
             if field not in _VALID_BLOCK_FIELDS:
@@ -843,6 +845,8 @@ async def save_field(request: Request):
                     % (col, col, col),
                     (date_str, joined),
                 )
+                if prefix == "dplan":
+                    achieve_date = date_str  # 달성이 바뀌었으니 저장 후 성과 캘린더 반영
             else:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
         elif entity == "wmeta":
@@ -871,6 +875,25 @@ async def save_field(request: Request):
             )
         else:
             return JSONResponse({"ok": False, "error": "bad-entity"}, status_code=400)
+    # 달성 자동저장이면 성과 캘린더에도 즉시 반영한다(저장 버튼 없이도 최신 유지). DB 잠금 밖에서 I/O.
+    if achieve_date and gcal_write.achieve_enabled():
+        try:
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT daily_plan, achieve_event_id FROM daily_meta WHERE date = ?",
+                    (achieve_date,),
+                ).fetchone()
+            items = (row["daily_plan"] or "").split("\n") if row else []
+            existing = row["achieve_event_id"] if row else None
+            new_id = gcal_write.upsert_achievement_event(achieve_date, items, existing)
+            if new_id != existing:
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE daily_meta SET achieve_event_id = ? WHERE date = ?",
+                        (new_id, achieve_date),
+                    )
+        except Exception:
+            pass
     return JSONResponse({"ok": True})
 
 
@@ -2869,6 +2892,13 @@ def _reflect_ctx(q: str = "", kind: str = "") -> dict:
                 "SELECT id, source_id FROM reflection WHERE source_id IS NOT NULL"
             )
         }
+        # 다시보기 사본 카드에 보여줄 '원본의 다시보기 내용'(원본 id → review_note).
+        parent_note_map = {
+            r["id"]: (r["review_note"] or "")
+            for r in conn.execute(
+                "SELECT id, review_note FROM reflection WHERE source_id IS NULL"
+            )
+        }
         tag_rows = conn.execute(
             "SELECT DISTINCT tags FROM reflection WHERE tags IS NOT NULL AND tags != ''"
         ).fetchall()
@@ -2884,6 +2914,8 @@ def _reflect_ctx(q: str = "", kind: str = "") -> dict:
     for r in rows:
         d = dict(r)
         d["review_child_id"] = child_map.get(r["id"])
+        if r["source_id"]:
+            d["parent_review_note"] = parent_note_map.get(r["source_id"], "")
         items.append(d)
     return {
         "items": items,
@@ -2903,7 +2935,7 @@ def _reflect_sig(ctx: dict) -> str:
     for it in ctx["items"]:
         parts.append("|".join(str(it.get(k, "")) for k in (
             "id", "kind", "title", "text", "tags", "event_date", "review_date",
-            "synced", "review_child_id")))
+            "synced", "review_child_id", "parent_review_note")))
     for u in ctx["upcoming_reviews"]:
         parts.append("u" + "|".join(str(u.get(k, "")) for k in (
             "id", "review_date", "title", "text")))
