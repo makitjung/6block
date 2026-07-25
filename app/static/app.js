@@ -1412,6 +1412,43 @@
         }
     }
 
+    // ---- 주간 탭: 이번 주 장기 항목 (장기 ↔ 주간 연동) ---------------------
+    // 진척률은 장기 탭과 같은 엔드포인트로 저장해 막대·상위 항목이 함께 갱신되고,
+    // '주간 목표로'·'블록으로'는 서버가 합친 결과를 그대로 화면 입력칸에 반영한다.
+    function bindWeekLtItems() {
+        const card = document.querySelector('.wk-lt');
+        if (!card) return;
+        const week = card.dataset.week;
+        card.querySelectorAll('.wk-lt-row').forEach((row) => {
+            const id = row.dataset.id;
+            const prog = row.querySelector('.wk-lt-prog-input');
+            prog?.addEventListener('change', () => {
+                const v = Math.max(0, Math.min(100, parseInt(prog.value, 10) || 0));
+                prog.value = v;
+                postForm('/plan/item/update', { id: id, progress: v })
+                    .then((d) => toast((d && d.ok) ? '진척률 저장' : '저장 실패'));
+            });
+            row.querySelector('.wk-lt-goal')?.addEventListener('click', () => {
+                postForm('/week/item-to-goal', { week_start: week, item_id: id }).then((d) => {
+                    if (!d || !d.ok) { toast((d && d.error) || '옮기기 실패'); return; }
+                    const ta = document.querySelector('textarea[name="weekly_goal"]');
+                    if (ta) ta.value = d.text;
+                    toast(d.skipped ? '이미 주간 목표에 있습니다' : '주간 목표에 추가');
+                });
+            });
+            row.querySelector('.wk-lt-theme')?.addEventListener('click', () => {
+                const label = row.querySelector('.wk-lt-label')?.value || '';
+                postForm('/week/item-to-theme',
+                         { week_start: week, item_id: id, label: label }).then((d) => {
+                    if (!d || !d.ok) { toast((d && d.error) || '옮기기 실패'); return; }
+                    const inp = document.querySelector('input[name="theme_' + d.label + '"]');
+                    if (inp) inp.value = d.text;
+                    toast(d.label + ' 이름에 반영');
+                });
+            });
+        });
+    }
+
     function bindPlanAreas() {
         const addBtn = document.getElementById('pg-area-add');
         if (!addBtn && !document.querySelector('.pg-area-name')) return;
@@ -2251,6 +2288,9 @@
                 }
             });
         });
+
+        // 주간 탭: 이번 주 장기 항목(장기 탭 계획 막대) 연동
+        bindWeekLtItems();
 
         // 주간 탭: 구분 템플릿 일괄 적용
         const wkApplyBtn = document.getElementById('wk-apply-tpl-btn');

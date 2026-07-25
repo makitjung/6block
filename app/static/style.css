@@ -1032,13 +1032,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .crumb:hover { background: var(--surface-3); color: var(--text); }
 .crumb.cur { color: var(--accent); font-weight: 700; }
 .crumb-sep { color: var(--text-subtle); }
-.plan-context { margin-top: 12px; }
-.pctx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.pctx-area { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; background: var(--surface-2); }
-.pctx-name { font-weight: 700; color: var(--text-soft); margin-bottom: 4px; }
-.pctx-row { display: flex; gap: 6px; font-size: 12px; color: var(--text-muted); line-height: 1.4; padding: 2px 0; }
-.pctx-lv { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
-.pctx-text { white-space: pre-wrap; }
 
 /* -- 오프라인·지난 날짜 안내 배너 -- */
 .stale-banner {
@@ -1379,10 +1372,6 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .wk-tpl-inline .wk-tpl-apply { padding: 5px 12px; font-size: 13px; }
 .wk-tpl-edit { color: var(--text-muted); text-decoration: none; font-size: 12px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; }
 
-/* 주간 탭: 장기 계획 맥락 행의 장기 탭 바로가기 */
-.pctx-go { margin-left: auto; flex: 0 0 auto; color: var(--text-muted); text-decoration: none; }
-.pctx-go:hover { color: var(--accent); }
-
 /* 분석 탭: 개선점 카드 */
 .insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .insight-item { position: relative; padding: 8px 10px 8px 26px; background: var(--surface-2);
@@ -1557,10 +1546,34 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     .gt-form, .gt-edit { margin-left: 0; }
 }
 
-/* 주간 탭: 이 주에 걸친 간트 항목 */
-.pctx-item .pctx-lv { color: var(--accent); }
-.pctx-range { font-size: 11px; color: var(--text-subtle); }
-.pctx-prog { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+/* 주간 탭: 이번 주 장기 항목(장기 탭 계획 막대 연동) */
+.wk-lt-list { display: flex; flex-direction: column; gap: 6px; }
+.wk-lt-row {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    align-items: center; gap: 10px;
+    padding: 7px 10px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.wk-lt-row:hover { border-color: var(--border-strong); }
+.wk-lt-area {
+    font-size: 11px; font-weight: 700; color: var(--gt-d0-tx);
+    background: var(--gt-d0-bg); border: 1px solid var(--gt-d0-bd);
+    padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap;
+}
+.wk-lt-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-lt-range { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+.wk-lt-prog { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--text-muted); }
+.wk-lt-prog-input { width: 58px; text-align: right; }
+.wk-lt-prog-input:disabled { opacity: .5; }
+.wk-lt-send { display: inline-flex; align-items: center; gap: 5px; }
+.wk-lt-send .ghost-btn { font-size: 12px; padding: 4px 10px; white-space: nowrap; }
+.wk-lt-label { padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text); font-size: 12px; width: auto; }
+@media (max-width: 820px) {
+    .wk-lt-row { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; }
+    .wk-lt-prog { grid-column: 2; justify-self: start; }
+    .wk-lt-send { grid-column: 1 / -1; flex-wrap: wrap; }
+}
 
 /* 주간 리뷰: 수집함 GTD 상태 필터 */
 .wk-inbox-filter { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 8px; }

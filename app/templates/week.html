@@ -36,32 +36,37 @@
         </div>
     </section>
 
-    {% if plan_context %}
-    <details class="card theme-fold plan-context" open>
-        <summary class="card-title">장기 계획 맥락 <span class="card-sub">이 주가 속한 연·분기·월 계획과 장기 탭의 이 주 계획 · 큰 그림을 보며 주간을 계획</span></summary>
-        <div class="pctx-grid">
-            {% for a in plan_context %}
-            <div class="pctx-area">
-                <div class="pctx-name">{{ a.name }}</div>
-                {% for r in a.rows %}
-                <div class="pctx-row">
-                    <span class="pctx-lv">{{ r.level_label }}</span>
-                    <span class="pctx-text">{{ r.content }}</span>
-                    <a class="pctx-go mono" href="/plan?level={{ r.level }}&amp;anchor={{ r.anchor }}" title="장기 탭에서 열기">↗</a>
+    <section class="card wk-lt" data-week="{{ week_start }}">
+        <h2 class="card-title">이번 주 장기 항목
+            <span class="card-sub">이 주에 걸친 장기 계획 · 진척률을 고치면 장기 탭 막대에 바로 반영됩니다 ·
+                <a href="/plan?level=week&amp;anchor={{ week_start }}">장기 탭</a></span>
+        </h2>
+        {% if week_items %}
+        <div class="wk-lt-list">
+            {% for it in week_items %}
+            <div class="wk-lt-row" data-id="{{ it.id }}">
+                <span class="wk-lt-area">{{ it.area_name }}</span>
+                <span class="wk-lt-title">{{ it.title }}</span>
+                <span class="wk-lt-range mono">{{ it.range }}</span>
+                <label class="wk-lt-prog">
+                    <input type="number" class="wk-lt-prog-input" min="0" max="100" step="5"
+                           value="{{ it.progress }}" {% if it.has_children %}disabled title="하위 항목에서 자동 계산됩니다"{% endif %}
+                           aria-label="{{ it.title }} 진척률">%
+                </label>
+                <div class="wk-lt-send">
+                    <button type="button" class="ghost-btn wk-lt-goal" title="주간 목표 끝에 한 줄로 추가">주간 목표로</button>
+                    <select class="wk-lt-label" aria-label="블록 고르기">
+                        {% for lbl in core_labels %}<option value="{{ lbl }}">{{ lbl }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="ghost-btn wk-lt-theme" title="고른 블록의 이번 주 이름으로 넣기">블록으로</button>
                 </div>
-                {% endfor %}
-                {% for it in a.gantt %}
-                <div class="pctx-row pctx-item">
-                    <span class="pctx-lv">간트</span>
-                    <span class="pctx-text">{{ it.title }} <span class="mono pctx-range">{{ it.range }}</span></span>
-                    <span class="pctx-prog mono">{{ it.progress }}%</span>
-                </div>
-                {% endfor %}
             </div>
             {% endfor %}
         </div>
-    </details>
-    {% endif %}
+        {% else %}
+        <div class="ctx-empty">이 주에 걸친 장기 항목이 없습니다. 장기 탭에서 계획 막대를 만들면 여기에 나옵니다.</div>
+        {% endif %}
+    </section>
 
     <section class="meta-card">
         <div class="meta-grid">
@@ -87,7 +92,7 @@
     <details class="card theme-fold">
         <summary class="card-title">이번 주 블록 이름 <span class="card-sub">여기서 정한 이름이 그 주의 일간 블록에 표시됩니다</span></summary>
         <div class="theme-tools">
-            <button type="button" class="ghost-btn" id="wk-fill-themes" data-week="{{ week_start }}" title="주간 목표·이 주 장기 계획을 B1~B6 테마로 나눠 빈 칸만 채웁니다">이번 주 계획으로 블록 테마 자동 채우기</button>
+            <button type="button" class="ghost-btn" id="wk-fill-themes" data-week="{{ week_start }}" title="주간 목표·이 주 장기 항목을 B1~B6 테마로 나눠 빈 칸만 채웁니다">이번 주 계획으로 블록 테마 자동 채우기</button>
         </div>
         <div class="theme-grid">
             {% for lbl in core_labels %}

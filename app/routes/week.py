@@ -208,7 +208,7 @@ def _week_view(request: Request, monday: date):
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
             "cat_templates": [dict(t) for t in wk_templates],
-            "plan_context": plan_context,
+            "week_items": week_items,
             "core_labels": CORE_LABELS,
             "week_block_events": week_block_events,
             "week_allday": week_allday,
@@ -337,32 +337,107 @@ async def week_apply_template(request: Request):
     return JSONResponse({"ok": True, "applied": applied})
 
 
-@router.post("/week/decompose-themes")
-async def week_decompose_themes(request: Request):
-    """이번 주 계획(주간 목표 + 장기 주 계획)을 B1~B6 블록 테마로 나눈다. 빈 테마만 채운다."""
+@router.post("/week/item-to-goal")
+async def week_item_to_goal(request: Request):
+    """이번 주 장기 항목 제목을 그 주 '주간 목표' 끝에 한 줄로 붙인다(장기 → 주간)."""
     form = await request.form()
     ws = (form.get("week_start") or "").strip()
     try:
+        item_id = int(form.get("item_id"))
         datetime.strptime(ws, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    with get_conn() as conn:
+        it = conn.execute(
+            "SELECT title FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not it:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        row = conn.execute(
+            "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (ws,)
+        ).fetchone()
+        cur = ((row["weekly_goal"] if row else "") or "").rstrip()
+        if it["title"] in cur.split("\n"):
+            return JSONResponse({"ok": True, "text": cur, "skipped": True})
+        text = f"{cur}\n{it['title']}" if cur else it["title"]
+        conn.execute(
+            "INSERT INTO weekly_meta (week_start, weekly_goal) VALUES (?, ?) "
+            "ON CONFLICT(week_start) DO UPDATE SET weekly_goal = excluded.weekly_goal",
+            (ws, text),
+        )
+    return JSONResponse({"ok": True, "text": text})
+
+
+@router.post("/week/item-to-theme")
+async def week_item_to_theme(request: Request):
+    """이번 주 장기 항목 제목을 고른 블록(B1~B6)의 이번 주 이름으로 넣는다(장기 → 주간)."""
+    form = await request.form()
+    ws = (form.get("week_start") or "").strip()
+    label = (form.get("label") or "").strip()
+    try:
+        item_id = int(form.get("item_id"))
+        datetime.strptime(ws, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    if label not in CORE_LABELS:
+        return JSONResponse({"ok": False, "error": "블록을 고르세요"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        it = conn.execute(
+            "SELECT title FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not it:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        row = conn.execute(
+            "SELECT theme_text FROM weekly_block_themes "
+            "WHERE week_start = ? AND block_label = ?",
+            (ws, label),
+        ).fetchone()
+        cur = ((row["theme_text"] if row else "") or "").strip()
+        # 이미 이름이 있으면 덮지 않고 뒤에 붙인다(같은 내용이면 그대로 둔다).
+        if cur == it["title"] or it["title"] in [p.strip() for p in cur.split("·")]:
+            text = cur
+        else:
+            text = f"{cur} · {it['title']}" if cur else it["title"]
+        conn.execute(
+            "INSERT INTO weekly_block_themes (week_start, block_label, theme_text, "
+            "updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(week_start, block_label) DO UPDATE SET "
+            "theme_text = excluded.theme_text, updated_at = excluded.updated_at",
+            (ws, label, text, now),
+        )
+    return JSONResponse({"ok": True, "label": label, "text": text})
+
+
+@router.post("/week/decompose-themes")
+async def week_decompose_themes(request: Request):
+    """이번 주 계획(주간 목표 + 이 주 장기 항목)을 B1~B6 블록 테마로 나눈다. 빈 테마만 채운다."""
+    form = await request.form()
+    ws = (form.get("week_start") or "").strip()
+    try:
+        monday = datetime.strptime(ws, "%Y-%m-%d").date()
     except ValueError:
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
+    sunday = (monday + timedelta(days=6)).strftime("%Y-%m-%d")
     with get_conn() as conn:
         wm = conn.execute(
             "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (ws,)
         ).fetchone()
         goal = ((wm["weekly_goal"] if wm else "") or "").strip()
         wk_plans = [
-            (r["content"] or "").strip()
+            r["title"]
             for r in conn.execute(
-                "SELECT content FROM lt_plan WHERE level='week' AND period_key=?", (ws,)
+                "SELECT i.title FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
+                "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
+                "ORDER BY a.display_order, i.start_date, i.id",
+                (sunday, ws),
             )
-            if (r["content"] or "").strip()
         ]
         context = "\n".join([goal] + wk_plans).strip()
         if not context:
             return JSONResponse(
-                {"ok": False, "error": "주간 목표나 이 주 계획을 먼저 적어 주세요"},
+                {"ok": False, "error": "주간 목표나 이 주 장기 항목을 먼저 적어 주세요"},
                 status_code=400,
             )
         existing = {
