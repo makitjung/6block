@@ -32,11 +32,12 @@
         {% endfor %}
     </nav>
     <span class="plan-legend">
-        <span class="pl-key d0"></span>상위 기간
-        <span class="pl-key d1"></span>하위
-        <span class="pl-key d2"></span>더 하위
+        <span class="pl-key" data-span="l"></span>장기 6개월↑
+        <span class="pl-key" data-span="m"></span>중기 1~6개월
+        <span class="pl-key" data-span="s"></span>단기 1개월↓
+        <span class="pl-key" data-span="xs"></span>초단기 1주↓
     </span>
-    <span class="plan-hint">막대를 끌어 옮기고, 다른 막대 위에 놓으면 그 아래 하위계획이 됩니다 · 영역 줄에 놓으면 최상위로</span>
+    <span class="plan-hint">막대 가운데를 끌면 기간 이동 · 양 끝을 끌면 기간 조절 · 다른 막대 위에 놓으면 하위계획 · 영역 줄에 놓으면 최상위</span>
 </div>
 
 <details class="card theme-fold">
@@ -94,8 +95,14 @@
         </div>
         <div class="gt-form" data-area="{{ area.id }}" hidden>
             <input type="text" class="gt-f-title" placeholder="항목 이름 (예: 노무사 1차 과목 1회독)" autocomplete="off">
-            <input type="date" class="gt-f-start" value="{{ span_start }}" aria-label="시작일">
+            <input type="date" class="gt-f-start" value="{{ default_start }}" aria-label="시작일">
             <input type="date" class="gt-f-end" value="{{ span_end }}" aria-label="종료일">
+            <span class="gt-f-len" role="group" aria-label="기간 길이">
+                <button type="button" class="gt-f-len-btn" data-len="week">1주</button>
+                <button type="button" class="gt-f-len-btn" data-len="month">1개월</button>
+                <button type="button" class="gt-f-len-btn" data-len="quarter">1분기</button>
+                <button type="button" class="gt-f-len-btn" data-len="year">1년</button>
+            </span>
             <input type="hidden" class="gt-f-parent" value="">
             <span class="gt-f-parent-label"></span>
             <button type="button" class="primary-btn gt-f-save">추가</button>
@@ -105,6 +112,7 @@
         {% for it in area.rows %}
         <div class="gt-row gt-itemrow" data-lanes="{{ it.lanes }}" data-id="{{ it.id }}">
             <div class="gt-lead">
+                <span class="gt-span" data-span="{{ it.span_class }}">{{ it.span_label }}</span>
                 <span class="gt-title">{{ it.title }}</span>
                 <span class="gt-range mono">{{ it.range_label }}</span>
             </div>
@@ -112,12 +120,14 @@
                 {% for b in it.bars %}
                 <button type="button"
                         class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}"
-                        data-depth="{{ b.depth }}"
+                        data-depth="{{ b.depth }}" data-span="{{ b.span_class }}"
                         style="left: {{ b.left }}%; width: {{ b.width }}%"
                         data-id="{{ b.id }}"
-                        title="{{ b.title }} · {{ b.range_label }} · {{ b.progress }}%">
+                        title="{{ b.title }} · {{ b.range_label }} · {{ b.span_label }} {{ b.days }}일 · {{ b.progress }}%">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>
                     <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>
+                    <span class="gt-handle l" aria-hidden="true"></span>
+                    <span class="gt-handle r" aria-hidden="true"></span>
                     <span class="gt-del" data-id="{{ b.id }}" role="button" aria-label="{{ b.title }} 삭제" title="삭제">✕</span>
                 </button>
                 {% endfor %}
@@ -125,17 +135,17 @@
         </div>
         {% for b in it.edits %}
         <div class="gt-edit" data-id="{{ b.id }}" hidden>
-            <span class="gt-e-lv" data-depth="{{ b.depth }}">{{ ['상위', '하위', '더 하위'][b.depth] }}</span>
+            <span class="gt-e-lv" data-span="{{ b.span_class }}">{{ b.span_label }} {{ b.days }}일</span>
             <input type="text" class="gt-e-title" value="{{ b.title }}" aria-label="항목 이름">
-            <input type="date" class="gt-e-start" value="{{ b.start_date }}" aria-label="시작일" {% if b.has_children %}disabled{% endif %}>
-            <input type="date" class="gt-e-end" value="{{ b.end_date }}" aria-label="종료일" {% if b.has_children %}disabled{% endif %}>
+            <input type="date" class="gt-e-start" value="{{ b.start_date }}" aria-label="시작일">
+            <input type="date" class="gt-e-end" value="{{ b.end_date }}" aria-label="종료일">
             <label class="gt-e-proglabel">진척
                 <input type="number" class="gt-e-progress" min="0" max="100" step="5" value="{{ b.progress }}" {% if b.has_children %}disabled{% endif %}>%
             </label>
             <button type="button" class="ghost-btn gt-e-child" data-area="{{ area.id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
             <button type="button" class="primary-btn gt-e-save">저장</button>
             <button type="button" class="ghost-btn gt-e-del">삭제</button>
-            {% if b.has_children %}<span class="gt-e-hint">기간·진척률은 하위 항목에서 자동 계산됩니다</span>{% endif %}
+            {% if b.has_children %}<span class="gt-e-hint">진척률은 하위 평균 · 기간은 하위를 모두 품도록 자동으로 넓어집니다</span>{% endif %}
         </div>
         {% endfor %}
         {% endfor %}

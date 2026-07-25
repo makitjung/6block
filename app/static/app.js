@@ -231,7 +231,7 @@
         state.auto = !state.auto;
         persist();
         if (state.auto) ensureNotifPermission();
-        toast(state.auto ? '자동 모드 ON · 정각/30분에 자동 시작' : '자동 모드 OFF');
+        toast(state.auto ? '자동 모드 ON · 슬롯 시작에 자동 시작' : '자동 모드 OFF');
         render();
     }
 
@@ -247,12 +247,23 @@
         const min = now.getMinutes();
 
         if (state.phase === 'IDLE') {
-            // 정각·30분 경계에서 자동 시작
-            if (state.auto && sec < 3 && (min === 0 || min === 30)) {
-                const key = `${now.getHours()}:${min}`;
-                if (lastBoundaryFired !== key) {
-                    lastBoundaryFired = key;
-                    startFocus(currentSlotKey(now));
+            // 슬롯이 시작될 때 자동 시작. 슬롯 행이 아예 없는 화면에서만 정각·30분을 쓴다.
+            if (state.auto && sec < 3) {
+                const ranges = slotRanges();
+                if (ranges.length) {
+                    const el = currentSlotEl(now);
+                    const nowMin = now.getHours() * 60 + now.getMinutes();
+                    if (el && nowMin === hhmmToMin(el.dataset.start)
+                        && lastBoundaryFired !== el.dataset.start) {
+                        lastBoundaryFired = el.dataset.start;
+                        startFocus(el.dataset.start);
+                    }
+                } else if (min === 0 || min === 30) {
+                    const key = `${now.getHours()}:${min}`;
+                    if (lastBoundaryFired !== key) {
+                        lastBoundaryFired = key;
+                        startFocus(currentSlotKey(now));
+                    }
                 }
             }
         } else if (state.phase === 'FOCUS') {
@@ -1432,6 +1443,16 @@
                 if (e.key === 'Enter') { e.preventDefault(); submit(); }
             });
             form.querySelector('.gt-f-cancel')?.addEventListener('click', () => { form.hidden = true; });
+            // 길이 버튼: 어느 화면 단위에서든 1주·1개월·1분기·1년짜리 막대를 바로 만든다.
+            form.querySelectorAll('.gt-f-len-btn').forEach((b) => {
+                b.addEventListener('click', () => {
+                    const si = form.querySelector('.gt-f-start');
+                    const ei = form.querySelector('.gt-f-end');
+                    const start = si.value ? new Date(si.value + 'T00:00:00') : new Date();
+                    if (!si.value) si.value = ymd(start);
+                    ei.value = ymd(addSpan(start, b.dataset.len));
+                });
+            });
         });
 
         gantt.querySelectorAll('.gt-bar').forEach((bar) => {
@@ -1473,10 +1494,13 @@
                 const s = box.querySelector('.gt-e-start');
                 const e = box.querySelector('.gt-e-end');
                 const p = box.querySelector('.gt-e-progress');
-                if (!s.disabled) { data.start = s.value; data.end = e.value; data.progress = p.value; }
+                data.start = s.value;
+                data.end = e.value;
+                if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 postForm('/plan/item/update', data).then((d) => {
-                    if (d && d.ok) location.reload();
-                    else toast((d && d.error) || '저장 실패');
+                    if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
+                    if (d.widened) toast('하위를 모두 품도록 기간을 넓혔습니다');
+                    location.reload();
                 });
             });
             box.querySelector('.gt-e-del')?.addEventListener('click', () => {
@@ -1502,6 +1526,25 @@
         }
     }
 
+    // 'YYYY-MM-DD' 문자열(로컬 기준)
+    function ymd(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    // 시작일에서 그 길이만큼 뒤의 '종료일'(마지막 날). 1개월=한 달 뒤 하루 전.
+    function addSpan(start, len) {
+        const d = new Date(start.getTime());
+        if (len === 'week') { d.setDate(d.getDate() + 6); return d; }
+        const months = len === 'year' ? 12 : (len === 'quarter' ? 3 : 1);
+        const day = d.getDate();
+        d.setDate(1);
+        d.setMonth(d.getMonth() + months);
+        // 그 달에 없는 날(1/31 + 1개월)은 말일로 맞춘다
+        const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(day, last));
+        d.setDate(d.getDate() - 1);
+        return d;
+    }
+
     // ---- 장기: 막대 끌어 옮기기 ------------------------------------------
     // 같은 줄에서 좌우로 끌면 보고 있는 열 단위로 기간이 옮겨지고, 다른 막대 위에 놓으면
     // 그 막대의 하위계획이 되어 상위 막대 안에 겹쳐 그려진다. 영역 줄이나 빈 줄에 놓으면
@@ -1515,10 +1558,14 @@
             gantt.querySelectorAll('.is-drop-target').forEach(
                 (el) => el.classList.remove('is-drop-target'));
         };
+        const EDGE = 10;        // 양 끝에서 이 폭 안을 잡으면 기간 조절
+        const MIN_RESIZABLE = 30;   // 이보다 좁은 막대는 통째 이동만(끝을 잡을 자리가 없다)
         const reset = () => {
             if (drag) {
-                drag.bar.classList.remove('is-dragging');
+                drag.bar.classList.remove('is-dragging', 'is-resizing');
                 drag.bar.style.transform = '';
+                drag.bar.style.left = drag.css.left;
+                drag.bar.style.width = drag.css.width;
             }
             clearMarks();
             drag = null;
@@ -1541,10 +1588,19 @@
         gantt.querySelectorAll('.gt-bar').forEach((bar) => {
             bar.addEventListener('pointerdown', (e) => {
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
+                const r = bar.getBoundingClientRect();
+                const off = e.clientX - r.left;
+                let edge = '';
+                if (r.width >= MIN_RESIZABLE) {
+                    if (off <= EDGE) edge = 'start';
+                    else if (off >= r.width - EDGE) edge = 'end';
+                }
                 drag = {
                     bar, id: bar.dataset.id, x0: e.clientX, y0: e.clientY, moved: false,
-                    hasChildren: bar.classList.contains('is-parent'),
+                    edge, hasChildren: bar.classList.contains('is-parent'),
                     track: bar.closest('.gt-track'),
+                    css: { left: bar.style.left, width: bar.style.width },
+                    px: { left: r.left, width: r.width },
                 };
                 try { bar.setPointerCapture(e.pointerId); } catch (_) { /* 캡처 못해도 진행 */ }
             });
@@ -1554,6 +1610,19 @@
                 const dy = e.clientY - drag.y0;
                 if (!drag.moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
                 drag.moved = true;
+                if (drag.edge) {
+                    // 기간 조절: 잡은 쪽 끝만 따라 움직인다
+                    bar.classList.add('is-resizing');
+                    const trackLeft = drag.track.getBoundingClientRect().left;
+                    if (drag.edge === 'start') {
+                        const w = Math.max(6, drag.px.width - dx);
+                        bar.style.left = (drag.px.left - trackLeft + (drag.px.width - w)) + 'px';
+                        bar.style.width = w + 'px';
+                    } else {
+                        bar.style.width = Math.max(6, drag.px.width + dx) + 'px';
+                    }
+                    return;
+                }
                 bar.classList.add('is-dragging');
                 bar.style.transform = `translate(${dx}px, ${dy}px)`;
                 clearMarks();
@@ -1565,11 +1634,23 @@
                 if (!drag.moved) { reset(); return; }
                 bar.dataset.dragged = '1';           // 이어서 오는 click(편집창 열기)은 무시
                 const dx = e.clientX - drag.x0;
-                const target = dropTargetAt(e.clientX, e.clientY);
                 const colW = (drag.track ? drag.track.getBoundingClientRect().width : 0) / cols;
                 const steps = colW ? Math.round(dx / colW) : 0;
                 const id = drag.id;
                 const hasChildren = drag.hasChildren;
+                if (drag.edge) {
+                    const edge = drag.edge;
+                    reset();
+                    if (steps === 0) return;
+                    postForm('/plan/item/resize',
+                             { id: id, edge: edge, steps: steps, level: level }).then((d) => {
+                        if (!d || !d.ok) { toast((d && d.error) || '기간을 바꾸지 못했습니다'); return; }
+                        if (d.widened) toast('하위를 모두 품도록 기간을 넓혔습니다');
+                        location.reload();
+                    });
+                    return;
+                }
+                const target = dropTargetAt(e.clientX, e.clientY);
                 reset();
                 if (target && target.kind === 'bar') {
                     postForm('/plan/item/reparent',

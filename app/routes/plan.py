@@ -139,7 +139,11 @@ def _parse_date(s) -> date | None:
 
 
 def _lt_rollup(conn, item_id: int | None):
-    """항목의 상위 사슬을 하위 값으로 갱신한다(기간=하위 최소~최대, 진척률=하위 평균)."""
+    """상위 사슬을 하위에 맞춘다. 기간은 하위를 모두 품도록 넓히고, 진척률은 하위 평균을 따른다.
+
+    직접 정한 상위 기간은 줄이지 않는다(연 계획 안에 3개월짜리 하위 하나만 있어도
+    연 계획은 그대로 남는다). 날짜는 'YYYY-MM-DD' 라 문자열 비교가 곧 날짜 비교다.
+    """
     now = datetime.now(KST).isoformat(timespec="seconds")
     seen: set[int] = set()
     cur = item_id
@@ -157,16 +161,55 @@ def _lt_rollup(conn, item_id: int | None):
             "FROM lt_item WHERE parent_id = ?",
             (pid,),
         ).fetchone()
-        if agg and agg["n"]:
+        prow = conn.execute(
+            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (pid,)
+        ).fetchone()
+        if agg and agg["n"] and prow:
             conn.execute(
                 "UPDATE lt_item SET start_date = ?, end_date = ?, progress = ?, "
                 "updated_at = ? WHERE id = ?",
-                (agg["s"], agg["e"], round(agg["p"] or 0), now, pid),
+                (min(prow["start_date"], agg["s"]), max(prow["end_date"], agg["e"]),
+                 round(agg["p"] or 0), now, pid),
             )
         cur = pid
 
 
+def _lt_cover_children(conn, item_id: int) -> bool:
+    """이 항목을 자기 하위 전체를 품도록 넓힌다. 넓혔으면 True(기간을 직접 고칠 때 쓴다)."""
+    agg = conn.execute(
+        "SELECT MIN(start_date) AS s, MAX(end_date) AS e, COUNT(*) AS n "
+        "FROM lt_item WHERE parent_id = ?",
+        (item_id,),
+    ).fetchone()
+    if not agg or not agg["n"]:
+        return False
+    row = conn.execute(
+        "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
+    ).fetchone()
+    s, e = min(row["start_date"], agg["s"]), max(row["end_date"], agg["e"])
+    if s == row["start_date"] and e == row["end_date"]:
+        return False
+    conn.execute(
+        "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
+        (s, e, datetime.now(KST).isoformat(timespec="seconds"), item_id),
+    )
+    return True
+
+
 MAX_LANE = 2      # 겹쳐 그릴 하위 단계(0=상위, 1·2=하위). 더 깊은 항목은 2단계로 눌러 그린다.
+
+# 막대 길이로 나누는 기간 구분. 짧은 쪽을 먼저 본다(1주 이하는 '단기'가 아니라 '초단기').
+SPAN_CLASSES = [(7, "xs", "초단기"), (31, "s", "단기"), (183, "m", "중기")]
+SPAN_LONG = ("l", "장기")
+
+
+def _span_class(s: date, e: date) -> tuple[str, str]:
+    """기간 길이(일)로 (분류 키, 이름). 7일 이하 초단기 · 31일 이하 단기 · 183일 이하 중기 · 그 위 장기."""
+    days = (e - s).days + 1
+    for limit, key, label in SPAN_CLASSES:
+        if days <= limit:
+            return key, label
+    return SPAN_LONG
 
 
 def _lt_descendants(conn, item_id: int) -> list[int]:
@@ -241,6 +284,8 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["clip_right"] = e > span_end
         row["range_label"] = f"{s.month}/{s.day}~{e.month}/{e.day}"
         row["has_children"] = bool(children.get(it["id"]))
+        row["span_class"], row["span_label"] = _span_class(s, e)
+        row["days"] = (e - s).days + 1
         return row
 
     def walk(it, depth: int, bars: list):
@@ -259,6 +304,8 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
                 "title": root["title"],
                 "range_label": root["range_label"],
                 "progress": root["progress"],
+                "span_class": root["span_class"],
+                "span_label": root["span_label"],
                 "lanes": max(b["depth"] for b in bars),
                 "bars": [b for b in bars if b["visible"]],
                 "edits": bars,
@@ -365,8 +412,11 @@ async def plan_item_update(request: Request):
             f"UPDATE lt_item SET {sets}, updated_at = ? WHERE id = ?",
             (*fields.values(), now, item_id),
         )
+        # 하위가 있는 항목의 기간도 직접 고칠 수 있다. 다만 하위를 밖으로 밀어낼 수는 없어
+        # 하위를 모두 품도록 되돌린다.
+        widened = _lt_cover_children(conn, item_id)
         _lt_rollup(conn, item_id)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "widened": widened})
 
 
 @router.post("/plan/item/shift")
@@ -415,6 +465,54 @@ async def plan_item_shift(request: Request):
         )
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True, "start": s2.isoformat(), "end": e2.isoformat()})
+
+
+@router.post("/plan/item/resize")
+async def plan_item_resize(request: Request):
+    """막대의 한쪽 끝(edge=start|end)만 열 단위로 늘리거나 줄인다.
+
+    하위가 있는 항목도 줄일 수 있지만 하위를 모두 품는 선까지만 줄어든다.
+    """
+    form = await request.form()
+    try:
+        item_id = int(form.get("id"))
+        steps = int(form.get("steps"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    edge = (form.get("edge") or "").strip()
+    level = (form.get("level") or "").strip()
+    if edge not in ("start", "end") or level not in PLAN_LEVELS:
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    if steps == 0:
+        return JSONResponse({"ok": True, "moved": 0})
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
+        if not s or not e:
+            return JSONResponse({"ok": False, "error": "기간 없음"}, status_code=400)
+        moved = (s if edge == "start" else e)
+        if level == "week":
+            moved = moved + timedelta(weeks=steps)
+        else:
+            moved = _add_months(moved, SHIFT_MONTHS[level] * steps)
+        if edge == "start":
+            s = moved
+        else:
+            e = moved
+        if e < s:
+            return JSONResponse({"ok": False, "error": "기간이 뒤집힙니다"}, status_code=400)
+        conn.execute(
+            "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
+            (s.isoformat(), e.isoformat(), now, item_id),
+        )
+        widened = _lt_cover_children(conn, item_id)
+        _lt_rollup(conn, item_id)
+    return JSONResponse({"ok": True, "widened": widened})
 
 
 @router.post("/plan/item/reparent")
@@ -533,6 +631,9 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
+    # 항목 추가 기본 시작일. 오늘이 보이는 기간 안이면 오늘, 아니면 그 기간 첫날.
+    today = datetime.now(KST).date()
+    default_start = today if span_start <= today <= span_end else span_start
     return templates.TemplateResponse(
         "plan.html",
         {
@@ -554,6 +655,7 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
             "gantt": gantt,
             "span_start": span_start.strftime("%Y-%m-%d"),
             "span_end": span_end.strftime("%Y-%m-%d"),
+            "default_start": default_start.strftime("%Y-%m-%d"),
         },
     )
 

@@ -205,7 +205,8 @@ def run_checks(db_path):
     check("하위 항목 추가", code == 200 and out.get("ok"), out)
     child = out.get("id")
     row = db_query(db_path, "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
-    check("상위 기간이 하위 최소~최대로 자동 확장",
+    # 상위는 하위를 품도록 넓어지기만 하고, 직접 정한 기간(8/1~9/30)은 줄어들지 않는다.
+    check("상위 기간이 하위를 품도록 넓어짐",
           row["start_date"] == "2026-07-20" and row["end_date"] == "2026-10-15", dict(row))
     post("/plan/item/update", {"id": child, "progress": "60"})
     p = db_query(db_path, "SELECT progress FROM lt_item WHERE id=?", (parent,))[0]["progress"]
@@ -220,6 +221,22 @@ def run_checks(db_path):
 
     code, html = get("/plan?level=month&anchor=2026-08-01")
     check("계획 막대가 그려짐", 'class="gt-bar' in html and "노동법 1회독" in html)
+    # 기간 길이로 나눈 4구분(장기 6개월↑ · 중기 1~6개월 · 단기 1개월↓ · 초단기 1주↓)
+    spans = {}
+    for title, s, e in (("초단기막대", "2026-08-01", "2026-08-07"),
+                        ("단기막대", "2026-08-01", "2026-08-31"),
+                        ("중기막대", "2026-08-01", "2027-01-30"),
+                        ("장기막대", "2026-08-01", "2027-01-31")):
+        _c, o = post("/plan/item/add",
+                     {"area_id": areas[0], "title": title, "start": s, "end": e})
+        spans[title] = o.get("id")
+    code, html = get("/plan?level=year&anchor=2026-01-01")
+    found = dict(re.findall(r'class="gt-e-lv" data-span="(\w+)">(\S+) \d+일', html))
+    check("기간 길이로 장기·중기·단기·초단기를 나눔",
+          found.get("xs") == "초단기" and found.get("s") == "단기"
+          and found.get("m") == "중기" and found.get("l") == "장기", found)
+    for i in spans.values():
+        post("/plan/item/delete", {"id": i})
     # 상위 항목 한 줄 안에 상위(depth 0)와 하위(depth 1) 막대가 함께 겹쳐 그려진다
     row = re.search(r'<div class="gt-row gt-itemrow"[^>]*>.*?</div>\s*</div>', html, re.S)
     seg = row.group(0) if row else ""
@@ -270,7 +287,7 @@ def run_checks(db_path):
     p = db_query(db_path,
                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
     check("하위가 늘면 상위 막대가 그만큼 넓어짐",
-          p["start_date"] == "2026-08-01" and p["end_date"] == "2026-12-31", dict(p))
+          p["start_date"] == "2026-07-20" and p["end_date"] == "2026-12-31", dict(p))
     code, out = post("/plan/item/reparent", {"id": parent, "parent_id": other})
     check("자기 하위로는 넣지 못함", code == 400, out)
 
@@ -287,6 +304,25 @@ def run_checks(db_path):
     check("하위 사슬도 같은 영역으로 따라옴", g["area_id"] == int(areas[1]), dict(g))
     code, out = post("/plan/item/reparent", {"id": other, "area_id": "99999"})
     check("없는 영역으로는 옮기지 않음", code == 404, code)
+
+    # 기간 조절(한쪽 끝만) · 하위가 있는 상위 기간 직접 수정
+    code, out = post("/plan/item/resize",
+                     {"id": other, "edge": "end", "steps": "1", "level": "month"})
+    r = db_query(db_path,
+                 "SELECT start_date, end_date FROM lt_item WHERE id=?", (other,))[0]
+    check("한쪽 끝만 늘려 기간을 바꿈",
+          r["start_date"] == "2026-08-01" and r["end_date"] == "2027-01-31", dict(r))
+    code, out = post("/plan/item/resize",
+                     {"id": other, "edge": "start", "steps": "12", "level": "month"})
+    check("기간이 뒤집히면 거부", code == 400, out)
+    code, out = post("/plan/item/update", {"id": parent, "title": "노무사 1차 합격",
+                                           "start": "2026-11-01", "end": "2026-11-30"})
+    p = db_query(db_path,
+                 "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
+    # 하위(8/20~11/15)를 벗어나는 시작일은 되돌아오고, 하위보다 뒤인 종료일은 그대로 둔다.
+    check("상위 기간을 하위보다 좁게 고치면 하위를 품도록 되돌림",
+          out.get("widened") is True and p["start_date"] == "2026-08-20"
+          and p["end_date"] == "2026-11-30", dict(p))
     post("/plan/item/delete", {"id": other})
 
     code, out = post("/plan/item/delete", {"id": parent})

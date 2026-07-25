@@ -49,10 +49,11 @@
     --cal-yellow: #f9ab00;
     --cal-red: #d93025;
 
-    /* 장기 계획 막대 - 상위(연) → 하위(분기·월)로 갈수록 진해져 포함 관계가 보인다 */
-    --gt-d0-bg: #e8f0fe; --gt-d0-bd: #aecbfa; --gt-d0-tx: #1967d2;
-    --gt-d1-bg: #a8c7fa; --gt-d1-bd: #1a73e8; --gt-d1-tx: #174ea6;
-    --gt-d2-bg: #1a73e8; --gt-d2-bd: #174ea6; --gt-d2-tx: #ffffff;
+    /* 장기 계획 막대 - 기간 길이로 나눈 4구분(장기·중기·단기·초단기) */
+    --sp-l-bg: #d2e3fc;  --sp-l-bd: #1a73e8;  --sp-l-tx: #174ea6;
+    --sp-m-bg: #cfece9;  --sp-m-bd: #12a4af;  --sp-m-tx: #0b6b73;
+    --sp-s-bg: #fde3cf;  --sp-s-bd: #e8710a;  --sp-s-tx: #8f4700;
+    --sp-xs-bg: #ead6fb; --sp-xs-bd: #9334e6; --sp-xs-tx: #6a1eb0;
 
     /* shape */
     --r-sm: 8px;
@@ -108,9 +109,10 @@
     --tone-teal: #5bd1d7;
     --cal-yellow: #fdd663;
     --cal-red: #f28b82;
-    --gt-d0-bg: #1f2a3d; --gt-d0-bd: #3c5a80; --gt-d0-tx: #aecbfa;
-    --gt-d1-bg: #2f4f7a; --gt-d1-bd: #6a9bea; --gt-d1-tx: #d2e3fc;
-    --gt-d2-bg: #8ab4f8; --gt-d2-bd: #aecbfa; --gt-d2-tx: #15171c;
+    --sp-l-bg: #24354f;  --sp-l-bd: #8ab4f8;  --sp-l-tx: #d2e3fc;
+    --sp-m-bg: #14383a;  --sp-m-bd: #5bd1d7;  --sp-m-tx: #a7ecef;
+    --sp-s-bg: #43301c;  --sp-s-bd: #fcad70;  --sp-s-tx: #ffd9b8;
+    --sp-xs-bg: #38254a; --sp-xs-bd: #d7aefb; --sp-xs-tx: #ecd7ff;
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --sh-2: 0 2px 6px rgba(0, 0, 0, 0.5);
     --sh-3: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -1041,9 +1043,10 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .plan-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
 .pl-key { width: 16px; height: 10px; border-radius: 3px; border: 1px solid; }
 .pl-key + .pl-key { margin-left: 8px; }
-.pl-key.d0 { background: var(--gt-d0-bg); border-color: var(--gt-d0-bd); }
-.pl-key.d1 { background: var(--gt-d1-bg); border-color: var(--gt-d1-bd); }
-.pl-key.d2 { background: var(--gt-d2-bg); border-color: var(--gt-d2-bd); }
+.pl-key[data-span="l"]  { background: var(--sp-l-bg);  border-color: var(--sp-l-bd); }
+.pl-key[data-span="m"]  { background: var(--sp-m-bg);  border-color: var(--sp-m-bd); }
+.pl-key[data-span="s"]  { background: var(--sp-s-bg);  border-color: var(--sp-s-bd); }
+.pl-key[data-span="xs"] { background: var(--sp-xs-bg); border-color: var(--sp-xs-bd); }
 .plan-hint { font-size: 12px; color: var(--text-subtle); }
 @media (max-width: 900px) { .plan-hint { display: none; } }
 
@@ -1364,7 +1367,7 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 /* 고결감: 카드 높이를 맞춰 격자가 들쭉날쭉하지 않게 한다(넘치면 '더보기') */
 .reflect-right .rf-card { height: 264px; }
 /* 다시보기 사본: 다시보기 내용(위)은 다 보이고 원본은 남은 높이만큼만 보인다 */
-.rf-card.is-revisit { background: var(--accent-soft); border-color: var(--gt-d0-bd); }
+.rf-card.is-revisit { background: var(--accent-soft); border-color: var(--border-focus); }
 .rf-revisit { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
 .rf-revisit-label { font-size: 12px; font-weight: 700; color: var(--accent); }
 .rf-revisit-sub { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
@@ -1567,18 +1570,16 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     position: absolute; top: 3px; bottom: 3px; min-width: 6px;
     display: flex; align-items: center; overflow: hidden; cursor: pointer;
     padding: 0; border: 1px solid; border-radius: var(--r-sm); text-align: left;
-    background: var(--gt-d0-bg); border-color: var(--gt-d0-bd); color: var(--gt-d0-tx);
     z-index: 1;
 }
-/* 상위 막대 안쪽 아래에 하위 막대를 겹쳐, 연 계획 안에 분기·월 계획이 든 모습으로 보인다 */
-.gt-bar[data-depth="1"] {
-    top: 44%; bottom: 4px; z-index: 2;
-    background: var(--gt-d1-bg); border-color: var(--gt-d1-bd); color: var(--gt-d1-tx);
-}
-.gt-bar[data-depth="2"] {
-    top: 66%; bottom: 4px; z-index: 3;
-    background: var(--gt-d2-bg); border-color: var(--gt-d2-bd); color: var(--gt-d2-tx);
-}
+/* 색은 기간 길이(장기·중기·단기·초단기)로 정한다. 어느 줄에 있든 같은 길이면 같은 색이다. */
+.gt-bar[data-span="l"]  { background: var(--sp-l-bg);  border-color: var(--sp-l-bd);  color: var(--sp-l-tx); }
+.gt-bar[data-span="m"]  { background: var(--sp-m-bg);  border-color: var(--sp-m-bd);  color: var(--sp-m-tx); }
+.gt-bar[data-span="s"]  { background: var(--sp-s-bg);  border-color: var(--sp-s-bd);  color: var(--sp-s-tx); }
+.gt-bar[data-span="xs"] { background: var(--sp-xs-bg); border-color: var(--sp-xs-bd); color: var(--sp-xs-tx); }
+/* 자리는 상하위 관계로 정한다. 상위 막대 안쪽 아래에 하위 막대가 겹쳐 들어간다. */
+.gt-bar[data-depth="1"] { top: 44%; bottom: 4px; z-index: 2; }
+.gt-bar[data-depth="2"] { top: 66%; bottom: 4px; z-index: 3; }
 /* 하위를 품은 막대는 글자를 위쪽에 붙여 아래 겹친 막대와 겹치지 않게 한다 */
 .gt-bar.is-parent { align-items: flex-start; }
 .gt-bar.is-parent[data-depth="0"] { border-style: dashed; }
@@ -1593,13 +1594,19 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 /* 끌어 옮기기: 끄는 막대는 살짝 들어 올리고, 놓을 자리는 테두리로 알린다 */
 .gt-bar { touch-action: none; cursor: grab; }
 .gt-bar.is-dragging { cursor: grabbing; opacity: .9; z-index: 9; box-shadow: var(--sh-3); }
+.gt-bar.is-resizing { z-index: 9; box-shadow: var(--sh-3); }
+/* 양 끝 10px은 기간 조절 손잡이(막대가 좁으면 손잡이 없이 통째 이동만) */
+.gt-handle { position: absolute; top: 0; bottom: 0; width: 10px; cursor: ew-resize; z-index: 3; }
+.gt-handle.l { left: 0; }
+.gt-handle.r { right: 0; }
+.gt-bar.clip-l .gt-handle.l, .gt-bar.clip-r .gt-handle.r { cursor: grab; }
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gt-arearow.is-drop-target .gt-track,
 .gt-empty.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
 /* 막대 위 삭제(✕): 마우스를 올렸을 때만 오른쪽 끝에 나타난다 */
 .gt-del {
-    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
-    display: none; z-index: 2; cursor: pointer; line-height: 1;
+    position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+    display: none; z-index: 4; cursor: pointer; line-height: 1;
     font-size: 11px; font-weight: 700; padding: 2px 5px; border-radius: var(--r-pill);
     background: var(--surface); color: var(--text-muted); box-shadow: var(--sh-1);
 }
@@ -1607,12 +1614,24 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-del:hover { color: var(--danger); }
 @media (hover: none) { .gt-del { display: block; opacity: .85; } }
 
-.gt-e-lv {
+/* 기간 구분 배지(편집창·항목 이름 옆) */
+.gt-e-lv, .gt-span {
     font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--r-pill);
-    background: var(--gt-d0-bg); border: 1px solid var(--gt-d0-bd); color: var(--gt-d0-tx);
+    border: 1px solid; white-space: nowrap; flex: 0 0 auto;
 }
-.gt-e-lv[data-depth="1"] { background: var(--gt-d1-bg); border-color: var(--gt-d1-bd); color: var(--gt-d1-tx); }
-.gt-e-lv[data-depth="2"] { background: var(--gt-d2-bg); border-color: var(--gt-d2-bd); color: var(--gt-d2-tx); }
+.gt-e-lv[data-span="l"],  .gt-span[data-span="l"]  { background: var(--sp-l-bg);  border-color: var(--sp-l-bd);  color: var(--sp-l-tx); }
+.gt-e-lv[data-span="m"],  .gt-span[data-span="m"]  { background: var(--sp-m-bg);  border-color: var(--sp-m-bd);  color: var(--sp-m-tx); }
+.gt-e-lv[data-span="s"],  .gt-span[data-span="s"]  { background: var(--sp-s-bg);  border-color: var(--sp-s-bd);  color: var(--sp-s-tx); }
+.gt-e-lv[data-span="xs"], .gt-span[data-span="xs"] { background: var(--sp-xs-bg); border-color: var(--sp-xs-bd); color: var(--sp-xs-tx); }
+.gt-span { font-size: 10px; padding: 1px 6px; }
+/* 추가 폼의 기간 길이 버튼 */
+.gt-f-len { display: inline-flex; gap: 4px; }
+.gt-f-len-btn {
+    font-size: 12px; font-weight: 600; padding: 4px 10px; cursor: pointer;
+    background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--r-pill);
+}
+.gt-f-len-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .gt-form, .gt-edit {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
     margin: 4px 0 6px calc(var(--lead-w) - 180px);
@@ -1642,8 +1661,8 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 .wk-lt-row:hover { border-color: var(--border-strong); }
 .wk-lt-area {
-    font-size: 11px; font-weight: 700; color: var(--gt-d0-tx);
-    background: var(--gt-d0-bg); border: 1px solid var(--gt-d0-bd);
+    font-size: 11px; font-weight: 700; color: var(--accent-soft-text);
+    background: var(--accent-soft); border: 1px solid var(--border-focus);
     padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap;
 }
 .wk-lt-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
