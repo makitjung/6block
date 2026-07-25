@@ -219,45 +219,6 @@ def _like_pattern(q: str) -> str:
 # -- 자동 세분화 (규칙기반 기본 + 선택적 AI) --------------------------------
 
 
-def _child_periods(level: str, period_key: str):
-    """상위 (level, period_key)의 바로 아래 단위와 자식 기간 목록.
-
-    반환 (child_level, [(period_key, label), ...]). 세분화 불가면 (None, []).
-    """
-    try:
-        if level == "year":
-            y = int(period_key)
-            return "quarter", [(f"{y}-Q{q}", f"{q}분기") for q in range(1, 5)]
-        if level == "quarter":
-            ys, qs = period_key.split("-Q")
-            y, q = int(ys), int(qs)
-            m0 = (q - 1) * 3 + 1
-            return "month", [(f"{y}-{m:02d}", f"{m}월") for m in range(m0, m0 + 3)]
-        if level == "month":
-            y, m = (int(x) for x in period_key.split("-"))
-            first = date(y, m, 1)
-            last = (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
-            monday = first - timedelta(days=first.weekday())
-            out = []
-            while monday <= last:
-                out.append((monday.strftime("%Y-%m-%d"), f"{monday.month}/{monday.day} 주"))
-                monday += timedelta(days=7)
-            return "week", out
-    except (ValueError, AttributeError):
-        return None, []
-    return None, []
-
-
-def _child_anchor(level: str, period_key: str) -> str:
-    """세분화 후 이동할 자식 단위 화면의 anchor(날짜 문자열)."""
-    if level == "year":
-        return f"{period_key}-01-01"
-    if level == "quarter":
-        ys, qs = period_key.split("-Q")
-        return f"{int(ys)}-{(int(qs) - 1) * 3 + 1:02d}-01"
-    return f"{period_key}-01"  # month → 그 달 1일
-
-
 def _rule_distribute(parent_text: str, n: int) -> list[str]:
     """부모 텍스트를 자식 n개 내용으로 나눈다. 여러 줄이면 분배, 한 줄이면 참고로 복제."""
     lines = [ln.strip() for ln in (parent_text or "").splitlines() if ln.strip()]

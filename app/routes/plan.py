@@ -1,21 +1,11 @@
-# 장기플랜(연·분기·월·주 표 + 간트)과 영역·항목 관리를 담당하는 라우터
+# 장기플랜(연·분기·월·주 계획 막대)과 영역·항목 관리를 담당하는 라우터
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.common import (
-    KST,
-    _ai_split,
-    _child_anchor,
-    _child_periods,
-    _off_loop,
-    _parse_date,
-    _rule_distribute,
-    templates,
-)
+from app.common import KST, _parse_date, templates
 from app.db import get_conn
-from app.integrations import ai
 
 router = APIRouter()
 
@@ -116,22 +106,6 @@ def _plan_nav(level: str, anchor: date):
     return prev_last.strftime("%Y-%m-01"), next_first.strftime("%Y-%m-%d")
 
 
-def _plan_ancestors(level: str, anchor: date):
-    """현재 anchor가 속한 상위 단위들의 (level, label, key). 현재보다 굵은 단위만."""
-    q = (anchor.month - 1) // 3 + 1
-    coarser = [
-        ("year", str(anchor.year), str(anchor.year)),
-        ("quarter", f"{q}분기", f"{anchor.year}-Q{q}"),
-        ("month", f"{anchor.month}월", f"{anchor.year}-{anchor.month:02d}"),
-    ]
-    idx = PLAN_LEVELS.index(level)
-    return [
-        {"level": lv, "label": label, "key": key}
-        for lv, label, key in coarser
-        if PLAN_LEVELS.index(lv) < idx
-    ]
-
-
 def _plan_breadcrumb(level: str, anchor: date):
     """연>분기>월>주 경로. 각 단위는 anchor가 속한 기간 라벨 + 그 단위로 가는 링크."""
     q = (anchor.month - 1) // 3 + 1
@@ -192,10 +166,14 @@ def _lt_rollup(conn, item_id: int | None):
         cur = pid
 
 
-def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
-    """영역별 간트 행 목록. 보이는 기간과 겹치는 항목만 상위→하위 순으로 편다.
+MAX_LANE = 2      # 겹쳐 그릴 하위 단계(0=상위, 1·2=하위). 더 깊은 항목은 2단계로 눌러 그린다.
 
-    각 행에 left/width(퍼센트)와 잘림 여부를 담아 템플릿이 계산 없이 그리게 한다.
+
+def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
+    """영역별 간트 행 목록. 최상위 항목 하나가 한 줄이고, 하위 항목은 그 줄 막대 안에 겹친다.
+
+    한 줄은 bars(상위+하위 전부의 막대)와 edits(같은 항목들의 편집 폼)를 함께 담는다.
+    left/width 는 보이는 기간 전체에 대한 퍼센트, depth 는 겹칠 단계라 템플릿이 계산 없이 그린다.
     """
     total = (span_end - span_start).days + 1
     rows_by_area: dict[int, list] = {a["id"]: [] for a in areas}
@@ -215,13 +193,13 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
             return True
         return any(overlaps(c) for c in children.get(it["id"], []))
 
-    def walk(it, depth: int):
+    def bar(it, depth: int) -> dict:
         s = _parse_date(it["start_date"]) or span_start
         e = _parse_date(it["end_date"]) or s
         vs, ve = max(s, span_start), min(e, span_end)
         visible = vs <= ve
         row = dict(it)
-        row["depth"] = depth
+        row["depth"] = min(depth, MAX_LANE)
         row["visible"] = visible
         row["left"] = round((vs - span_start).days / total * 100, 3) if visible else 0
         row["width"] = round(((ve - vs).days + 1) / total * 100, 3) if visible else 0
@@ -229,14 +207,28 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["clip_right"] = e > span_end
         row["range_label"] = f"{s.month}/{s.day}~{e.month}/{e.day}"
         row["has_children"] = bool(children.get(it["id"]))
-        rows_by_area[it["area_id"]].append(row)
+        return row
+
+    def walk(it, depth: int, bars: list):
+        bars.append(bar(it, depth))
         for c in children.get(it["id"], []):
             if overlaps(c):
-                walk(c, depth + 1)
+                walk(c, depth + 1, bars)
 
     for it in children.get(None, []):
         if it["area_id"] in rows_by_area and overlaps(it):
-            walk(it, 0)
+            bars: list[dict] = []
+            walk(it, 0, bars)
+            root = bars[0]
+            rows_by_area[it["area_id"]].append({
+                "id": root["id"],
+                "title": root["title"],
+                "range_label": root["range_label"],
+                "progress": root["progress"],
+                "lanes": max(b["depth"] for b in bars),
+                "bars": [b for b in bars if b["visible"]],
+                "edits": bars,
+            })
     # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
     return [
         {"id": a["id"], "name": a["name"], "rows": rows_by_area[a["id"]]}
@@ -372,17 +364,12 @@ async def plan_item_delete(request: Request):
 
 
 @router.get("/plan")
-def plan_view(request: Request, level: str = "year", anchor: str = "",
-              view: str = "table"):
+def plan_view(request: Request, level: str = "year", anchor: str = ""):
     if level not in PLAN_LEVELS:
         level = "year"
-    view = view if view in ("table", "gantt") else "table"
     a = _parse_anchor(anchor)
     cols, header = _plan_columns(level, a)
-    keys = [c["key"] for c in cols]
     span_start, span_end = cols[0]["start"], cols[-1]["end"]
-    ancestors = _plan_ancestors(level, a)
-    anc_keys = [x["key"] for x in ancestors]
     with get_conn() as conn:
         areas = [
             dict(x)
@@ -394,35 +381,7 @@ def plan_view(request: Request, level: str = "year", anchor: str = "",
             "SELECT id, name, is_active FROM lt_area "
             "ORDER BY is_active DESC, display_order"
         ).fetchall()
-        grid: dict[int, dict[str, str]] = {}
-        if keys:
-            ph = ",".join("?" * len(keys))
-            for r in conn.execute(
-                f"SELECT area_id, period_key, content FROM lt_plan "
-                f"WHERE level = ? AND period_key IN ({ph})",
-                (level, *keys),
-            ):
-                grid.setdefault(r["area_id"], {})[r["period_key"]] = r["content"]
-        # 상위 맥락: 조상 단위(연·분기·월)의 영역별 계획을 모은다.
-        anc_map: dict[tuple, str] = {}
-        if anc_keys:
-            aph = ",".join("?" * len(anc_keys))
-            for r in conn.execute(
-                f"SELECT area_id, period_key, content FROM lt_plan "
-                f"WHERE period_key IN ({aph})",
-                anc_keys,
-            ):
-                anc_map[(r["area_id"], r["period_key"])] = r["content"]
-        gantt = _gantt_areas(conn, areas, span_start, span_end) if view == "gantt" else []
-    parent_ctx = []
-    for ar in areas:
-        rows = [
-            {"label": anc["label"], "content": anc_map[(ar["id"], anc["key"])]}
-            for anc in ancestors
-            if anc_map.get((ar["id"], anc["key"]))
-        ]
-        if rows:
-            parent_ctx.append({"name": ar["name"], "rows": rows})
+        gantt = _gantt_areas(conn, areas, span_start, span_end)
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -437,123 +396,18 @@ def plan_view(request: Request, level: str = "year", anchor: str = "",
             "header": header,
             "areas": areas,
             "all_areas": [dict(x) for x in all_areas],
-            "grid": grid,
             "breadcrumb": _plan_breadcrumb(level, a),
-            "parent_ctx": parent_ctx,
             "prev_anchor": prev_anchor,
             "next_anchor": next_anchor,
             "zoom_in": order[i + 1] if i + 1 < len(order) else None,
             "zoom_out": order[i - 1] if i - 1 >= 0 else None,
             "levels": PLAN_LEVELS,
             "level_labels": PLAN_LEVEL_LABELS,
-            "view": view,
             "gantt": gantt,
             "span_start": span_start.strftime("%Y-%m-%d"),
             "span_end": span_end.strftime("%Y-%m-%d"),
         },
     )
-
-
-@router.post("/plan/cell/save")
-async def plan_cell_save(request: Request):
-    """장기플랜 칸 한 개를 자동저장. 내용이 비면 행을 지워 깔끔하게 유지한다."""
-    form = await request.form()
-    level = (form.get("level") or "").strip()
-    period_key = (form.get("period_key") or "").strip()
-    try:
-        area_id = int(form.get("area_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False}, status_code=400)
-    if level not in PLAN_LEVELS or not period_key:
-        return JSONResponse({"ok": False}, status_code=400)
-    content = (form.get("content") or "").strip()
-    now = datetime.now(KST).isoformat(timespec="seconds")
-    with get_conn() as conn:
-        if content:
-            conn.execute(
-                "INSERT INTO lt_plan (level, period_key, area_id, content, updated_at) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(level, period_key, area_id) DO UPDATE SET "
-                "content = excluded.content, updated_at = excluded.updated_at",
-                (level, period_key, area_id, content, now),
-            )
-        else:
-            conn.execute(
-                "DELETE FROM lt_plan WHERE level = ? AND period_key = ? AND area_id = ?",
-                (level, period_key, area_id),
-            )
-    return JSONResponse({"ok": True})
-
-
-@router.post("/plan/decompose")
-async def plan_decompose(request: Request):
-    """장기 칸(연/분기/월)을 바로 아래 단위로 세분화한다. 빈 자식 칸만 채운다."""
-    form = await request.form()
-    level = (form.get("level") or "").strip()
-    period_key = (form.get("period_key") or "").strip()
-    try:
-        area_id = int(form.get("area_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
-    if level not in ("year", "quarter", "month"):
-        return JSONResponse(
-            {"ok": False, "error": "이 단위는 세분화할 수 없습니다"}, status_code=400
-        )
-    child_level, children = _child_periods(level, period_key)
-    if not children:
-        return JSONResponse({"ok": False, "error": "no-children"}, status_code=400)
-    now = datetime.now(KST).isoformat(timespec="seconds")
-    with get_conn() as conn:
-        prow = conn.execute(
-            "SELECT content FROM lt_plan WHERE level=? AND period_key=? AND area_id=?",
-            (level, period_key, area_id),
-        ).fetchone()
-        parent_text = ((prow["content"] if prow else "") or "").strip()
-        if not parent_text:
-            return JSONResponse(
-                {"ok": False, "error": "상위 계획을 먼저 적어 주세요"}, status_code=400
-            )
-        arow = conn.execute(
-            "SELECT name FROM lt_area WHERE id=?", (area_id,)
-        ).fetchone()
-        area_name = arow["name"] if arow else ""
-        keys = [k for k, _ in children]
-        ph = ",".join("?" * len(keys))
-        existing = {
-            r["period_key"]: (r["content"] or "")
-            for r in conn.execute(
-                f"SELECT period_key, content FROM lt_plan "
-                f"WHERE level=? AND area_id=? AND period_key IN ({ph})",
-                (child_level, area_id, *keys),
-            )
-        }
-        labels = [lbl for _, lbl in children]
-        contents = (
-            await _off_loop(_ai_split, parent_text, labels, area_name, PLAN_LEVEL_LABELS[level])
-            if ai.enabled() else None
-        )
-        used_ai = contents is not None
-        if contents is None:
-            contents = _rule_distribute(parent_text, len(children))
-        filled = 0
-        for (key, _lbl), gen in zip(children, contents):
-            if existing.get(key, "").strip():
-                continue
-            gen = (gen or "").strip()
-            if not gen:
-                continue
-            conn.execute(
-                "INSERT INTO lt_plan (level, period_key, area_id, content, updated_at) "
-                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(level, period_key, area_id) DO UPDATE "
-                "SET content = excluded.content, updated_at = excluded.updated_at",
-                (child_level, key, area_id, gen, now),
-            )
-            filled += 1
-    return JSONResponse({
-        "ok": True, "child_level": child_level,
-        "child_anchor": _child_anchor(level, period_key),
-        "filled": filled, "used_ai": used_ai,
-    })
 
 
 @router.post("/plan/area/add")

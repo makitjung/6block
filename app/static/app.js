@@ -1318,73 +1318,9 @@
     }
 
     // ---- 장기플랜 (/plan) ------------------------------------------------
-    function bindPlan() {
-        const grid = document.querySelector('.plan-grid');
-        if (!grid) return;
-
-        // 칸 자동저장: blur 시 변경분 전송, 오프라인이면 대기열에 쌓고 자동 재시도
-        grid.querySelectorAll('.pg-input').forEach((ta) => {
-            ta.addEventListener('change', () => {
-                const body = new URLSearchParams({
-                    level: ta.dataset.level,
-                    period_key: ta.dataset.period,
-                    area_id: ta.dataset.area,
-                    content: ta.value,
-                }).toString();
-                sendOrQueue(
-                    { id: genId(), kind: 'plan-cell', url: '/plan/cell/save',
-                      headers: FORM_HEADERS, body },
-                    () => toast('저장'),
-                    () => toast('저장 대기 · 자동 재시도'),
-                );
-            });
-        });
-
-        // 세분화: 이 칸을 아래 단위로 나눠 빈 자식 칸을 채우고 그 단위 화면으로 이동
-        grid.querySelectorAll('.pg-decompose').forEach((b) => {
-            b.addEventListener('click', () => {
-                b.disabled = true;
-                postForm('/plan/decompose', {
-                    level: b.dataset.level, period_key: b.dataset.period, area_id: b.dataset.area,
-                }).then((d) => {
-                    b.disabled = false;
-                    if (d && d.ok) {
-                        toast((d.used_ai ? 'AI 세분화 · ' : '세분화 · ') + d.filled + '칸 채움');
-                        location.href = '/plan?level=' + d.child_level + '&anchor=' + d.child_anchor;
-                    } else {
-                        toast((d && d.error) || '세분화 실패');
-                    }
-                });
-            });
-        });
-
-        // 화면 밀도(축소/확대): data-zoom 0..3을 localStorage에 보존
-        const ZKEY = '6block-plan-zoom';
-        let z = parseInt(localStorage.getItem(ZKEY), 10);
-        if (isNaN(z)) z = 1;
-        const applyZoom = () => grid.setAttribute('data-zoom', String(z));
-        applyZoom();
-        document.getElementById('pg-zoom-in')?.addEventListener('click', () => {
-            z = Math.min(3, z + 1); localStorage.setItem(ZKEY, z); applyZoom();
-        });
-        document.getElementById('pg-zoom-out')?.addEventListener('click', () => {
-            z = Math.max(0, z - 1); localStorage.setItem(ZKEY, z); applyZoom();
-        });
-
-        // 현재 기간 열을 고정된 영역 열 바로 오른쪽으로 가로 스크롤(가려지지 않게)
-        const nowCol = grid.querySelector('.pg-head.is-now');
-        const scroller = grid.closest('.plan-scroll');
-        if (nowCol && scroller) {
-            const areaW = grid.querySelector('.pg-area')?.getBoundingClientRect().width || 0;
-            const delta = nowCol.getBoundingClientRect().left
-                        - scroller.getBoundingClientRect().left - areaW - 12;
-            scroller.scrollLeft += delta;
-        }
-    }
-
-    // ---- 장기플랜 간트 (/plan?view=gantt) --------------------------------
-    // 막대를 누르면 그 줄 아래 편집칸이 열린다. 추가·수정·삭제 후에는 상위 기간이
-    // 서버에서 다시 계산되므로 화면을 새로 그린다(reload).
+    // 상위 기간 막대 안에 하위 기간 막대가 겹쳐 그려진다. 어느 막대든 누르면 그 줄 아래
+    // 편집칸이 열린다. 추가·수정·삭제 후에는 상위 기간이 서버에서 다시 계산되므로
+    // 화면을 새로 그린다(reload).
     function bindGantt() {
         const gantt = document.querySelector('.gantt');
         if (!gantt) return;
@@ -1465,6 +1401,15 @@
                 openForm(b.dataset.area, b.dataset.parent, b.dataset.title);
             });
         });
+
+        // 현재 기간 열이 화면에 들어오도록 가로 스크롤(항목 이름 열에 가리지 않게)
+        const nowCol = gantt.querySelector('.gt-col.is-now');
+        const scroller = gantt.closest('.plan-scroll');
+        if (nowCol && scroller) {
+            const delta = nowCol.getBoundingClientRect().left
+                        - scroller.getBoundingClientRect().left - 12;
+            if (delta > 0) scroller.scrollLeft += delta;
+        }
     }
 
     function bindPlanAreas() {
@@ -2416,7 +2361,6 @@
             });
         });
 
-        bindPlan();
         bindGantt();
         bindPlanAreas();
         bindReflect();
