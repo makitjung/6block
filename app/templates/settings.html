@@ -5,241 +5,296 @@
 <section class="hero">
     <div class="hero-date">
         <div class="hero-date-main">설정</div>
-        <div class="hero-date-sub mono">구분 · 동작 · 세션 시간 · 요일 컨셉</div>
+        <div class="hero-date-sub mono">화면·동작 · 시간·구조 · 연동 · 서버</div>
     </div>
 </section>
 
-<div class="split-2">
-<section class="card">
-    <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
-    <div class="set-cat-list" id="set-cat-list">
-        {% for c in categories %}
-        <div class="set-cat-row{% if not c.is_active %} is-hidden{% endif %}" data-id="{{ c.id }}">
-            <span class="set-cat-dot" style="background: var(--tone-{{ c.tone }})"></span>
-            <input type="text" class="set-cat-name" value="{{ c.name }}" data-id="{{ c.id }}" autocomplete="off" aria-label="구분 이름">
-            <select class="set-cat-tone" data-id="{{ c.id }}" aria-label="색">
-                {% for key, label in tones %}
-                <option value="{{ key }}" {% if c.tone == key %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-            <button type="button" class="set-mini-btn set-cat-up" data-id="{{ c.id }}" title="위로">↑</button>
-            <button type="button" class="set-mini-btn set-cat-down" data-id="{{ c.id }}" title="아래로">↓</button>
-            {% if c.is_active %}
-            <button type="button" class="set-mini-btn set-cat-del" data-id="{{ c.id }}" title="숨김">✕</button>
-            {% else %}
-            <button type="button" class="set-mini-btn set-cat-show" data-id="{{ c.id }}" data-name="{{ c.name }}" data-tone="{{ c.tone }}" title="다시 표시">↺</button>
-            {% endif %}
-        </div>
-        {% endfor %}
-    </div>
-    <div class="set-cat-add">
-        <input type="text" id="set-cat-new-name" placeholder="새 구분 이름" autocomplete="off">
-        <select id="set-cat-new-tone" aria-label="새 구분 색">
-            {% for key, label in tones %}
-            <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-        </select>
-        <button type="button" class="primary-btn" id="set-cat-add-btn">추가</button>
-    </div>
-</section>
+<div class="set-status">
+    <span class="set-chip {% if gcal_events_on %}on{% endif %}">구글 일정 쓰기 {% if gcal_events_on %}켜짐{% else %}꺼짐{% endif %}</span>
+    <span class="set-chip {% if gcal_achieve_on %}on{% endif %}">성과 캘린더 {% if gcal_achieve_on %}켜짐{% else %}꺼짐{% endif %}</span>
+    <span class="set-chip {% if ai_status.enabled %}on{% endif %}">AI {% if ai_status.enabled %}켜짐{% else %}꺼짐{% endif %}</span>
+    <span class="set-chip">구분 {{ active_categories | length }}개</span>
+    <span class="set-chip">템플릿 {{ cat_templates | length }}개</span>
+</div>
 
-<section class="card">
-    <h2 class="card-title">동작 설정 <span class="card-sub">모든 기기에 같이 적용됩니다</span></h2>
-    <div class="set-grid" id="set-behavior">
-        <label class="set-field">
-            <span class="set-label">시작 화면</span>
-            <select data-key="start_view">
-                <option value="today" {% if settings.start_view == 'today' %}selected{% endif %}>오늘</option>
-                <option value="week" {% if settings.start_view == 'week' %}selected{% endif %}>주간</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">기본 테마</span>
-            <select data-key="default_theme">
-                <option value="light" {% if settings.default_theme == 'light' %}selected{% endif %}>라이트</option>
-                <option value="dark" {% if settings.default_theme == 'dark' %}selected{% endif %}>다크</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">포모도로 자동 모드</span>
-            <select data-key="pomo_auto">
-                <option value="0" {% if settings.pomo_auto == '0' %}selected{% endif %}>끔</option>
-                <option value="1" {% if settings.pomo_auto == '1' %}selected{% endif %}>켬</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">종료 5분 전 알람</span>
-            <select data-key="pomo_warn5">
-                <option value="1" {% if settings.pomo_warn5 == '1' %}selected{% endif %}>켬</option>
-                <option value="0" {% if settings.pomo_warn5 == '0' %}selected{% endif %}>끔</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">오늘 현재블록만 보기</span>
-            <select data-key="collapse_blocks">
-                <option value="1" {% if settings.collapse_blocks == '1' %}selected{% endif %}>켬</option>
-                <option value="0" {% if settings.collapse_blocks == '0' %}selected{% endif %}>끔</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">블록 장소 표시</span>
-            <select data-key="show_location">
-                <option value="1" {% if settings.show_location == '1' %}selected{% endif %}>켬</option>
-                <option value="0" {% if settings.show_location == '0' %}selected{% endif %}>끔</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">슬롯 '한일' 버튼 표시</span>
-            <select data-key="show_did">
-                <option value="1" {% if settings.show_did == '1' %}selected{% endif %}>켬</option>
-                <option value="0" {% if settings.show_did == '0' %}selected{% endif %}>끔</option>
-            </select>
-        </label>
-        <label class="set-field">
-            <span class="set-label">슬롯 '고민' 버튼 표시</span>
-            <select data-key="show_reflect">
-                <option value="1" {% if settings.show_reflect == '1' %}selected{% endif %}>켬</option>
-                <option value="0" {% if settings.show_reflect == '0' %}selected{% endif %}>끔</option>
-            </select>
-        </label>
-    </div>
-</section>
+<nav class="set-nav" aria-label="설정 그룹 바로가기">
+    <a href="#set-g-behavior">화면·동작</a>
+    <a href="#set-g-structure">시간·구조</a>
+    <a href="#set-g-link">연동</a>
+    <a href="#set-g-server">서버</a>
+</nav>
 
-<section class="card">
-    <h2 class="card-title">세션(블록) 시간 <span class="card-sub">8블록 시작·끝만 편집 · 시작은 5분 단위 · 블록 길이는 30분 배수(세션 30분 유지) · 기록 없는 날부터 자동 적용</span></h2>
-    <div class="set-blocktimes" id="set-blocktimes">
-        {% for b in day_blocks %}
-        <div class="set-bt-row" data-order="{{ b.order }}">
-            <span class="set-bt-label{% if b.is_core %} core{% endif %}">{{ b.label }}</span>
-            <input type="time" class="set-bt-start" data-order="{{ b.order }}" value="{{ b.start }}" step="300" aria-label="{{ b.label }} 시작">
-            <span class="set-bt-dash">–</span>
-            <input type="time" class="set-bt-end" data-order="{{ b.order }}" value="{{ b.end }}" step="300" aria-label="{{ b.label }} 끝">
-        </div>
-        {% endfor %}
-    </div>
-    <div class="set-bt-actions">
-        <span class="set-bt-msg" id="set-bt-msg"></span>
-        <button type="button" class="ghost-btn" id="set-bt-reset">기본값으로</button>
-    </div>
-</section>
-
-<section class="card">
-    <h2 class="card-title">요일별 컨셉 <span class="card-sub">그 요일을 어떤 컨셉으로 보낼지 · 오늘 각 블록 오른쪽에 표시됩니다</span></h2>
-    <div class="set-weekday-grid" id="set-weekday">
-        {% for w in weekday_concepts %}
-        <label class="set-wd-row">
-            <span class="set-wd-label">{{ w.label }}</span>
-            <input type="text" class="set-wd-input" data-weekday="{{ w.weekday }}" value="{{ w.text }}" placeholder="{{ w.label }}요일 컨셉" autocomplete="off">
-        </label>
-        {% endfor %}
-    </div>
-</section>
-
-<section class="card">
-    <h2 class="card-title">구글 일정 쓰기 <span class="card-sub">오늘 탭에서 만든 일정을 보낼 캘린더</span></h2>
-    <div class="set-data-row">
-        <span class="set-label">캘린더 ID</span>
-        <input type="text" id="set-events-cal" value="{{ events_calendar_id }}" placeholder="...@group.calendar.google.com" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="set-data-row">
-        <span class="set-label">상태</span>
-        <span class="set-events-status {% if gcal_events_on %}ok{% else %}bad{% endif %}" id="set-events-status">{% if gcal_events_on %}켜짐 · 연결됨{% else %}꺼짐 · ID 입력 필요{% endif %}</span>
-        <button type="button" class="ghost-btn" id="set-events-test">연결 테스트</button>
-    </div>
-    {% if sa_email %}
-    <p class="set-events-hint mono">이 캘린더를 구글 캘린더 공유 설정에서 다음 계정에 '변경 권한'으로 공유하세요 · {{ sa_email }}</p>
-    {% endif %}
-</section>
-
-<section class="card">
-    <h2 class="card-title">성과 캘린더 쓰기 <span class="card-sub">오늘 '달성' 3줄을 종일 이벤트로 · 설명란에 1. 2. 3.</span></h2>
-    <div class="set-data-row">
-        <span class="set-label">캘린더 ID</span>
-        <input type="text" id="set-achieve-cal" value="{{ achieve_calendar_id }}" placeholder="...@group.calendar.google.com" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="set-data-row">
-        <span class="set-label">상태</span>
-        <span class="set-events-status {% if gcal_achieve_on %}ok{% else %}bad{% endif %}" id="set-achieve-status">{% if gcal_achieve_on %}켜짐 · 연결됨{% else %}꺼짐 · ID 입력 필요{% endif %}</span>
-        <button type="button" class="ghost-btn" id="set-achieve-test">연결 테스트</button>
-    </div>
-    {% if sa_email %}
-    <p class="set-events-hint mono">이 캘린더를 구글 캘린더 공유 설정에서 다음 계정에 '변경 권한'으로 공유하세요 · {{ sa_email }}</p>
-    {% endif %}
-    <p class="set-events-hint">오늘 탭에서 저장할 때마다 그날 달성이 이 캘린더에 자동으로 올라가고, 다시 저장하면 같은 날 이벤트가 갱신됩니다.</p>
-</section>
-
-<section class="card">
-    <h2 class="card-title">AI 연결 <span class="card-sub">선택 · 자동 세분화와 개선점 문장에 사용 · 없으면 규칙기반으로 동작</span></h2>
-    <div class="set-data-row">
-        <span class="set-label">base URL</span>
-        <input type="text" id="set-ai-base" value="{{ ai_status.base }}" placeholder="예: https://api.deepseek.com/v1" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="set-data-row">
-        <span class="set-label">모델</span>
-        <input type="text" id="set-ai-model" value="{{ ai_status.model }}" placeholder="예: deepseek-chat" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="set-data-row">
-        <span class="set-label">상태</span>
-        <span class="set-events-status {% if ai_status.enabled %}ok{% else %}bad{% endif %}" id="set-ai-status">{% if ai_status.enabled %}켜짐 · 연결됨{% elif ai_status.has_key %}주소·모델 입력 필요{% else %}꺼짐 · .env AI_API_KEY 필요{% endif %}</span>
-        <button type="button" class="ghost-btn" id="set-ai-test">연결 테스트</button>
-    </div>
-    <p class="set-events-hint">API 키(AI_API_KEY)는 아래 '.env 편집' 카드에 넣고 저장 후 재시작하세요. base URL·모델은 여기서 저장하거나 .env에 함께 넣어도 됩니다.</p>
-</section>
-
-<section class="card">
-    <h2 class="card-title">.env 편집 <span class="card-sub">API 키·환경변수를 여기서 직접 보고 고칩니다 · 저장 후 재시작해야 반영됩니다</span></h2>
-    <textarea id="set-env-text" class="set-env-text mono" rows="10" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label=".env 내용">{{ env_content }}</textarea>
-    <div class="set-env-actions">
-        <span class="set-bt-msg" id="set-env-msg"></span>
-        <button type="button" class="primary-btn" id="set-env-save">저장 후 재시작</button>
-    </div>
-    <p class="set-events-hint mono">{{ env_path }}</p>
-    <p class="set-events-hint">한 줄에 하나씩 KEY=값 형식입니다. 예) AI_API_KEY=sk-… · AI_BASE_URL=https://api.deepseek.com/v1 · AI_MODEL=deepseek-chat. 이 편집기는 개인용(테일스케일 내부)에서만 열립니다.</p>
-</section>
-
-<section class="card set-template-card">
-    <h2 class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트를 만들어 두면 주간 탭에서 한 번에 채웁니다</span></h2>
-    <div id="set-tpl-list">
-        {% for t in cat_templates %}
-        <div class="set-tpl" data-id="{{ t.id }}">
-            <div class="set-tpl-head">
-                <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" autocomplete="off" aria-label="템플릿 이름">
-                <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
+<section class="set-group" id="set-g-behavior">
+    <h2 class="set-group-title">화면 · 동작 <span class="set-group-sub">앱을 열었을 때의 기본 동작</span></h2>
+    <div class="split-2">
+        <section class="card">
+            <h2 class="card-title">동작 설정 <span class="card-sub">모든 기기에 같이 적용됩니다</span></h2>
+            <div class="set-grid" id="set-behavior">
+                <label class="set-field">
+                    <span class="set-label">시작 화면</span>
+                    <select data-key="start_view">
+                        <option value="today" {% if settings.start_view == 'today' %}selected{% endif %}>오늘</option>
+                        <option value="week" {% if settings.start_view == 'week' %}selected{% endif %}>주간</option>
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">기본 테마</span>
+                    <select data-key="default_theme">
+                        <option value="light" {% if settings.default_theme == 'light' %}selected{% endif %}>라이트</option>
+                        <option value="dark" {% if settings.default_theme == 'dark' %}selected{% endif %}>다크</option>
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">오늘 현재블록만 보기</span>
+                    <select data-key="collapse_blocks">
+                        <option value="1" {% if settings.collapse_blocks == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.collapse_blocks == '0' %}selected{% endif %}>끔</option>
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">블록 장소 표시</span>
+                    <select data-key="show_location">
+                        <option value="1" {% if settings.show_location == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.show_location == '0' %}selected{% endif %}>끔</option>
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">슬롯 '한일' 버튼 표시</span>
+                    <select data-key="show_did">
+                        <option value="1" {% if settings.show_did == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.show_did == '0' %}selected{% endif %}>끔</option>
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">슬롯 '고민' 버튼 표시</span>
+                    <select data-key="show_reflect">
+                        <option value="1" {% if settings.show_reflect == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.show_reflect == '0' %}selected{% endif %}>끔</option>
+                    </select>
+                </label>
             </div>
-            <div class="set-tpl-grid" style="--cols: {{ weekdays | length }}">
-                <div class="set-tpl-corner"></div>
-                {% for wd, wd_label in weekdays %}<div class="set-tpl-blabel">{{ wd_label }}</div>{% endfor %}
-                {% for lbl in core_labels %}
-                <div class="set-tpl-daytype">{{ lbl }}</div>
-                {% for wd, wd_label in weekdays %}
-                <select class="set-tpl-cell cat-select" data-tpl="{{ t.id }}" data-weekday="{{ wd }}" data-label="{{ lbl }}" aria-label="{{ wd_label }} {{ lbl }} 구분">
-                    <option value="">—</option>
-                    {% for c in active_categories %}
-                    <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if t.cells.get(wd, {}).get(lbl) == c.id %}selected{% endif %}>{{ c.name }}</option>
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">포모도로 <span class="card-sub">슬롯 종료까지 집중하는 타이머</span></h2>
+            <div class="set-grid">
+                <label class="set-field">
+                    <span class="set-label">자동 모드</span>
+                    <select data-key="pomo_auto">
+                        <option value="0" {% if settings.pomo_auto == '0' %}selected{% endif %}>끔</option>
+                        <option value="1" {% if settings.pomo_auto == '1' %}selected{% endif %}>켬</option>
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">종료 5분 전 알람</span>
+                    <select data-key="pomo_warn5">
+                        <option value="1" {% if settings.pomo_warn5 == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.pomo_warn5 == '0' %}selected{% endif %}>끔</option>
+                    </select>
+                </label>
+            </div>
+            <p class="set-events-hint">자동 모드는 정각·30분 경계에서 다음 슬롯 집중을 스스로 시작합니다.</p>
+        </section>
+    </div>
+</section>
+
+<section class="set-group" id="set-g-structure">
+    <h2 class="set-group-title">시간 · 구조 <span class="set-group-sub">하루를 나누는 방식과 구분 체계</span></h2>
+
+    <section class="card">
+        <h2 class="card-title">세션(블록) 시간 <span class="card-sub">공통을 정하고 요일별로만 다르게 덮어씁니다 · 시작은 5분 단위 · 블록 길이는 30분 배수(세션 30분 유지) · 기록 없는 날부터 자동 적용</span></h2>
+        <div class="set-bt-tabs" id="set-bt-tabs">
+            {% for sc in block_scopes %}
+            <button type="button" class="set-bt-tab{% if loop.first %} is-active{% endif %}{% if sc.overridden %} is-over{% endif %}" data-scope="{{ sc.key }}">{{ sc.label }}</button>
+            {% endfor %}
+        </div>
+        {% for sc in block_scopes %}
+        <div class="set-bt-panel" data-scope="{{ sc.key }}" {% if not loop.first %}hidden{% endif %}>
+            <div class="set-bt-state">
+                {% if sc.key %}
+                <span class="set-bt-badge {% if sc.overridden %}on{% endif %}">{% if sc.overridden %}{{ sc.label }}요일 따로 지정됨{% else %}공통을 따르는 중 · 값을 고치면 이 요일만 바뀝니다{% endif %}</span>
+                {% else %}
+                <span class="set-bt-badge on">모든 요일의 기본값</span>
+                {% endif %}
+            </div>
+            <div class="set-blocktimes" data-scope="{{ sc.key }}">
+                {% for b in sc.rows %}
+                <div class="set-bt-row" data-order="{{ b.order }}">
+                    <span class="set-bt-label{% if b.is_core %} core{% endif %}">{{ b.label }}</span>
+                    <input type="time" class="set-bt-start" data-order="{{ b.order }}" value="{{ b.start }}" step="300" aria-label="{{ b.label }} 시작">
+                    <span class="set-bt-dash">–</span>
+                    <input type="time" class="set-bt-end" data-order="{{ b.order }}" value="{{ b.end }}" step="300" aria-label="{{ b.label }} 끝">
+                </div>
+                {% endfor %}
+            </div>
+            <div class="set-bt-actions">
+                <span class="set-bt-msg"></span>
+                <button type="button" class="ghost-btn set-bt-reset" data-scope="{{ sc.key }}">{% if sc.key %}공통으로 되돌리기{% else %}기본값으로{% endif %}</button>
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+
+    <div class="split-2">
+        <section class="card">
+            <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
+            <div class="set-cat-list" id="set-cat-list">
+                {% for c in categories %}
+                <div class="set-cat-row{% if not c.is_active %} is-hidden{% endif %}" data-id="{{ c.id }}">
+                    <span class="set-cat-dot" style="background: var(--tone-{{ c.tone }})"></span>
+                    <input type="text" class="set-cat-name" value="{{ c.name }}" data-id="{{ c.id }}" autocomplete="off" aria-label="구분 이름">
+                    <select class="set-cat-tone" data-id="{{ c.id }}" aria-label="색">
+                        {% for key, label in tones %}
+                        <option value="{{ key }}" {% if c.tone == key %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="set-mini-btn set-cat-up" data-id="{{ c.id }}" title="위로">↑</button>
+                    <button type="button" class="set-mini-btn set-cat-down" data-id="{{ c.id }}" title="아래로">↓</button>
+                    {% if c.is_active %}
+                    <button type="button" class="set-mini-btn set-cat-del" data-id="{{ c.id }}" title="숨김">✕</button>
+                    {% else %}
+                    <button type="button" class="set-mini-btn set-cat-show" data-id="{{ c.id }}" data-name="{{ c.name }}" data-tone="{{ c.tone }}" title="다시 표시">↺</button>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="set-cat-add">
+                <input type="text" id="set-cat-new-name" placeholder="새 구분 이름" autocomplete="off">
+                <select id="set-cat-new-tone" aria-label="새 구분 색">
+                    {% for key, label in tones %}
+                    <option value="{{ key }}">{{ label }}</option>
                     {% endfor %}
                 </select>
-                {% endfor %}
+                <button type="button" class="primary-btn" id="set-cat-add-btn">추가</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">요일별 컨셉 <span class="card-sub">그 요일을 어떤 컨셉으로 보낼지 · 오늘 각 블록 오른쪽에 표시됩니다</span></h2>
+            <div class="set-weekday-grid" id="set-weekday">
+                {% for w in weekday_concepts %}
+                <label class="set-wd-row">
+                    <span class="set-wd-label">{{ w.label }}</span>
+                    <input type="text" class="set-wd-input" data-weekday="{{ w.weekday }}" value="{{ w.text }}" placeholder="{{ w.label }}요일 컨셉" autocomplete="off">
+                </label>
                 {% endfor %}
             </div>
-        </div>
-        {% endfor %}
+        </section>
     </div>
-    <div class="ctx-empty" id="set-tpl-empty"{% if cat_templates %} hidden{% endif %}>아직 템플릿이 없습니다. 아래에서 추가하세요.</div>
-    <div class="set-cat-add">
-        <input type="text" id="set-tpl-new-name" placeholder="새 템플릿 이름 (예: 집중주)" autocomplete="off">
-        <button type="button" class="primary-btn" id="set-tpl-add-btn">추가</button>
+
+    <section class="card set-template-card">
+        <h2 class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트를 만들어 두면 주간 탭에서 한 번에 채웁니다</span></h2>
+        <div id="set-tpl-list">
+            {% for t in cat_templates %}
+            <div class="set-tpl" data-id="{{ t.id }}">
+                <div class="set-tpl-head">
+                    <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" autocomplete="off" aria-label="템플릿 이름">
+                    <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
+                </div>
+                <div class="set-tpl-grid" style="--cols: {{ weekdays | length }}">
+                    <div class="set-tpl-corner"></div>
+                    {% for wd, wd_label in weekdays %}<div class="set-tpl-blabel">{{ wd_label }}</div>{% endfor %}
+                    {% for lbl in core_labels %}
+                    <div class="set-tpl-daytype">{{ lbl }}</div>
+                    {% for wd, wd_label in weekdays %}
+                    <select class="set-tpl-cell cat-select" data-tpl="{{ t.id }}" data-weekday="{{ wd }}" data-label="{{ lbl }}" aria-label="{{ wd_label }} {{ lbl }} 구분">
+                        <option value="">—</option>
+                        {% for c in active_categories %}
+                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if t.cells.get(wd, {}).get(lbl) == c.id %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endfor %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="ctx-empty" id="set-tpl-empty"{% if cat_templates %} hidden{% endif %}>아직 템플릿이 없습니다. 아래에서 추가하세요.</div>
+        <div class="set-cat-add">
+            <input type="text" id="set-tpl-new-name" placeholder="새 템플릿 이름 (예: 집중주)" autocomplete="off">
+            <button type="button" class="primary-btn" id="set-tpl-add-btn">추가</button>
+        </div>
+    </section>
+</section>
+
+<section class="set-group" id="set-g-link">
+    <h2 class="set-group-title">연동 <span class="set-group-sub">구글 캘린더와 AI · 한 번 맞춰두면 손댈 일이 적습니다</span></h2>
+    <div class="split-2">
+        <section class="card">
+            <h2 class="card-title">구글 일정 쓰기 <span class="card-sub">오늘 탭에서 만든 일정을 보낼 캘린더</span></h2>
+            <div class="set-data-row">
+                <span class="set-label">캘린더 ID</span>
+                <input type="text" id="set-events-cal" value="{{ events_calendar_id }}" placeholder="...@group.calendar.google.com" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="set-data-row">
+                <span class="set-label">상태</span>
+                <span class="set-events-status {% if gcal_events_on %}ok{% else %}bad{% endif %}" id="set-events-status">{% if gcal_events_on %}켜짐 · 연결됨{% else %}꺼짐 · ID 입력 필요{% endif %}</span>
+                <button type="button" class="ghost-btn" id="set-events-test">연결 테스트</button>
+            </div>
+            {% if sa_email %}
+            <p class="set-events-hint mono">이 캘린더를 구글 캘린더 공유 설정에서 다음 계정에 '변경 권한'으로 공유하세요 · {{ sa_email }}</p>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">성과 캘린더 쓰기 <span class="card-sub">오늘 '달성' 3줄을 종일 이벤트로 · 설명란에 1. 2. 3.</span></h2>
+            <div class="set-data-row">
+                <span class="set-label">캘린더 ID</span>
+                <input type="text" id="set-achieve-cal" value="{{ achieve_calendar_id }}" placeholder="...@group.calendar.google.com" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="set-data-row">
+                <span class="set-label">상태</span>
+                <span class="set-events-status {% if gcal_achieve_on %}ok{% else %}bad{% endif %}" id="set-achieve-status">{% if gcal_achieve_on %}켜짐 · 연결됨{% else %}꺼짐 · ID 입력 필요{% endif %}</span>
+                <button type="button" class="ghost-btn" id="set-achieve-test">연결 테스트</button>
+            </div>
+            {% if sa_email %}
+            <p class="set-events-hint mono">이 캘린더도 같은 계정에 '변경 권한'으로 공유해야 합니다 · {{ sa_email }}</p>
+            {% endif %}
+            <p class="set-events-hint">오늘 탭에서 달성을 적을 때마다 그날 이벤트가 자동으로 갱신됩니다.</p>
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">AI 연결 <span class="card-sub">선택 · 자동 세분화와 개선점 문장에 사용 · 없으면 규칙기반으로 동작</span></h2>
+            <div class="set-data-row">
+                <span class="set-label">base URL</span>
+                <input type="text" id="set-ai-base" value="{{ ai_status.base }}" placeholder="예: https://api.deepseek.com/v1" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="set-data-row">
+                <span class="set-label">모델</span>
+                <input type="text" id="set-ai-model" value="{{ ai_status.model }}" placeholder="예: deepseek-chat" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="set-data-row">
+                <span class="set-label">상태</span>
+                <span class="set-events-status {% if ai_status.enabled %}ok{% else %}bad{% endif %}" id="set-ai-status">{% if ai_status.enabled %}켜짐 · 연결됨{% elif ai_status.has_key %}주소·모델 입력 필요{% else %}꺼짐 · .env AI_API_KEY 필요{% endif %}</span>
+                <button type="button" class="ghost-btn" id="set-ai-test">연결 테스트</button>
+            </div>
+            <p class="set-events-hint">API 키(AI_API_KEY)는 아래 '.env 편집'에 넣고 저장 후 재시작하세요.</p>
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">.env 편집 <span class="card-sub">API 키·환경변수를 직접 보고 고칩니다 · 저장 후 재시작해야 반영됩니다</span></h2>
+            <textarea id="set-env-text" class="set-env-text mono" rows="10" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label=".env 내용">{{ env_content }}</textarea>
+            <div class="set-env-actions">
+                <span class="set-bt-msg" id="set-env-msg"></span>
+                <button type="button" class="primary-btn" id="set-env-save">저장 후 재시작</button>
+            </div>
+            <p class="set-events-hint mono">{{ env_path }}</p>
+            <p class="set-events-hint">한 줄에 하나씩 KEY=값 형식입니다. 이 편집기는 개인용(테일스케일 내부)에서만 열립니다.</p>
+        </section>
     </div>
 </section>
 
-<section class="card">
-    <h2 class="card-title">서버 <span class="card-sub">코드나 환경변수(.env)를 바꾼 뒤 여기서 바로 재시작합니다</span></h2>
-    <div class="set-data-row">
-        <span class="set-label">재시작</span>
-        <button type="button" class="primary-btn" id="set-restart-btn">서버 재시작</button>
-        <span class="set-bt-msg" id="set-restart-msg"></span>
-    </div>
-    <p class="set-events-hint mono">.env 위치 · {{ env_path }}</p>
-    <p class="set-events-hint">이 파일에 값을 넣고 저장한 뒤 위 재시작을 누르면 반영됩니다. 재시작 동안 몇 초간 화면이 끊길 수 있고, 서버가 다시 올라오면 자동으로 새로고침됩니다.</p>
+<section class="set-group" id="set-g-server">
+    <h2 class="set-group-title">서버 <span class="set-group-sub">코드·환경변수를 바꾼 뒤 반영</span></h2>
+    <section class="card">
+        <h2 class="card-title">재시작 <span class="card-sub">기록·백업·내보내기는 데이터 탭에 있습니다</span></h2>
+        <div class="set-data-row">
+            <span class="set-label">재시작</span>
+            <button type="button" class="primary-btn" id="set-restart-btn">서버 재시작</button>
+            <span class="set-bt-msg" id="set-restart-msg"></span>
+        </div>
+        <p class="set-events-hint mono">.env 위치 · {{ env_path }}</p>
+        <p class="set-events-hint">재시작 동안 몇 초간 화면이 끊길 수 있고, 서버가 다시 올라오면 자동으로 새로고침됩니다.</p>
+    </section>
 </section>
-</div>
 {% endblock %}

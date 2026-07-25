@@ -33,9 +33,11 @@ from app.config import (
 )
 from app.db import (
     BLOCK_TIMES_KEY,
+    BLOCK_TIMES_WD_KEY,
     get_conn,
     get_day_blocks,
     get_settings,
+    get_weekday_overrides,
     init_db,
     set_setting,
 )
@@ -158,10 +160,16 @@ def _parse_anchor(anchor: str) -> date:
         return datetime.now(KST).date()
 
 
+def _month_last(y: int, m: int) -> date:
+    """그 달의 마지막 날."""
+    return (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
+
+
 def _plan_columns(level: str, anchor: date):
-    """(열 목록, 헤더 라벨). 열은 key·label·sub·current·week_link·drill_* 를 가진다.
+    """(열 목록, 헤더 라벨). 열은 key·label·sub·current·week_link·drill_*·start·end 를 가진다.
 
     drill_level/drill_anchor: 그 열 머리글을 누르면 들어갈 다음(더 잘은) 단위와 anchor.
+    start/end: 그 열이 덮는 실제 날짜 구간(date). 간트 막대 위치 계산에 쓴다.
     """
     today = datetime.now(KST).date()
     cols: list[dict] = []
@@ -170,17 +178,20 @@ def _plan_columns(level: str, anchor: date):
         for y in range(y0, y0 + 6):
             cols.append({"key": str(y), "label": str(y), "sub": "",
                          "current": y == today.year, "week_link": None,
-                         "drill_level": "quarter", "drill_anchor": f"{y}-01-01"})
+                         "drill_level": "quarter", "drill_anchor": f"{y}-01-01",
+                         "start": date(y, 1, 1), "end": date(y, 12, 31)})
         header = f"{y0}–{y0 + 5}"
     elif level == "quarter":
         y = anchor.year
         for q in range(1, 5):
+            m0 = (q - 1) * 3 + 1
             cols.append({"key": f"{y}-Q{q}", "label": f"{q}분기",
-                         "sub": f"{(q - 1) * 3 + 1}~{q * 3}월",
+                         "sub": f"{m0}~{q * 3}월",
                          "current": y == today.year and (today.month - 1) // 3 + 1 == q,
                          "week_link": None,
                          "drill_level": "month",
-                         "drill_anchor": f"{y}-{(q - 1) * 3 + 1:02d}-01"})
+                         "drill_anchor": f"{y}-{m0:02d}-01",
+                         "start": date(y, m0, 1), "end": _month_last(y, q * 3)})
         header = f"{y}년"
     elif level == "month":
         # 기본은 anchor가 속한 분기의 3개월만 포커싱해 보여준다(← → 로 분기 단위 이동).
@@ -191,13 +202,13 @@ def _plan_columns(level: str, anchor: date):
             cols.append({"key": f"{y}-{m:02d}", "label": f"{m}월", "sub": "",
                          "current": y == today.year and m == today.month,
                          "week_link": None,
-                         "drill_level": "week", "drill_anchor": f"{y}-{m:02d}-01"})
+                         "drill_level": "week", "drill_anchor": f"{y}-{m:02d}-01",
+                         "start": date(y, m, 1), "end": _month_last(y, m)})
         header = f"{y}년 {q}분기 ({m0}~{m0 + 2}월)"
     else:  # week
         y, m = anchor.year, anchor.month
         first = date(y, m, 1)
-        nextm = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
-        last = nextm - timedelta(days=1)
+        last = _month_last(y, m)
         monday = first - timedelta(days=first.weekday())
         cur_monday = today - timedelta(days=today.weekday())
         while monday <= last:
@@ -206,7 +217,8 @@ def _plan_columns(level: str, anchor: date):
             cols.append({"key": key, "label": f"{monday.month}/{monday.day}",
                          "sub": f"~{end.month}/{end.day}",
                          "current": monday == cur_monday, "week_link": key,
-                         "drill_level": None, "drill_anchor": None})
+                         "drill_level": None, "drill_anchor": None,
+                         "start": monday, "end": end})
             monday += timedelta(days=7)
         header = f"{y}년 {m}월"
     return cols, header
@@ -266,8 +278,13 @@ def _plan_breadcrumb(level: str, anchor: date):
     ]
 
 
+def _weekday_of(date_str: str) -> int:
+    """'YYYY-MM-DD'의 요일(0=월 ~ 6=일). 요일별 세션 시간을 고르는 데 쓴다."""
+    return datetime.strptime(date_str, "%Y-%m-%d").date().weekday()
+
+
 def _skeleton_matches_config(conn, date_str: str) -> bool:
-    """DB의 그날 블록 골격이 현재 효과적 설정(시간 편집 반영)과 정확히 같은지."""
+    """DB의 그날 블록 골격이 현재 효과적 설정(요일별 시간 편집 반영)과 정확히 같은지."""
     have = [
         (r["block_label"], r["start_time"], r["end_time"])
         for r in conn.execute(
@@ -276,7 +293,10 @@ def _skeleton_matches_config(conn, date_str: str) -> bool:
             (date_str,),
         )
     ]
-    want = [(label, start, end) for (label, _core, start, end) in get_day_blocks()]
+    want = [
+        (label, start, end)
+        for (label, _core, start, end) in get_day_blocks(_weekday_of(date_str))
+    ]
     return have == want
 
 
@@ -296,7 +316,9 @@ def _day_has_content(conn, date_str: str) -> bool:
             # 점심·저녁 버퍼 블록은 기본 구분이 '기타'로 자동 세팅되므로 사용자 내용이 아니다.
             # 코어 블록의 구분만 사용자 내용으로 친다(안 그러면 모든 날이 '내용 있음'이 돼
             # 세션 시간 변경이 빈 날에도 반영되지 않는다).
-            "OR (is_core = 1 AND category_id IS NOT NULL) OR TRIM(COALESCE(name,'')) != '') LIMIT 1",
+            "OR (is_core = 1 AND category_id IS NOT NULL) OR TRIM(COALESCE(name,'')) != '' "
+            # 장소만 지정해 둔 날도 사용자 입력이다(빠지면 시간 변경 시 골격 재생성으로 유실된다).
+            "OR TRIM(COALESCE(location,'')) != '') LIMIT 1",
             (date_str,),
         ).fetchone()
     )
@@ -314,7 +336,7 @@ def ensure_day_skeleton(conn, date_str: str):
         conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
         conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
-    day_blocks = get_day_blocks()
+    day_blocks = get_day_blocks(_weekday_of(date_str))
     # 점심·저녁 버퍼 블록은 기본 구분을 '기타'로 시드해 시간 분포 통계에 잡히게 한다.
     etc_row = conn.execute(
         "SELECT id FROM categories WHERE name = '기타' LIMIT 1"
@@ -1249,6 +1271,12 @@ def _week_view(request: Request, monday: date):
             "   OR (level='month' AND period_key=?) OR (level='week' AND period_key=?)",
             (ctx_levels[0][1], ctx_levels[1][1], ctx_levels[2][1], ctx_levels[3][1]),
         ).fetchall()
+        # 간트 항목 중 이 주에 걸친 것. 연·분기 계획이 이번 주에 어디까지 닿는지 함께 본다.
+        wk_items = conn.execute(
+            "SELECT area_id, title, start_date, end_date, progress FROM lt_item "
+            "WHERE start_date <= ? AND end_date >= ? ORDER BY start_date, id",
+            (dates[6], dates[0]),
+        ).fetchall()
         # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
         review_inbox = conn.execute(
             "SELECT id, text, status FROM inbox WHERE done = 0 ORDER BY id DESC"
@@ -1305,6 +1333,12 @@ def _week_view(request: Request, monday: date):
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     # 장기 계획 맥락을 영역별로 묶는다(연·분기·월·주 중 내용 있는 것만).
     lt_map = {(r["area_id"], r["level"]): (r["content"] or "") for r in lt_rows}
+    items_by_area: dict[int, list] = {}
+    for r in wk_items:
+        items_by_area.setdefault(r["area_id"], []).append({
+            "title": r["title"], "progress": r["progress"],
+            "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
+        })
     plan_context = []
     for ar in wk_areas:
         rows = [
@@ -1313,8 +1347,9 @@ def _week_view(request: Request, monday: date):
             for lv, _key, lv_label in ctx_levels
             if (lt_map.get((ar["id"], lv)) or "").strip()
         ]
-        if rows:
-            plan_context.append({"name": ar["name"], "rows": rows})
+        gitems = items_by_area.get(ar["id"], [])
+        if rows or gitems:
+            plan_context.append({"name": ar["name"], "rows": rows, "gantt": gitems})
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = WEEK_CORE_BLOCKS
 
@@ -1345,7 +1380,10 @@ def _week_view(request: Request, monday: date):
             "used_core": plan_total,
             "total_core": used_core_total,
             "achieve_pct": achieve_pct,
-            "week_total_hours": len(slots_for_day(get_day_blocks())) * 0.5 * 7,
+            # 요일마다 블록 시간이 다를 수 있으므로 7일치 슬롯 수를 각각 세어 합친다.
+            "week_total_hours": sum(
+                len(slots_for_day(get_day_blocks(i))) for i in range(7)
+            ) * 0.5,
             "wmeta": wmeta,
             "themes_by_label": themes_by_label,
             "cat_templates": [dict(t) for t in wk_templates],
@@ -1617,16 +1655,236 @@ async def week_decompose_themes(request: Request):
     return JSONResponse({"ok": True, "filled": filled, "used_ai": used_ai})
 
 
+# -- 장기플랜 간트 ----------------------------------------------------------
+# lt_item 한 줄이 간트 막대 하나다. parent_id 로 연→분기→월→주 항목을 잇고,
+# 하위가 있는 항목은 기간(하위 최소~최대)과 진척률(하위 평균)을 하위에서 자동으로 따라간다.
+
+
+def _parse_date(s) -> date | None:
+    """'YYYY-MM-DD' 를 date 로. 형식이 틀리면 None."""
+    try:
+        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _lt_rollup(conn, item_id: int | None):
+    """항목의 상위 사슬을 하위 값으로 갱신한다(기간=하위 최소~최대, 진척률=하위 평균)."""
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    seen: set[int] = set()
+    cur = item_id
+    while cur:
+        row = conn.execute(
+            "SELECT parent_id FROM lt_item WHERE id = ?", (cur,)
+        ).fetchone()
+        pid = row["parent_id"] if row else None
+        if not pid or pid in seen:      # 상위가 없거나 순환이면 멈춘다
+            return
+        seen.add(pid)
+        agg = conn.execute(
+            "SELECT MIN(start_date) AS s, MAX(end_date) AS e, "
+            "       AVG(progress) AS p, COUNT(*) AS n "
+            "FROM lt_item WHERE parent_id = ?",
+            (pid,),
+        ).fetchone()
+        if agg and agg["n"]:
+            conn.execute(
+                "UPDATE lt_item SET start_date = ?, end_date = ?, progress = ?, "
+                "updated_at = ? WHERE id = ?",
+                (agg["s"], agg["e"], round(agg["p"] or 0), now, pid),
+            )
+        cur = pid
+
+
+def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
+    """영역별 간트 행 목록. 보이는 기간과 겹치는 항목만 상위→하위 순으로 편다.
+
+    각 행에 left/width(퍼센트)와 잘림 여부를 담아 템플릿이 계산 없이 그리게 한다.
+    """
+    total = (span_end - span_start).days + 1
+    rows_by_area: dict[int, list] = {a["id"]: [] for a in areas}
+    children: dict[int | None, list] = {}
+    for r in conn.execute(
+        "SELECT id, area_id, parent_id, title, start_date, end_date, progress "
+        "FROM lt_item ORDER BY start_date, id"
+    ):
+        if r["area_id"] in rows_by_area:
+            children.setdefault(r["parent_id"], []).append(dict(r))
+
+    def overlaps(it) -> bool:
+        s, e = _parse_date(it["start_date"]), _parse_date(it["end_date"])
+        if not s or not e:
+            return False
+        if s <= span_end and e >= span_start:
+            return True
+        return any(overlaps(c) for c in children.get(it["id"], []))
+
+    def walk(it, depth: int):
+        s = _parse_date(it["start_date"]) or span_start
+        e = _parse_date(it["end_date"]) or s
+        vs, ve = max(s, span_start), min(e, span_end)
+        visible = vs <= ve
+        row = dict(it)
+        row["depth"] = depth
+        row["visible"] = visible
+        row["left"] = round((vs - span_start).days / total * 100, 3) if visible else 0
+        row["width"] = round(((ve - vs).days + 1) / total * 100, 3) if visible else 0
+        row["clip_left"] = s < span_start
+        row["clip_right"] = e > span_end
+        row["range_label"] = f"{s.month}/{s.day}~{e.month}/{e.day}"
+        row["has_children"] = bool(children.get(it["id"]))
+        rows_by_area[it["area_id"]].append(row)
+        for c in children.get(it["id"], []):
+            if overlaps(c):
+                walk(c, depth + 1)
+
+    for it in children.get(None, []):
+        if it["area_id"] in rows_by_area and overlaps(it):
+            walk(it, 0)
+    # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
+    return [
+        {"id": a["id"], "name": a["name"], "rows": rows_by_area[a["id"]]}
+        for a in areas
+    ]
+
+
+@app.post("/plan/item/add")
+async def plan_item_add(request: Request):
+    """간트 항목을 만든다. parent_id 를 주면 그 항목의 하위로 붙고 영역을 물려받는다."""
+    form = await request.form()
+    title = (form.get("title") or "").strip()
+    start = _parse_date(form.get("start"))
+    end = _parse_date(form.get("end")) or start
+    raw_parent = (form.get("parent_id") or "").strip()
+    try:
+        area_id = int(form.get("area_id"))
+    except (TypeError, ValueError):
+        area_id = 0
+    if not title:
+        return JSONResponse({"ok": False, "error": "제목을 입력하세요"}, status_code=400)
+    if not start or not end:
+        return JSONResponse({"ok": False, "error": "시작·종료 날짜가 필요합니다"},
+                            status_code=400)
+    if end < start:
+        return JSONResponse({"ok": False, "error": "종료일이 시작일보다 빠릅니다"},
+                            status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        parent_id = None
+        if raw_parent:
+            try:
+                pid = int(raw_parent)
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "상위 항목 값이 잘못됨"},
+                                    status_code=400)
+            prow = conn.execute(
+                "SELECT id, area_id FROM lt_item WHERE id = ?", (pid,)
+            ).fetchone()
+            if not prow:
+                return JSONResponse({"ok": False, "error": "상위 항목 없음"},
+                                    status_code=404)
+            parent_id, area_id = prow["id"], prow["area_id"]
+        if not conn.execute(
+            "SELECT 1 FROM lt_area WHERE id = ?", (area_id,)
+        ).fetchone():
+            return JSONResponse({"ok": False, "error": "영역 없음"}, status_code=404)
+        cur = conn.execute(
+            "INSERT INTO lt_item (area_id, parent_id, title, start_date, end_date, "
+            "progress, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+            (area_id, parent_id, title, start.isoformat(), end.isoformat(), now),
+        )
+        new_id = cur.lastrowid
+        _lt_rollup(conn, new_id)
+    return JSONResponse({"ok": True, "id": new_id})
+
+
+@app.post("/plan/item/update")
+async def plan_item_update(request: Request):
+    """간트 항목의 제목·기간·진척률을 고친다(보낸 값만 바꾼다)."""
+    form = await request.form()
+    try:
+        item_id = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    fields: dict = {}
+    if (form.get("title") or "").strip():
+        fields["title"] = form.get("title").strip()
+    if form.get("start") is not None and (form.get("start") or "").strip():
+        d = _parse_date(form.get("start"))
+        if not d:
+            return JSONResponse({"ok": False, "error": "시작일 형식"}, status_code=400)
+        fields["start_date"] = d.isoformat()
+    if form.get("end") is not None and (form.get("end") or "").strip():
+        d = _parse_date(form.get("end"))
+        if not d:
+            return JSONResponse({"ok": False, "error": "종료일 형식"}, status_code=400)
+        fields["end_date"] = d.isoformat()
+    if form.get("progress") is not None and (form.get("progress") or "").strip():
+        try:
+            fields["progress"] = max(0, min(100, int(form.get("progress"))))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "진척률 형식"}, status_code=400)
+    if not fields:
+        return JSONResponse({"ok": False, "error": "바꿀 값 없음"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        s = fields.get("start_date", row["start_date"])
+        e = fields.get("end_date", row["end_date"])
+        if e < s:
+            return JSONResponse({"ok": False, "error": "종료일이 시작일보다 빠릅니다"},
+                                status_code=400)
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(
+            f"UPDATE lt_item SET {sets}, updated_at = ? WHERE id = ?",
+            (*fields.values(), now, item_id),
+        )
+        _lt_rollup(conn, item_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/plan/item/delete")
+async def plan_item_delete(request: Request):
+    """간트 항목을 지운다. 하위 항목도 함께 지워지고 상위 기간은 다시 계산된다."""
+    form = await request.form()
+    try:
+        item_id = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT parent_id FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": True})
+        conn.execute("DELETE FROM lt_item WHERE id = ?", (item_id,))
+        if row["parent_id"]:
+            # 지워진 항목의 형제를 기준으로 상위 사슬을 다시 계산한다.
+            sib = conn.execute(
+                "SELECT id FROM lt_item WHERE parent_id = ? LIMIT 1", (row["parent_id"],)
+            ).fetchone()
+            if sib:
+                _lt_rollup(conn, sib["id"])
+    return JSONResponse({"ok": True})
+
+
 # -- 장기플랜 ---------------------------------------------------------------
 
 
 @app.get("/plan")
-def plan_view(request: Request, level: str = "year", anchor: str = ""):
+def plan_view(request: Request, level: str = "year", anchor: str = "",
+              view: str = "table"):
     if level not in PLAN_LEVELS:
         level = "year"
+    view = view if view in ("table", "gantt") else "table"
     a = _parse_anchor(anchor)
     cols, header = _plan_columns(level, a)
     keys = [c["key"] for c in cols]
+    span_start, span_end = cols[0]["start"], cols[-1]["end"]
     ancestors = _plan_ancestors(level, a)
     anc_keys = [x["key"] for x in ancestors]
     with get_conn() as conn:
@@ -1659,6 +1917,7 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
                 anc_keys,
             ):
                 anc_map[(r["area_id"], r["period_key"])] = r["content"]
+        gantt = _gantt_areas(conn, areas, span_start, span_end) if view == "gantt" else []
     parent_ctx = []
     for ar in areas:
         rows = [
@@ -1691,6 +1950,10 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
             "zoom_out": order[i - 1] if i - 1 >= 0 else None,
             "levels": PLAN_LEVELS,
             "level_labels": PLAN_LEVEL_LABELS,
+            "view": view,
+            "gantt": gantt,
+            "span_start": span_start.strftime("%Y-%m-%d"),
+            "span_end": span_end.strftime("%Y-%m-%d"),
         },
     )
 
@@ -1952,10 +2215,7 @@ def settings_view(request: Request):
             "tones": TONES,
             "settings": settings,
             "weekday_concepts": weekday_concepts,
-            "day_blocks": [
-                {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
-                for i, (lbl, core, s, e) in enumerate(get_day_blocks())
-            ],
+            "block_scopes": _block_scopes(),
             "events_calendar_id": gcal_write.events_calendar_id(),
             "gcal_events_on": gcal_write.events_enabled(),
             "achieve_calendar_id": gcal_write.achieve_calendar_id(),
@@ -2011,6 +2271,24 @@ def data_view(request: Request):
     )
 
 
+def _block_scopes() -> list[dict]:
+    """세션 시간 편집 범위 8개(공통 + 월~일). 덮어쓰지 않은 요일은 공통 값을 그대로 보여준다."""
+    overrides = get_weekday_overrides()
+    scopes = [{"key": "", "label": "공통", "sub": "모든 요일 기본", "overridden": False}]
+    for i in range(7):
+        scopes.append({
+            "key": str(i), "label": KO_WEEKDAYS[i], "sub": f"{KO_WEEKDAYS[i]}요일",
+            "overridden": bool(overrides.get(str(i))),
+        })
+    for sc in scopes:
+        blocks = get_day_blocks(int(sc["key"]) if sc["key"] else None)
+        sc["rows"] = [
+            {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
+            for i, (lbl, core, s, e) in enumerate(blocks)
+        ]
+    return scopes
+
+
 def _valid_hhmm(s: str) -> bool:
     """'HH:MM' 이고 00:00~24:00 범위인지. 분은 자유 — 세션 30분 단위는 블록 길이(30분 배수)로 보장한다."""
     if not re.match(r"^\d{2}:\d{2}$", s or ""):
@@ -2019,10 +2297,26 @@ def _valid_hhmm(s: str) -> bool:
     return 0 <= h <= 24 and 0 <= m <= 59 and (h * 60 + m) <= 24 * 60
 
 
+def _parse_scope(raw) -> tuple[bool, int | None]:
+    """세션 시간 편집 범위 입력값을 (유효한가, 요일 또는 None) 으로. ''=공통, '0'~'6'=요일."""
+    s = (raw or "").strip()
+    if not s:
+        return True, None
+    if s.isdigit() and 0 <= int(s) <= 6:
+        return True, int(s)
+    return False, None
+
+
 @app.post("/settings/blocktimes")
 async def settings_blocktimes(request: Request):
-    """8블록의 시작·끝 시간만 저장한다(라벨·코어여부·개수 고정). 30분 경계·겹침을 검증한다."""
+    """8블록의 시작·끝 시간을 저장한다(라벨·코어여부·개수 고정). 30분 경계·겹침을 검증한다.
+
+    scope 가 비면 공통(모든 요일 기본), '0'~'6' 이면 그 요일만 덮어쓴다.
+    """
     form = await request.form()
+    ok_scope, weekday = _parse_scope(form.get("scope"))
+    if not ok_scope:
+        return JSONResponse({"ok": False, "error": "요일 값이 잘못됨"}, status_code=400)
     n = len(DAY_BLOCKS)
     times = []
     prev_end = None
@@ -2051,14 +2345,28 @@ async def settings_blocktimes(request: Request):
             )
         prev_end = hhmm_to_min(e)
         times.append({"start": s, "end": e})
-    set_setting(BLOCK_TIMES_KEY, json.dumps(times))
-    return JSONResponse({"ok": True})
+    if weekday is None:
+        set_setting(BLOCK_TIMES_KEY, json.dumps(times))
+    else:
+        overrides = get_weekday_overrides()
+        overrides[str(weekday)] = times
+        set_setting(BLOCK_TIMES_WD_KEY, json.dumps(overrides))
+    return JSONResponse({"ok": True, "scope": "" if weekday is None else str(weekday)})
 
 
 @app.post("/settings/blocktimes/reset")
-async def settings_blocktimes_reset():
-    """블록 시간 오버라이드를 지워 기본 시간표로 되돌린다."""
-    set_setting(BLOCK_TIMES_KEY, "")
+async def settings_blocktimes_reset(request: Request):
+    """공통은 기본 시간표로, 요일은 덮어쓰기를 지워 공통을 따르게 되돌린다."""
+    form = await request.form()
+    ok_scope, weekday = _parse_scope(form.get("scope"))
+    if not ok_scope:
+        return JSONResponse({"ok": False, "error": "요일 값이 잘못됨"}, status_code=400)
+    if weekday is None:
+        set_setting(BLOCK_TIMES_KEY, "")
+    else:
+        overrides = get_weekday_overrides()
+        overrides.pop(str(weekday), None)
+        set_setting(BLOCK_TIMES_WD_KEY, json.dumps(overrides))
     return JSONResponse({"ok": True})
 
 

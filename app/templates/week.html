@@ -50,6 +50,13 @@
                     <a class="pctx-go mono" href="/plan?level={{ r.level }}&amp;anchor={{ r.anchor }}" title="장기 탭에서 열기">↗</a>
                 </div>
                 {% endfor %}
+                {% for it in a.gantt %}
+                <div class="pctx-row pctx-item">
+                    <span class="pctx-lv">간트</span>
+                    <span class="pctx-text">{{ it.title }} <span class="mono pctx-range">{{ it.range }}</span></span>
+                    <span class="pctx-prog mono">{{ it.progress }}%</span>
+                </div>
+                {% endfor %}
             </div>
             {% endfor %}
         </div>

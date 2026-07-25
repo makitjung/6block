@@ -1455,3 +1455,127 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 
 /* 주간 탭: 블록 테마 자동 채우기 도구 줄 */
 .theme-tools { margin: 2px 0 10px; }
+
+/* ===== 설정 탭: 기능별 그룹 배치 ===== */
+.set-status { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 10px; }
+.set-chip {
+    font-size: 12px; font-weight: 600; color: var(--text-muted);
+    background: var(--surface-3); border: 1px solid var(--border);
+    border-radius: var(--r-pill); padding: 4px 10px;
+}
+.set-chip.on { color: var(--success); background: var(--success-soft); border-color: transparent; }
+.set-nav {
+    position: sticky; top: 52px; z-index: 4; display: flex; gap: 4px; flex-wrap: wrap;
+    padding: 8px 20px; margin-bottom: 6px;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.set-nav a {
+    font-size: 13px; font-weight: 700; color: var(--text-muted); text-decoration: none;
+    padding: 5px 12px; border-radius: var(--r-pill); background: var(--surface-3);
+}
+.set-nav a:hover { color: var(--accent); background: var(--accent-soft); }
+.set-group { padding: 6px 20px 4px; scroll-margin-top: 104px; }
+.set-group-title {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin: 10px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+    font-size: 15px; font-weight: 800; color: var(--text);
+}
+.set-group-sub { font-size: 12px; font-weight: 400; color: var(--text-subtle); }
+
+/* 설정 탭: 세션(블록) 시간 - 공통/요일 탭 */
+.set-bt-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.set-bt-tab {
+    position: relative; font-size: 13px; font-weight: 700; color: var(--text-muted);
+    background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-pill);
+    padding: 5px 14px; cursor: pointer;
+}
+.set-bt-tab:hover { color: var(--text); }
+.set-bt-tab.is-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.set-bt-tab.is-over::after {
+    content: ''; position: absolute; top: 3px; right: 6px;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--warm);
+}
+.set-bt-state { margin-bottom: 10px; }
+.set-bt-badge { font-size: 12px; color: var(--text-subtle); }
+.set-bt-badge.on { color: var(--accent); font-weight: 600; }
+
+/* ===== 장기플랜 간트 ===== */
+.plan-views { margin-left: 6px; }
+.gantt {
+    --lead-w: 190px;
+    min-width: calc(var(--lead-w) + var(--cols) * 92px);
+    display: flex; flex-direction: column; gap: 2px;
+}
+.gt-row { display: flex; align-items: stretch; min-height: 30px; }
+.gt-lead {
+    flex: 0 0 var(--lead-w); width: var(--lead-w);
+    display: flex; align-items: center; gap: 6px; overflow: hidden;
+    padding: 2px 8px 2px calc(8px + var(--depth, 0) * 14px);
+    font-size: 13px; color: var(--text-soft);
+}
+.gt-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-range { font-size: 11px; color: var(--text-subtle); flex: 0 0 auto; }
+.gt-track {
+    position: relative; flex: 1 1 auto; min-width: 0;
+    background-image: repeating-linear-gradient(to right,
+        var(--border) 0 1px, transparent 1px calc(100% / var(--cols)));
+}
+.gt-headrow { position: sticky; top: 0; z-index: 3; background: var(--bg); }
+.gt-headlead { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.gt-headtrack {
+    display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+    background-image: none; border-bottom: 1px solid var(--border);
+}
+.gt-col {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 4px 2px; border-left: 1px solid var(--border);
+}
+.gt-col.is-now { background: var(--accent-soft); }
+.gt-col-label { font-size: 12px; font-weight: 700; color: var(--text); }
+.gt-col-sub { font-size: 10px; color: var(--text-subtle); }
+.gt-arearow { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 4px; }
+.gt-areaname { font-size: 13px; font-weight: 800; color: var(--text); }
+.gt-arearow .gt-track { background-image: none; display: flex; align-items: center; }
+.gt-add {
+    font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
+    border: none; border-radius: var(--r-pill); padding: 3px 10px; cursor: pointer;
+}
+.gt-bar {
+    position: absolute; top: 3px; bottom: 3px; min-width: 6px;
+    display: flex; align-items: center; overflow: hidden; cursor: pointer;
+    padding: 0; border: 1px solid var(--accent); border-radius: var(--r-sm);
+    background: var(--accent-soft); text-align: left;
+}
+.gt-bar:hover { box-shadow: var(--sh-1); filter: brightness(0.98); }
+.gt-bar.is-parent { border-style: dashed; background: var(--surface-3); border-color: var(--border-strong); }
+.gt-bar.clip-l { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: dotted; }
+.gt-bar.clip-r { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-style: dotted; }
+.gt-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); opacity: 0.22; }
+.gt-bartext {
+    position: relative; z-index: 1; padding: 0 6px; font-size: 11px; font-weight: 600;
+    color: var(--accent-soft-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gt-bar.is-parent .gt-bartext { color: var(--text-muted); }
+.gt-form, .gt-edit {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin: 4px 0 6px calc(var(--lead-w) - 180px);
+    padding: 8px 10px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+/* display:flex 가 브라우저 기본 [hidden]{display:none} 을 덮으므로 명시적으로 숨긴다 */
+.gt-form[hidden], .gt-edit[hidden] { display: none; }
+.gt-form input[type=text], .gt-edit input[type=text] { flex: 1 1 180px; min-width: 140px; }
+.gt-form input[type=date], .gt-edit input[type=date] { width: auto; flex: 0 0 auto; }
+.gt-e-proglabel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.gt-e-progress { width: 64px; }
+.gt-e-hint, .gt-f-parent-label { font-size: 11px; color: var(--text-subtle); }
+.gt-empty { padding: 8px 10px; font-size: 12px; color: var(--text-subtle); }
+@media (max-width: 720px) {
+    .gantt { --lead-w: 120px; }
+    .gt-form, .gt-edit { margin-left: 0; }
+}
+
+/* 주간 탭: 이 주에 걸친 간트 항목 */
+.pctx-item .pctx-lv { color: var(--accent); }
+.pctx-range { font-size: 11px; color: var(--text-subtle); }
+.pctx-prog { font-size: 11px; font-weight: 700; color: var(--text-muted); }

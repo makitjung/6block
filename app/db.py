@@ -251,26 +251,58 @@ def set_setting(key: str, value: str):
     _settings_cache = None
 
 
-# 설정의 시간 오버라이드(app_settings 'day_blocks_times', JSON)를 기본 DAY_BLOCKS 위에 입혀
-# 효과적인 8블록 (label, is_core, start, end) 을 돌려준다. 라벨·코어여부·개수는 기본값 고정.
+# 설정의 시간 오버라이드를 기본 DAY_BLOCKS 위에 입혀 효과적인 8블록
+# (label, is_core, start, end) 을 돌려준다. 라벨·코어여부·개수는 기본값 고정.
+# 공통(모든 요일 기본) = app_settings 'day_blocks_times' (길이 8 JSON 배열),
+# 요일 덮어쓰기 = 'day_blocks_times_wd' ({"0": [...], ... "6": [...]}, 덮어쓴 요일만).
 BLOCK_TIMES_KEY = "day_blocks_times"
+BLOCK_TIMES_WD_KEY = "day_blocks_times_wd"
 
 
-def get_day_blocks():
-    """효과적인 하루 8블록 목록. DB에 저장된 시작·끝 시간 오버라이드를 기본값 위에 입힌다."""
-    blocks = [(lbl, core, s, e) for (lbl, core, s, e) in DAY_BLOCKS]
-    raw = get_settings().get(BLOCK_TIMES_KEY)
+def _parse_times(raw):
+    """저장값(JSON 문자열 또는 리스트)을 길이 8 리스트로. 형식이 다르면 None."""
     if not raw:
-        return blocks
-    try:
-        times = json.loads(raw)
-    except Exception:
-        return blocks
-    if not isinstance(times, list) or len(times) != len(DAY_BLOCKS):
-        return blocks
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(raw, list) or len(raw) != len(DAY_BLOCKS):
+        return None
+    return raw
+
+
+def _apply_times(blocks, times):
+    """블록 목록 위에 시간 배열을 입힌다(비어 있는 칸은 원래 값 유지)."""
+    if not times:
+        return list(blocks)
     merged = []
-    for (lbl, core, ds, de), t in zip(DAY_BLOCKS, times):
+    for (lbl, core, ds, de), t in zip(blocks, times):
         s = (t.get("start") if isinstance(t, dict) else None) or ds
         e = (t.get("end") if isinstance(t, dict) else None) or de
         merged.append((lbl, core, s, e))
     return merged
+
+
+def get_weekday_overrides() -> dict:
+    """요일 덮어쓰기 전체. {"0": [{start,end}...], ...} 형태이며 덮어쓴 요일만 들어 있다."""
+    raw = get_settings().get(BLOCK_TIMES_WD_KEY)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def get_day_blocks(weekday: int | None = None):
+    """효과적인 하루 8블록 목록. 공통 시간 위에 그 요일 덮어쓰기가 있으면 덧입힌다.
+
+    weekday 는 date.weekday() (0=월 ~ 6=일). None 이면 공통 시간만 쓴다.
+    """
+    base = _apply_times(DAY_BLOCKS, _parse_times(get_settings().get(BLOCK_TIMES_KEY)))
+    if weekday is None:
+        return base
+    return _apply_times(base, _parse_times(get_weekday_overrides().get(str(weekday))))

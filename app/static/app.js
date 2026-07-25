@@ -1027,7 +1027,8 @@
                     .then((d) => { if (d && d.ok) location.reload(); });
             }));
 
-        document.querySelectorAll('#set-behavior select').forEach((sel) => {
+        // 동작 설정(그룹이 나뉘어 있어도 data-key를 가진 select면 모두 같은 방식으로 저장)
+        document.querySelectorAll('select[data-key]').forEach((sel) => {
             sel.addEventListener('change', () => {
                 const o = {}; o[sel.dataset.key] = sel.value;
                 postForm('/settings/save', o).then(() => toast('설정 저장'));
@@ -1234,38 +1235,72 @@
         });
     }
 
-    // ---- 설정: 세션(블록) 시간 편집 (8칸 묶음 검증 → 변경 즉시 자동저장) ----
+    // ---- 설정: 세션(블록) 시간 편집 (공통 + 요일 탭, 8칸 묶음 검증 → 변경 즉시 자동저장) ----
     function bindBlockTimes() {
-        const box = document.getElementById('set-blocktimes');
-        if (!box) return;
-        const msg = document.getElementById('set-bt-msg');
-        const collect = () => {
-            const data = {};
-            box.querySelectorAll('.set-bt-row').forEach((row) => {
-                const o = row.dataset.order;
-                data['start_' + o] = row.querySelector('.set-bt-start').value;
-                data['end_' + o] = row.querySelector('.set-bt-end').value;
+        const tabs = document.getElementById('set-bt-tabs');
+        if (!tabs) return;
+        const panels = document.querySelectorAll('.set-bt-panel');
+
+        // 탭 전환: 공통 / 월~일 중 한 범위만 보여준다(값은 서버가 이미 전부 그려 두었다).
+        tabs.querySelectorAll('.set-bt-tab').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                tabs.querySelectorAll('.set-bt-tab').forEach((b) =>
+                    b.classList.toggle('is-active', b === btn));
+                panels.forEach((p) => { p.hidden = p.dataset.scope !== btn.dataset.scope; });
             });
-            return data;
-        };
-        const save = () => {
-            if (msg) { msg.textContent = ''; msg.classList.remove('bad'); }
-            fetch('/settings/blocktimes', {
-                method: 'POST', headers: FORM_HEADERS,
-                body: new URLSearchParams(collect()).toString(),
-            })
-                .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-                .then(({ ok, d }) => {
-                    if (ok && d.ok) { autosaveToast(); }
-                    else if (msg) { msg.textContent = (d && d.error) || '저장 실패'; msg.classList.add('bad'); }
+        });
+
+        panels.forEach((panel) => {
+            const scope = panel.dataset.scope;
+            const box = panel.querySelector('.set-blocktimes');
+            const msg = panel.querySelector('.set-bt-msg');
+            const collect = () => {
+                const data = { scope: scope };
+                box.querySelectorAll('.set-bt-row').forEach((row) => {
+                    const o = row.dataset.order;
+                    data['start_' + o] = row.querySelector('.set-bt-start').value;
+                    data['end_' + o] = row.querySelector('.set-bt-end').value;
+                });
+                return data;
+            };
+            const save = () => {
+                if (msg) { msg.textContent = ''; msg.classList.remove('bad'); }
+                fetch('/settings/blocktimes', {
+                    method: 'POST', headers: FORM_HEADERS,
+                    body: new URLSearchParams(collect()).toString(),
                 })
-                .catch(() => { if (msg) { msg.textContent = '연결이 필요합니다'; msg.classList.add('bad'); } });
-        };
-        box.querySelectorAll('.set-bt-start, .set-bt-end').forEach((inp) =>
-            inp.addEventListener('change', save));
-        document.getElementById('set-bt-reset')?.addEventListener('click', () => {
-            if (!window.confirm('블록 시간을 기본값으로 되돌립니다.')) return;
-            postForm('/settings/blocktimes/reset', {}).then((d) => { if (d && d.ok) location.reload(); });
+                    .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+                    .then(({ ok, d }) => {
+                        if (ok && d.ok) {
+                            autosaveToast();
+                            // 요일을 고치면 그 요일은 이제 공통과 무관하게 따로 관리된다.
+                            if (scope) {
+                                const badge = panel.querySelector('.set-bt-badge');
+                                if (badge) {
+                                    badge.classList.add('on');
+                                    badge.textContent = badge.textContent.split(' ')[0] + ' 따로 지정됨';
+                                }
+                                tabs.querySelector('.set-bt-tab[data-scope="' + scope + '"]')
+                                    ?.classList.add('is-over');
+                            }
+                        } else if (msg) {
+                            msg.textContent = (d && d.error) || '저장 실패';
+                            msg.classList.add('bad');
+                        }
+                    })
+                    .catch(() => {
+                        if (msg) { msg.textContent = '연결이 필요합니다'; msg.classList.add('bad'); }
+                    });
+            };
+            box.querySelectorAll('.set-bt-start, .set-bt-end').forEach((inp) =>
+                inp.addEventListener('change', save));
+            panel.querySelector('.set-bt-reset')?.addEventListener('click', () => {
+                const q = scope ? '이 요일의 시간을 지우고 공통을 따르게 합니다.'
+                                : '공통 블록 시간을 기본값으로 되돌립니다.';
+                if (!window.confirm(q)) return;
+                postForm('/settings/blocktimes/reset', { scope: scope })
+                    .then((d) => { if (d && d.ok) location.reload(); });
+            });
         });
     }
 
@@ -1332,6 +1367,91 @@
                         - scroller.getBoundingClientRect().left - areaW - 12;
             scroller.scrollLeft += delta;
         }
+    }
+
+    // ---- 장기플랜 간트 (/plan?view=gantt) --------------------------------
+    // 막대를 누르면 그 줄 아래 편집칸이 열린다. 추가·수정·삭제 후에는 상위 기간이
+    // 서버에서 다시 계산되므로 화면을 새로 그린다(reload).
+    function bindGantt() {
+        const gantt = document.querySelector('.gantt');
+        if (!gantt) return;
+
+        const closeAll = () => {
+            gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
+        };
+        // 항목 추가 폼 열기(하위 추가면 상위 항목을 폼에 실어 보낸다)
+        const openForm = (areaId, parentId, parentTitle) => {
+            closeAll();
+            const form = gantt.querySelector('.gt-form[data-area="' + areaId + '"]');
+            if (!form) return;
+            form.hidden = false;
+            form.querySelector('.gt-f-parent').value = parentId || '';
+            const label = form.querySelector('.gt-f-parent-label');
+            if (label) label.textContent = parentId ? ('하위 · ' + parentTitle) : '';
+            form.querySelector('.gt-f-title').focus();
+        };
+
+        gantt.querySelectorAll('.gt-add').forEach((btn) =>
+            btn.addEventListener('click', () => openForm(btn.dataset.area, '', '')));
+
+        gantt.querySelectorAll('.gt-form').forEach((form) => {
+            const submit = () => {
+                const title = (form.querySelector('.gt-f-title').value || '').trim();
+                const start = form.querySelector('.gt-f-start').value;
+                const end = form.querySelector('.gt-f-end').value;
+                if (!title) { toast('항목 이름을 입력하세요'); return; }
+                if (!start || !end) { toast('시작일과 종료일을 고르세요'); return; }
+                postForm('/plan/item/add', {
+                    area_id: form.dataset.area, title: title, start: start, end: end,
+                    parent_id: form.querySelector('.gt-f-parent').value,
+                }).then((d) => {
+                    if (d && d.ok) location.reload();
+                    else toast((d && d.error) || '추가 실패');
+                });
+            };
+            form.querySelector('.gt-f-save')?.addEventListener('click', submit);
+            form.querySelector('.gt-f-title')?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            });
+            form.querySelector('.gt-f-cancel')?.addEventListener('click', () => { form.hidden = true; });
+        });
+
+        gantt.querySelectorAll('.gt-bar').forEach((bar) => {
+            bar.addEventListener('click', () => {
+                const box = gantt.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
+                if (!box) return;
+                const wasOpen = !box.hidden;
+                closeAll();
+                box.hidden = wasOpen;
+                if (!wasOpen) box.querySelector('.gt-e-title')?.focus();
+            });
+        });
+
+        gantt.querySelectorAll('.gt-edit').forEach((box) => {
+            const id = box.dataset.id;
+            box.querySelector('.gt-e-save')?.addEventListener('click', () => {
+                const data = { id: id, title: (box.querySelector('.gt-e-title').value || '').trim() };
+                const s = box.querySelector('.gt-e-start');
+                const e = box.querySelector('.gt-e-end');
+                const p = box.querySelector('.gt-e-progress');
+                if (!s.disabled) { data.start = s.value; data.end = e.value; data.progress = p.value; }
+                postForm('/plan/item/update', data).then((d) => {
+                    if (d && d.ok) location.reload();
+                    else toast((d && d.error) || '저장 실패');
+                });
+            });
+            box.querySelector('.gt-e-del')?.addEventListener('click', () => {
+                if (!window.confirm('이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.')) return;
+                postForm('/plan/item/delete', { id: id }).then((d) => {
+                    if (d && d.ok) location.reload();
+                    else toast('삭제 실패');
+                });
+            });
+            box.querySelector('.gt-e-child')?.addEventListener('click', (ev) => {
+                const b = ev.currentTarget;
+                openForm(b.dataset.area, b.dataset.parent, b.dataset.title);
+            });
+        });
     }
 
     function bindPlanAreas() {
@@ -2253,6 +2373,7 @@
         bindSettings();
         bindBlockTimes();
         bindPlan();
+        bindGantt();
         bindPlanAreas();
         bindReflect();
         bindReflectModal();

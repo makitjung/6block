@@ -115,6 +115,23 @@ CREATE TABLE IF NOT EXISTS lt_plan (
 
 CREATE INDEX IF NOT EXISTS idx_lt_plan_lookup ON lt_plan(level, period_key);
 
+-- 장기플랜 간트 항목. 영역별 과제를 시작~종료 기간과 진척률(0~100)로 관리한다.
+-- parent_id 로 상위(연·분기) 항목과 하위(월·주) 항목을 이어 연·분기·월·주를 한 줄기로 묶는다.
+-- 상위 항목의 기간·진척률은 하위가 있으면 하위에서 자동으로 계산해 덮어쓴다.
+CREATE TABLE IF NOT EXISTS lt_item (
+    id INTEGER PRIMARY KEY,
+    area_id INTEGER NOT NULL REFERENCES lt_area(id) ON DELETE CASCADE,
+    parent_id INTEGER REFERENCES lt_item(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    start_date TEXT NOT NULL,            -- YYYY-MM-DD
+    end_date TEXT NOT NULL,              -- YYYY-MM-DD (시작일 이상)
+    progress INTEGER NOT NULL DEFAULT 0, -- 0~100
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lt_item_area ON lt_item(area_id, start_date);
+CREATE INDEX IF NOT EXISTS idx_lt_item_parent ON lt_item(parent_id);
+
 -- 반복되는 고민·감상·결심을 기록하고 구글 캘린더 '고민/결심'에 반영한다.
 CREATE TABLE IF NOT EXISTS reflection (
     id INTEGER PRIMARY KEY,
