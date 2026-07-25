@@ -72,6 +72,13 @@
                         <option value="0" {% if settings.show_reflect == '0' %}selected{% endif %}>끔</option>
                     </select>
                 </label>
+                <label class="set-field">
+                    <span class="set-label">수집함 표시 <span class="set-sub">오늘 빠른 수집함 · 주간 미처리 수집함</span></span>
+                    <select data-key="show_inbox">
+                        <option value="1" {% if settings.show_inbox == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.show_inbox == '0' %}selected{% endif %}>끔</option>
+                    </select>
+                </label>
             </div>
         </section>
 

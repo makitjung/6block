@@ -275,6 +275,22 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .ctx-head .count { color: var(--accent); font-weight: 700; }
 .ctx-empty { font-size: 12px; color: var(--text-subtle); }
 
+/* 오늘 컨셉 3칸(1행 3열) */
+.concept-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.concept-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.concept-cell input {
+    flex: 1; min-width: 0; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--surface-2); color: var(--text); font: inherit;
+}
+.concept-cell input:focus { outline: none; background: var(--surface); border-color: var(--border-focus); }
+.concept-no {
+    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--surface-3); color: var(--text-muted); font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+@media (max-width: 560px) { .concept-row { grid-template-columns: 1fr; gap: 6px; } }
+
 /* 목표 3 · 계획 3 */
 .goal-plan { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 @media (max-width: 560px) { .goal-plan { gap: 9px; } }
@@ -490,6 +506,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 
 /* === 주간 리뷰 (GTD 검토) === */
 .review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* 설정에서 수집함을 끄면 흘려보낸 코어 블록만 남으므로 한 열로 편다 */
+.review-grid.no-inbox { grid-template-columns: 1fr; }
 .review-head {
     font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
     color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
@@ -944,6 +962,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .set-field { display: flex; flex-direction: column; gap: 6px; }
 .set-label { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.set-sub { font-weight: 400; color: var(--text-subtle); }
 
 .set-summary {
     display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 6px;

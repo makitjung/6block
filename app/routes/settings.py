@@ -389,7 +389,7 @@ async def settings_cat_delete(request: Request):
 async def settings_save(request: Request):
     form = await request.form()
     allowed = {"start_view", "default_theme", "pomo_auto", "pomo_warn5", "collapse_blocks",
-               "show_location", "show_did", "show_reflect"}
+               "show_location", "show_did", "show_reflect", "show_inbox"}
     for key in allowed:
         if form.get(key) is not None:
             set_setting(key, form.get(key))

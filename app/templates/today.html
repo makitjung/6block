@@ -71,6 +71,19 @@
             </div>
         </details>
 
+        <div class="ctx-section concept-section">
+            <div class="ctx-head">오늘 컨셉 <span class="card-sub">오늘 하루를 끌고 갈 세 가지</span></div>
+            <div class="concept-row">
+                {% for i in range(3) %}
+                <label class="concept-cell">
+                    <span class="concept-no">{{ i + 1 }}</span>
+                    <input type="text" name="concept{{ i + 1 }}" value="{{ concepts[i] }}" placeholder="컨셉 {{ i + 1 }}" autocomplete="off">
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if st.show_inbox != '0' %}
         <div class="ctx-section">
             <div class="ctx-head">빠른 수집함 <span class="count" id="inbox-count">{{ inbox | length }}</span></div>
             <div class="inbox-form">
@@ -89,6 +102,7 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
 
         <div class="ctx-section agenda-2">
             <div class="agenda-col">

@@ -543,6 +543,10 @@
                     el.dataset.asPrefix = 'grat';
                     el.dataset.asIdx = m[1];
                     bindAutoSave(el, 'meta', dateStr, 'grat' + m[1], { groupPrefix: 'grat' });
+                } else if ((m = name.match(/^concept([123])$/))) {
+                    el.dataset.asPrefix = 'concept';
+                    el.dataset.asIdx = m[1];
+                    bindAutoSave(el, 'meta', dateStr, 'concept' + m[1], { groupPrefix: 'concept' });
                 } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
                 else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
             });
