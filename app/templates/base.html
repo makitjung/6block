@@ -32,7 +32,8 @@
                 <span class="logo-text">6block</span>
             </a>
             <nav class="topnav">
-                <a href="/today" class="{% if active in ['today', 'week'] %}is-active{% endif %}">주간</a>
+                <a href="/today" class="{% if active == 'today' %}is-active{% endif %}">오늘</a>
+                <a href="/week"  class="{% if active == 'week' %}is-active{% endif %}">주간</a>
                 <a href="/plan"  class="{% if active == 'plan' %}is-active{% endif %}">장기</a>
                 <a href="/reflect" class="{% if active == 'reflect' %}is-active{% endif %}">고결감</a>
                 <a href="/settings" class="{% if active in ['settings', 'analytics', 'data'] %}is-active{% endif %}">설정</a>
@@ -48,14 +49,7 @@
         <span class="stale-text">오프라인 · 지난 날짜를 보고 있어요. 연결되면 오늘로 자동 이동합니다.</span>
         <a href="/today" class="stale-go">오늘로</a>
     </div>
-    {% if active in ['today', 'week'] %}
-    <div class="subnav-wrap">
-        <nav class="subnav">
-            <a href="/today" class="{% if active == 'today' %}is-active{% endif %}">오늘</a>
-            <a href="/week" class="{% if active == 'week' %}is-active{% endif %}">주간</a>
-        </nav>
-    </div>
-    {% elif active in ['settings', 'analytics', 'data'] %}
+    {% if active in ['settings', 'analytics', 'data'] %}
     <div class="subnav-wrap">
         <nav class="subnav">
             <a href="/analytics" class="{% if active == 'analytics' %}is-active{% endif %}">분석·검색</a>
