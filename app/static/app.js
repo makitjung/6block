@@ -55,6 +55,28 @@
         const slot = m < 30 ? '00' : '30';
         return `${String(d.getHours()).padStart(2, '0')}:${slot}`;
     }
+    // 화면에 그려진 슬롯 행의 시간 범위. 블록이 :00/:30이 아닌 시각(예: 09:10)에 시작해도
+    // '지금' 슬롯을 찾을 수 있게 실제 행을 기준으로 판단한다. 목록은 페이지당 한 번만 만든다.
+    let slotRangeCache = null;
+    function slotRanges() {
+        if (!slotRangeCache) {
+            slotRangeCache = [...document.querySelectorAll('.block-stack .slot')].map((el) => ({
+                el, s: hhmmToMin(el.dataset.start), e: hhmmToMin(el.dataset.end),
+            }));
+        }
+        return slotRangeCache;
+    }
+    function currentSlotEl(date) {
+        const d = date || new Date();
+        const m = d.getHours() * 60 + d.getMinutes();
+        const hit = slotRanges().find((r) => m >= r.s && m < r.e);
+        return hit ? hit.el : null;
+    }
+    // 강조·자동추적이 쓰는 '지금 슬롯' 키. 슬롯 행이 없으면 30분 격자로 되돌아간다.
+    function currentSlotKey(date) {
+        const el = currentSlotEl(date);
+        return el ? el.dataset.start : currentSlotHHMM(date);
+    }
     function fmt(sec) {
         sec = Math.max(0, Math.floor(sec));
         const m = Math.floor(sec / 60);
@@ -153,7 +175,7 @@
     // ---- state transitions ----------------------------------------------
     // 누른 슬롯의 종료시각까지 집중. 휴식 단계는 없고, AUTO는 다음 경계에서 다시 시작한다.
     function startFocus(slotTime) {
-        const slot = slotTime || currentSlotHHMM();
+        const slot = slotTime || currentSlotKey();
         const endsAt = slotEndEpoch(slot);
         // 이미 끝난 슬롯이면 시작하지 않는다
         if (endsAt - Date.now() < 1000) { toast('이미 지난 슬롯'); return; }
@@ -230,7 +252,7 @@
                 const key = `${now.getHours()}:${min}`;
                 if (lastBoundaryFired !== key) {
                     lastBoundaryFired = key;
-                    startFocus(currentSlotHHMM(now));
+                    startFocus(currentSlotKey(now));
                 }
             }
         } else if (state.phase === 'FOCUS') {
@@ -293,26 +315,29 @@
 
         // 슬롯·블록 강조는 매초가 아니라 30분 슬롯이 바뀔 때(또는 상태 변화에 의한 명시적
         // render 호출)에만 다시 칠해, 폰에서의 상시 CPU·배터리 소모를 줄인다.
-        const cur = currentSlotHHMM();
+        const cur = currentSlotKey();
         if (force !== false || cur !== lastRenderSlot) {
             lastRenderSlot = cur;
             // highlight current-time slot row
+            const nowEl = currentSlotEl();
             document.querySelectorAll('.slot').forEach((row) => {
                 const t = row.dataset.start;
-                const isNow = t === cur;
+                const isNow = row === nowEl;
                 row.classList.toggle('is-now', isNow);
                 row.classList.toggle('is-pomo-focus', isNow && state.phase === 'FOCUS' && state.slotStart === t);
             });
 
-            // 현재 시각 블록 강조 (실제 오늘을 보는 경우에만)
+            // 현재 시각 블록 강조 + 포커스 블록 지정 (실제 오늘을 보는 경우에만)
             const dayForm = document.querySelector('.day-form');
             if (dayForm && isDeviceToday()) {
                 const d = new Date();
                 const m = d.getHours() * 60 + d.getMinutes();
+                const focus = focusBlock();
                 document.querySelectorAll('.block').forEach((blk) => {
                     const s = hhmmToMin(blk.dataset.start);
                     const e = hhmmToMin(blk.dataset.end);
                     blk.classList.toggle('is-current', m >= s && m < e);
+                    blk.classList.toggle('is-focus', blk === focus);
                 });
             }
 
@@ -321,7 +346,20 @@
         autoFollowSlot();
     }
 
-    // 접힘 상태면 현재 시각 블록만 보이게(현재 블록이 없으면 전체 표시)
+    // 지금 봐야 할 블록. 시각이 블록 안이면 그 블록, 블록 사이 틈이나 하루 시작 전이면
+    // 다음 블록, 마지막 블록까지 끝났으면 마지막 블록. 블록 시간표에 틈이 있어도
+    // 포커싱이 비지 않게 한다.
+    function focusBlock() {
+        const blocks = [...document.querySelectorAll('.block-stack .block')];
+        if (!blocks.length) return null;
+        const d = new Date();
+        const m = d.getHours() * 60 + d.getMinutes();
+        return blocks.find((b) => m >= hhmmToMin(b.dataset.start) && m < hhmmToMin(b.dataset.end))
+            || blocks.find((b) => hhmmToMin(b.dataset.start) > m)
+            || blocks[blocks.length - 1];
+    }
+
+    // 접힘 상태면 포커스 블록만 보이게(정할 블록이 없으면 전체 표시)
     function applyBlockCollapse() {
         const stack = document.querySelector('.block-stack');
         if (!stack) return;
@@ -330,9 +368,9 @@
             blocks.forEach((b) => b.classList.remove('blk-collapsed'));
             return;
         }
-        const hasCurrent = !!stack.querySelector('.block.is-current');
+        const hasFocus = !!stack.querySelector('.block.is-focus');
         blocks.forEach((b) => {
-            b.classList.toggle('blk-collapsed', hasCurrent && !b.classList.contains('is-current'));
+            b.classList.toggle('blk-collapsed', hasFocus && !b.classList.contains('is-focus'));
         });
     }
 
@@ -734,15 +772,15 @@
         } else {
             const dayForm = document.querySelector('.day-form');
             if (dayForm && isDeviceToday()) {
-                // 현재 30분 슬롯을 우선 포커스, 없으면 현재 코어 블록
+                // 현재 30분 슬롯을 우선 포커스, 없으면(블록 사이 틈 등) 포커스 블록
                 const slot = document.querySelector('.slot.is-now');
                 if (slot) { target = slot; isSlot = true; }
-                else target = document.querySelector('.block.is-current');
+                else target = document.querySelector('.block.is-focus');
             }
         }
         if (target) {
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            lastNowSlot = currentSlotHHMM();
+            lastNowSlot = currentSlotKey();
             if (!isSlot) {
                 target.classList.add('flash');
                 setTimeout(() => target.classList.remove('flash'), 1500);
@@ -754,7 +792,7 @@
     function autoFollowSlot() {
         const dayForm = document.querySelector('.day-form');
         if (!dayForm || !isDeviceToday()) return;
-        const cur = currentSlotHHMM();
+        const cur = currentSlotKey();
         if (cur === lastNowSlot) return;
         if (lastNowSlot === '') { lastNowSlot = cur; return; }   // 초기 1회는 initialScroll이 담당
         lastNowSlot = cur;
@@ -767,9 +805,9 @@
     function refocusCurrent() {
         const dayForm = document.querySelector('.day-form');
         if (!dayForm || !isDeviceToday()) return;
-        const target = document.querySelector('.slot.is-now') || document.querySelector('.block.is-current');
+        const target = document.querySelector('.slot.is-now') || document.querySelector('.block.is-focus');
         if (target) target.scrollIntoView({ behavior: 'auto', block: 'center' });
-        lastNowSlot = currentSlotHHMM();
+        lastNowSlot = currentSlotKey();
     }
 
     // ---- 실시간 폴링 (캘린더/Things Today 갱신) -------------------------
@@ -985,7 +1023,7 @@
                 const collapsed = stack.classList.toggle('collapsed');
                 toggle.textContent = collapsed ? '전체 블록 보기' : '현재 블록만 보기';
                 applyBlockCollapse();
-                const cur = stack.querySelector('.block.is-current');
+                const cur = stack.querySelector('.block.is-focus');
                 if (collapsed) {
                     if (cur) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 } else {
@@ -2378,7 +2416,7 @@
             });
             pomo.querySelector('.pomo-start')?.addEventListener('click', () => {
                 ensureNotifPermission();
-                startFocus(currentSlotHHMM());
+                startFocus(currentSlotKey());
             });
             pomo.querySelector('.pomo-skip')?.addEventListener('click', () => skip());
             pomo.querySelector('.pomo-stop')?.addEventListener('click', () => stop());

@@ -547,6 +547,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.25), var(--sh-2);
 }
+/* 지금이 블록 사이 틈이면 다음 블록에 포커스가 간다. 지금 블록보다 옅게 표시. */
+.block.is-focus:not(.is-current) { border-color: var(--border-strong); box-shadow: var(--sh-2); }
 .block.flash { animation: flash 1.4s ease; }
 @keyframes flash {
     0%, 30% { box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.45); }
@@ -576,6 +578,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: #fff; background: var(--now-line); padding: 2px 8px; border-radius: var(--r-pill);
 }
 .block.is-current .now-badge { display: inline-block; }
+/* 블록 사이 틈·하루 시작 전이면 다음 블록에 포커스가 가므로 '다음'으로 알린다 */
+.next-badge {
+    display: none; font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+    color: var(--text-muted); background: var(--surface-3);
+    padding: 2px 8px; border-radius: var(--r-pill);
+}
+.block.is-focus:not(.is-current) .next-badge { display: inline-block; }
 
 .plan-see { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 
