@@ -281,18 +281,14 @@
                     </div>
                     <button type="button" class="block-rollover" data-block-id="{{ b.id }}" title="이 블록 PLAN을 내일 같은 블록으로 복사">내일로 →</button>
                 </div>
-                <div class="ps-cols">
-                    <div class="ps-left">
-                        <label class="field ps-plan">
-                            <span class="field-label">PLAN</span>
-                            <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
-                        </label>
-                        <label class="field ps-see">
-                            <span class="field-label">SEE</span>
-                            <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
-                        </label>
-                    </div>
-                </div>
+                <label class="field ps-plan">
+                    <span class="field-label">PLAN</span>
+                    <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
+                </label>
+                <label class="field ps-see">
+                    <span class="field-label">SEE</span>
+                    <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
+                </label>
             </div>
             {% endif %}
 

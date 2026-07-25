@@ -1144,18 +1144,8 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .rf-review input { width: auto; }
 .rf-review-badge { color: var(--warm); font-size: 12px; }
 
-/* 요일 컨셉: PLAN·SEE를 한 열(좌)에 쌓고, 요일 컨셉을 다른 열(우)에 두는 2열 구조 */
-.ps-cols { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
-.ps-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.ps-weekday { min-width: 0; }
-.ps-wd-text {
-    flex: 1;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
-    padding: 8px 10px; min-height: 46px; white-space: pre-wrap; color: var(--text-soft); line-height: 1.45;
-}
-.ps-wd-text.empty { color: var(--text-subtle); font-style: italic; }
-@media (max-width: 560px) { .ps-cols { grid-template-columns: 1fr; } }
-/* 설정: 요일별 컨셉 입력 */
+/* PLAN·SEE는 한 행(2열)에 나란히 둔다. 블록 세로 길이를 늘리지 않기 위해서다. */
+.ps-plan, .ps-see { min-width: 0; }
 
 /* 세션(블록) 시간 편집 */
 .set-blocktimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
