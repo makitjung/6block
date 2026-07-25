@@ -1044,6 +1044,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .pl-key.d0 { background: var(--gt-d0-bg); border-color: var(--gt-d0-bd); }
 .pl-key.d1 { background: var(--gt-d1-bg); border-color: var(--gt-d1-bd); }
 .pl-key.d2 { background: var(--gt-d2-bg); border-color: var(--gt-d2-bd); }
+.plan-hint { font-size: 12px; color: var(--text-subtle); }
+@media (max-width: 900px) { .plan-hint { display: none; } }
 
 .plan-scroll {
     max-width: 1180px; margin: 0 auto; padding: 4px 18px 28px;
@@ -1588,6 +1590,23 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     position: relative; z-index: 1; padding: 1px 6px; font-size: 11px; font-weight: 700;
     color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 끌어 옮기기: 끄는 막대는 살짝 들어 올리고, 놓을 자리는 테두리로 알린다 */
+.gt-bar { touch-action: none; cursor: grab; }
+.gt-bar.is-dragging { cursor: grabbing; opacity: .9; z-index: 9; box-shadow: var(--sh-3); }
+.gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gt-arearow.is-drop-target .gt-track,
+.gt-empty.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
+/* 막대 위 삭제(✕): 마우스를 올렸을 때만 오른쪽 끝에 나타난다 */
+.gt-del {
+    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    display: none; z-index: 2; cursor: pointer; line-height: 1;
+    font-size: 11px; font-weight: 700; padding: 2px 5px; border-radius: var(--r-pill);
+    background: var(--surface); color: var(--text-muted); box-shadow: var(--sh-1);
+}
+.gt-bar:hover .gt-del { display: block; }
+.gt-del:hover { color: var(--danger); }
+@media (hover: none) { .gt-del { display: block; opacity: .85; } }
+
 .gt-e-lv {
     font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--r-pill);
     background: var(--gt-d0-bg); border: 1px solid var(--gt-d0-bd); color: var(--gt-d0-tx);

@@ -250,6 +250,45 @@ def run_checks(db_path):
                      {"week_start": "2026-08-03", "item_id": child, "label": "없는블록"})
     check("없는 블록으로는 옮기지 않음", code == 400, code)
 
+    # 막대 끌어 옮기기 · 기간 이동(열 단위) / 다른 막대의 하위로 / 영역으로 빼기
+    code, out = post("/plan/item/shift", {"id": child, "steps": "1", "level": "month"})
+    row = db_query(db_path,
+                   "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    check("막대를 열 단위로 옮김(월 +1, 길이 유지)",
+          row["start_date"] == "2026-08-20" and row["end_date"] == "2026-11-15", dict(row))
+    code, out = post("/plan/item/shift", {"id": parent, "steps": "1", "level": "month"})
+    check("하위가 있는 막대는 기간을 옮기지 않음", code == 400, out)
+
+    code, out = post("/plan/item/add", {"area_id": areas[1], "title": "체력 만들기",
+                                        "start": "2026-08-01", "end": "2026-12-31"})
+    other = out.get("id")
+    code, out = post("/plan/item/reparent", {"id": other, "parent_id": parent})
+    r = db_query(db_path,
+                 "SELECT parent_id, area_id FROM lt_item WHERE id=?", (other,))[0]
+    check("다른 막대 위에 놓으면 그 막대의 하위가 됨",
+          code == 200 and r["parent_id"] == parent and r["area_id"] == int(areas[0]), dict(r))
+    p = db_query(db_path,
+                 "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
+    check("하위가 늘면 상위 막대가 그만큼 넓어짐",
+          p["start_date"] == "2026-08-01" and p["end_date"] == "2026-12-31", dict(p))
+    code, out = post("/plan/item/reparent", {"id": parent, "parent_id": other})
+    check("자기 하위로는 넣지 못함", code == 400, out)
+
+    code, out = post("/plan/item/add", {"area_id": areas[0], "parent_id": other,
+                                        "title": "주 3회 달리기",
+                                        "start": "2026-09-01", "end": "2026-09-30"})
+    gchild = out.get("id")
+    code, out = post("/plan/item/reparent", {"id": other, "area_id": areas[1]})
+    r = db_query(db_path,
+                 "SELECT parent_id, area_id FROM lt_item WHERE id=?", (other,))[0]
+    g = db_query(db_path, "SELECT area_id FROM lt_item WHERE id=?", (gchild,))[0]
+    check("영역 줄에 놓으면 최상위로 빠짐",
+          code == 200 and r["parent_id"] is None and r["area_id"] == int(areas[1]), dict(r))
+    check("하위 사슬도 같은 영역으로 따라옴", g["area_id"] == int(areas[1]), dict(g))
+    code, out = post("/plan/item/reparent", {"id": other, "area_id": "99999"})
+    check("없는 영역으로는 옮기지 않음", code == 404, code)
+    post("/plan/item/delete", {"id": other})
+
     code, out = post("/plan/item/delete", {"id": parent})
     n = db_query(db_path, "SELECT COUNT(*) AS c FROM lt_item")[0]["c"]
     check("항목 삭제 시 하위까지 함께 삭제", code == 200 and n == 0, n)

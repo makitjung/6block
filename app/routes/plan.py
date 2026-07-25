@@ -169,6 +169,40 @@ def _lt_rollup(conn, item_id: int | None):
 MAX_LANE = 2      # 겹쳐 그릴 하위 단계(0=상위, 1·2=하위). 더 깊은 항목은 2단계로 눌러 그린다.
 
 
+def _lt_descendants(conn, item_id: int) -> list[int]:
+    """그 항목 아래의 모든 하위 항목 id(깊이 무관)."""
+    out: list[int] = []
+    stack = [item_id]
+    while stack:
+        cur = stack.pop()
+        for r in conn.execute("SELECT id FROM lt_item WHERE parent_id = ?", (cur,)):
+            out.append(r["id"])
+            stack.append(r["id"])
+    return out
+
+
+def _lt_rollup_parent(conn, parent_id: int | None):
+    """상위를 잃거나 얻은 쪽의 사슬을 남은 자식 기준으로 다시 계산한다."""
+    if not parent_id:
+        return
+    sib = conn.execute(
+        "SELECT id FROM lt_item WHERE parent_id = ? LIMIT 1", (parent_id,)
+    ).fetchone()
+    if sib:
+        _lt_rollup(conn, sib["id"])
+
+
+def _add_months(d: date, n: int) -> date:
+    """달을 n개 더한 날짜. 그 달에 없는 날(1/31 + 1개월)은 말일로 맞춘다."""
+    y = d.year + (d.month - 1 + n) // 12
+    m = (d.month - 1 + n) % 12 + 1
+    return date(y, m, min(d.day, _month_last(y, m).day))
+
+
+# 열 한 칸을 옆으로 옮길 때 더할 개월 수(주 단위는 7일로 따로 계산한다).
+SHIFT_MONTHS = {"year": 12, "quarter": 3, "month": 1}
+
+
 def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
     """영역별 간트 행 목록. 최상위 항목 하나가 한 줄이고, 하위 항목은 그 줄 막대 안에 겹친다.
 
@@ -333,6 +367,120 @@ async def plan_item_update(request: Request):
         )
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True})
+
+
+@router.post("/plan/item/shift")
+async def plan_item_shift(request: Request):
+    """계획 막대를 보고 있는 열 단위로 좌우로 옮긴다(기간 길이는 그대로).
+
+    하위가 있는 항목의 기간은 하위에서 자동 계산되므로 옮기지 않는다.
+    """
+    form = await request.form()
+    try:
+        item_id = int(form.get("id"))
+        steps = int(form.get("steps"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    level = (form.get("level") or "").strip()
+    if level not in PLAN_LEVELS:
+        return JSONResponse({"ok": False, "error": "bad-level"}, status_code=400)
+    if steps == 0:
+        return JSONResponse({"ok": True, "moved": 0})
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if conn.execute(
+            "SELECT 1 FROM lt_item WHERE parent_id = ? LIMIT 1", (item_id,)
+        ).fetchone():
+            return JSONResponse(
+                {"ok": False, "error": "하위가 있는 항목의 기간은 하위에서 자동 계산됩니다"},
+                status_code=400,
+            )
+        s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
+        if not s or not e:
+            return JSONResponse({"ok": False, "error": "기간 없음"}, status_code=400)
+        span = e - s
+        if level == "week":
+            s2 = s + timedelta(weeks=steps)
+        else:
+            s2 = _add_months(s, SHIFT_MONTHS[level] * steps)
+        e2 = s2 + span                     # 길이를 그대로 유지한다
+        conn.execute(
+            "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
+            (s2.isoformat(), e2.isoformat(), now, item_id),
+        )
+        _lt_rollup(conn, item_id)
+    return JSONResponse({"ok": True, "start": s2.isoformat(), "end": e2.isoformat()})
+
+
+@router.post("/plan/item/reparent")
+async def plan_item_reparent(request: Request):
+    """막대를 다른 막대의 하위로 넣거나(parent_id), 영역에 놓아 최상위로 뺀다(area_id).
+
+    하위로 들어가면 상위의 기간·진척률이 자기 하위들로 다시 계산돼 상위 막대 안에 겹쳐 보인다.
+    """
+    form = await request.form()
+    try:
+        item_id = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    raw_parent = (form.get("parent_id") or "").strip()
+    raw_area = (form.get("area_id") or "").strip()
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT parent_id, area_id FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        old_parent = row["parent_id"]
+        kin = _lt_descendants(conn, item_id)
+        if raw_parent:
+            try:
+                pid = int(raw_parent)
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+            if pid == item_id or pid in kin:
+                return JSONResponse(
+                    {"ok": False, "error": "자기 자신이나 자기 하위로는 넣을 수 없습니다"},
+                    status_code=400,
+                )
+            prow = conn.execute(
+                "SELECT area_id FROM lt_item WHERE id = ?", (pid,)
+            ).fetchone()
+            if not prow:
+                return JSONResponse({"ok": False, "error": "상위 항목 없음"},
+                                    status_code=404)
+            new_parent, new_area = pid, prow["area_id"]
+        else:
+            try:
+                new_area = int(raw_area)
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+            if not conn.execute(
+                "SELECT 1 FROM lt_area WHERE id = ?", (new_area,)
+            ).fetchone():
+                return JSONResponse({"ok": False, "error": "영역 없음"}, status_code=404)
+            new_parent = None
+        if new_parent == old_parent and new_area == row["area_id"]:
+            return JSONResponse({"ok": True, "changed": False})
+        conn.execute(
+            "UPDATE lt_item SET parent_id = ?, area_id = ?, updated_at = ? WHERE id = ?",
+            (new_parent, new_area, now, item_id),
+        )
+        if kin:  # 하위 사슬도 같은 영역으로 함께 옮긴다(영역은 행이라 섞이면 안 된다)
+            ph = ",".join("?" * len(kin))
+            conn.execute(
+                f"UPDATE lt_item SET area_id = ?, updated_at = ? WHERE id IN ({ph})",
+                (new_area, now, *kin),
+            )
+        _lt_rollup_parent(conn, old_parent)   # 하나 빠진 옛 상위
+        _lt_rollup(conn, item_id)             # 하나 들어온 새 상위
+    return JSONResponse({"ok": True, "changed": True})
 
 
 @router.post("/plan/item/delete")

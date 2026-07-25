@@ -1436,6 +1436,7 @@
 
         gantt.querySelectorAll('.gt-bar').forEach((bar) => {
             bar.addEventListener('click', () => {
+                if (bar.dataset.dragged === '1') { delete bar.dataset.dragged; return; }
                 const box = gantt.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
                 if (!box) return;
                 const wasOpen = !box.hidden;
@@ -1444,6 +1445,26 @@
                 if (!wasOpen) box.querySelector('.gt-e-title')?.focus();
             });
         });
+
+        // 막대 위 ✕: 편집창을 열지 않고 바로 지운다(하위가 있으면 함께 지워진다고 알린다)
+        gantt.querySelectorAll('.gt-del').forEach((x) => {
+            x.addEventListener('pointerdown', (e) => e.stopPropagation());
+            x.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const bar = x.closest('.gt-bar');
+                const kids = bar && bar.classList.contains('is-parent');
+                const msg = kids
+                    ? '이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.'
+                    : '이 항목을 삭제합니다.';
+                if (!window.confirm(msg)) return;
+                postForm('/plan/item/delete', { id: x.dataset.id }).then((d) => {
+                    if (d && d.ok) location.reload();
+                    else toast('삭제 실패');
+                });
+            });
+        });
+
+        bindGanttDrag(gantt);
 
         gantt.querySelectorAll('.gt-edit').forEach((box) => {
             const id = box.dataset.id;
@@ -1479,6 +1500,103 @@
                         - scroller.getBoundingClientRect().left - 12;
             if (delta > 0) scroller.scrollLeft += delta;
         }
+    }
+
+    // ---- 장기: 막대 끌어 옮기기 ------------------------------------------
+    // 같은 줄에서 좌우로 끌면 보고 있는 열 단위로 기간이 옮겨지고, 다른 막대 위에 놓으면
+    // 그 막대의 하위계획이 되어 상위 막대 안에 겹쳐 그려진다. 영역 줄이나 빈 줄에 놓으면
+    // 다시 최상위로 빠진다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
+    function bindGanttDrag(gantt) {
+        const level = gantt.dataset.level || 'year';
+        const cols = parseInt(getComputedStyle(gantt).getPropertyValue('--cols'), 10) || 1;
+        let drag = null;
+
+        const clearMarks = () => {
+            gantt.querySelectorAll('.is-drop-target').forEach(
+                (el) => el.classList.remove('is-drop-target'));
+        };
+        const reset = () => {
+            if (drag) {
+                drag.bar.classList.remove('is-dragging');
+                drag.bar.style.transform = '';
+            }
+            clearMarks();
+            drag = null;
+        };
+        // 포인터 아래에 있는 드롭 대상(끌고 있는 막대는 잠시 통과시켜 밑을 본다)
+        const dropTargetAt = (x, y) => {
+            drag.bar.style.pointerEvents = 'none';
+            const under = document.elementFromPoint(x, y);
+            drag.bar.style.pointerEvents = '';
+            if (!under) return null;
+            const bar = under.closest('.gt-bar');
+            if (bar && bar !== drag.bar) return { kind: 'bar', el: bar };
+            const areaRow = under.closest('.gt-arearow');
+            if (areaRow) return { kind: 'area', el: areaRow, area: areaRow.dataset.area };
+            const empty = under.closest('.gt-empty');
+            if (empty) return { kind: 'area', el: empty, area: empty.dataset.area };
+            return null;
+        };
+
+        gantt.querySelectorAll('.gt-bar').forEach((bar) => {
+            bar.addEventListener('pointerdown', (e) => {
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                drag = {
+                    bar, id: bar.dataset.id, x0: e.clientX, y0: e.clientY, moved: false,
+                    hasChildren: bar.classList.contains('is-parent'),
+                    track: bar.closest('.gt-track'),
+                };
+                try { bar.setPointerCapture(e.pointerId); } catch (_) { /* 캡처 못해도 진행 */ }
+            });
+            bar.addEventListener('pointermove', (e) => {
+                if (!drag || drag.bar !== bar) return;
+                const dx = e.clientX - drag.x0;
+                const dy = e.clientY - drag.y0;
+                if (!drag.moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+                drag.moved = true;
+                bar.classList.add('is-dragging');
+                bar.style.transform = `translate(${dx}px, ${dy}px)`;
+                clearMarks();
+                const t = dropTargetAt(e.clientX, e.clientY);
+                if (t) t.el.classList.add('is-drop-target');
+            });
+            bar.addEventListener('pointerup', (e) => {
+                if (!drag || drag.bar !== bar) return;
+                if (!drag.moved) { reset(); return; }
+                bar.dataset.dragged = '1';           // 이어서 오는 click(편집창 열기)은 무시
+                const dx = e.clientX - drag.x0;
+                const target = dropTargetAt(e.clientX, e.clientY);
+                const colW = (drag.track ? drag.track.getBoundingClientRect().width : 0) / cols;
+                const steps = colW ? Math.round(dx / colW) : 0;
+                const id = drag.id;
+                const hasChildren = drag.hasChildren;
+                reset();
+                if (target && target.kind === 'bar') {
+                    postForm('/plan/item/reparent',
+                             { id: id, parent_id: target.el.dataset.id }).then((d) => {
+                        if (d && d.ok) location.reload();
+                        else toast((d && d.error) || '하위로 넣지 못했습니다');
+                    });
+                } else if (target && target.kind === 'area') {
+                    postForm('/plan/item/reparent',
+                             { id: id, area_id: target.area }).then((d) => {
+                        if (d && d.ok) location.reload();
+                        else toast((d && d.error) || '옮기지 못했습니다');
+                    });
+                } else if (steps !== 0) {
+                    if (hasChildren) {
+                        toast('하위가 있는 항목의 기간은 하위에서 자동 계산됩니다');
+                        return;
+                    }
+                    postForm('/plan/item/shift',
+                             { id: id, steps: steps, level: level }).then((d) => {
+                        if (d && d.ok) location.reload();
+                        else toast((d && d.error) || '옮기지 못했습니다');
+                    });
+                }
+            });
+            bar.addEventListener('pointercancel', reset);
+        });
     }
 
     // ---- 주간 탭: 이번 주 장기 항목 (장기 ↔ 주간 연동) ---------------------

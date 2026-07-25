@@ -36,6 +36,7 @@
         <span class="pl-key d1"></span>하위
         <span class="pl-key d2"></span>더 하위
     </span>
+    <span class="plan-hint">막대를 끌어 옮기고, 다른 막대 위에 놓으면 그 아래 하위계획이 됩니다 · 영역 줄에 놓으면 최상위로</span>
 </div>
 
 <details class="card theme-fold">
@@ -68,7 +69,7 @@
 
 {% else %}
 <div class="plan-scroll">
-    <div class="gantt" style="--cols: {{ columns | length }}">
+    <div class="gantt" data-level="{{ level }}" style="--cols: {{ columns | length }}">
         <div class="gt-row gt-headrow">
             <div class="gt-lead gt-headlead">영역 · 항목</div>
             <div class="gt-track gt-headtrack">
@@ -85,7 +86,7 @@
         </div>
 
         {% for area in gantt %}
-        <div class="gt-row gt-arearow">
+        <div class="gt-row gt-arearow" data-area="{{ area.id }}">
             <div class="gt-lead gt-areaname">{{ area.name }}</div>
             <div class="gt-track">
                 <button type="button" class="gt-add" data-area="{{ area.id }}">+ 항목</button>
@@ -117,6 +118,7 @@
                         title="{{ b.title }} · {{ b.range_label }} · {{ b.progress }}%">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>
                     <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>
+                    <span class="gt-del" data-id="{{ b.id }}" role="button" aria-label="{{ b.title }} 삭제" title="삭제">✕</span>
                 </button>
                 {% endfor %}
             </div>
@@ -138,7 +140,7 @@
         {% endfor %}
         {% endfor %}
         {% if not area.rows %}
-        <div class="gt-empty">이 기간에 걸친 항목이 없습니다. 오른쪽 위 + 항목으로 추가하세요.</div>
+        <div class="gt-empty" data-area="{{ area.id }}">이 기간에 걸친 항목이 없습니다. 오른쪽 위 + 항목으로 추가하거나, 다른 막대를 여기로 끌어다 놓으세요.</div>
         {% endif %}
         {% endfor %}
     </div>
