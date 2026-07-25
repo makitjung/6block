@@ -262,6 +262,24 @@ def get_weekday_overrides() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+# 요일별 컨셉(0=월 ~ 6=일). 설정에서 7칸을 적어 두면 오늘 탭 날짜 옆 괄호에 표시된다.
+WEEKDAY_CONCEPTS_KEY = "weekday_concepts"
+
+
+def get_weekday_concepts() -> list[str]:
+    """요일 컨셉 7칸. 저장값이 없거나 형식이 다르면 빈 칸 7개를 돌려준다."""
+    raw = get_settings().get(WEEKDAY_CONCEPTS_KEY)
+    if not raw:
+        return [""] * 7
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return [""] * 7
+    if not isinstance(data, list):
+        return [""] * 7
+    return [str(x or "").strip() for x in (list(data) + [""] * 7)[:7]]
+
+
 def get_day_blocks(weekday: int | None = None):
     """효과적인 하루 8블록 목록. 공통 시간 위에 그 요일 덮어쓰기가 있으면 덧입힌다.
 

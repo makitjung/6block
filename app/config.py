@@ -124,6 +124,7 @@ DEFAULT_SETTINGS = {
     "show_did": "1",            # 슬롯 '한'(실제로 한 일) 버튼 표시(0/1)
     "show_reflect": "1",        # 슬롯 '고민' 버튼 표시(0/1)
     "show_inbox": "0",          # 오늘 빠른 수집함·주간 미처리 수집함 표시(0/1)
+    "weekday_concepts": "",     # 요일별 컨셉 7칸(JSON 배열, 0=월 ~ 6=일)
     "ai_base_url": "",          # AI 연결 base URL(설정 탭에서 입력, .env AI_BASE_URL 대체 가능)
     "ai_model": "",             # AI 모델 이름(설정 탭에서 입력, .env AI_MODEL 대체 가능)
 }

@@ -17,7 +17,7 @@ from app.common import (
     week_start,
 )
 from app.config import hhmm_to_min
-from app.db import get_conn
+from app.db import get_conn, get_weekday_concepts
 from app.integrations import gcal, gcal_write, things
 
 router = APIRouter()
@@ -197,6 +197,8 @@ def _day_view(request: Request, date_str: str):
             "plans": plans,
             "grats": grats,
             "concepts": concepts,
+            # 설정에서 정한 그 요일의 컨셉(날짜 옆 괄호). 비었으면 괄호도 안 나온다.
+            "weekday_concept": get_weekday_concepts()[d.weekday()],
             "goal_tags": goal_tags,
             "plan_tags": plan_tags,
             "grat_tags": grat_tags,

@@ -10,7 +10,7 @@
             <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날">›</a>
         </div>
         <div class="hero-date">
-            <div class="hero-date-main">{{ date_str | pretty_date }}</div>
+            <div class="hero-date-main">{{ date_str | pretty_date }}{% if weekday_concept %} <span class="hero-wdc">({{ weekday_concept }})</span>{% endif %}</div>
             <div class="hero-date-sub mono">{{ date_str }}{% if not is_today %} · <a href="/today">오늘로</a>{% endif %}</div>
         </div>
         <div class="hero-actions">

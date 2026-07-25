@@ -1147,6 +1147,14 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 /* PLAN·SEE는 한 행(2열)에 나란히 둔다. 블록 세로 길이를 늘리지 않기 위해서다. */
 .ps-plan, .ps-see { min-width: 0; }
 
+/* 설정: 요일별 컨셉 7칸 */
+.set-wdc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.set-wdc-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.set-wdc-label { flex: 0 0 28px; font-weight: 700; color: var(--text-soft); font-size: 13px; }
+.set-wdc-input { flex: 1; min-width: 0; }
+/* 오늘 탭 날짜 옆 요일 컨셉 */
+.hero-wdc { color: var(--accent); font-weight: 600; }
+
 /* 세션(블록) 시간 편집 */
 .set-blocktimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .set-bt-row { display: flex; align-items: center; gap: 8px; }

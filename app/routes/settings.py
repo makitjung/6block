@@ -22,9 +22,11 @@ from app.config import (
 from app.db import (
     BLOCK_TIMES_KEY,
     BLOCK_TIMES_WD_KEY,
+    WEEKDAY_CONCEPTS_KEY,
     get_conn,
     get_day_blocks,
     get_settings,
+    get_weekday_concepts,
     get_weekday_overrides,
     set_setting,
 )
@@ -102,6 +104,7 @@ def settings_view(request: Request):
             "tones": TONES,
             "settings": settings,
             "block_scopes": _block_scopes(),
+            "weekday_concepts": get_weekday_concepts(),
             "events_calendar_id": gcal_write.events_calendar_id(),
             "gcal_events_on": gcal_write.events_enabled(),
             "achieve_calendar_id": gcal_write.achieve_calendar_id(),
@@ -254,6 +257,15 @@ async def settings_blocktimes_reset(request: Request):
         overrides = get_weekday_overrides()
         overrides.pop(str(weekday), None)
         set_setting(BLOCK_TIMES_WD_KEY, json.dumps(overrides))
+    return JSONResponse({"ok": True})
+
+
+@router.post("/settings/weekday-concepts")
+async def settings_weekday_concepts(request: Request):
+    """요일별 컨셉 7칸(wd0~wd6, 0=월 ~ 6=일)을 저장한다. 오늘 탭 날짜 옆 괄호에 나온다."""
+    form = await request.form()
+    values = [(form.get(f"wd{i}") or "").strip().replace("\n", " ") for i in range(7)]
+    set_setting(WEEKDAY_CONCEPTS_KEY, json.dumps(values, ensure_ascii=False))
     return JSONResponse({"ok": True})
 
 

@@ -1060,6 +1060,33 @@
             });
         });
 
+        // 요일 컨셉 7칸: 한 칸을 고치면 7칸을 함께 보내 저장한다(오늘 탭 날짜 옆에 표시)
+        const wdcBox = document.getElementById('set-wdc');
+        if (wdcBox) {
+            const msg = document.getElementById('set-wdc-msg');
+            const saveWdc = () => {
+                const data = {};
+                wdcBox.querySelectorAll('.set-wdc-input').forEach((inp) => {
+                    data['wd' + inp.dataset.wd] = inp.value;
+                });
+                postForm('/settings/weekday-concepts', data).then((d) => {
+                    if (msg) {
+                        msg.textContent = (d && d.ok) ? '저장됨' : '저장 실패';
+                        setTimeout(() => { msg.textContent = ''; }, 1500);
+                    }
+                });
+            };
+            wdcBox.querySelectorAll('.set-wdc-input').forEach((inp) => {
+                inp.addEventListener('change', saveWdc);
+                inp.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+                        e.preventDefault();
+                        inp.blur();
+                    }
+                });
+            });
+        }
+
         // 구분 템플릿: 추가·이름변경·삭제·셀(평일/주말×블록) 저장
         document.getElementById('set-tpl-add-btn')?.addEventListener('click', () => {
             const inp = document.getElementById('set-tpl-new-name');

@@ -142,6 +142,20 @@
         {% endfor %}
     </section>
 
+    <section class="card">
+        <h2 class="card-title">요일 컨셉 <span class="card-sub">요일마다 하나씩 · 오늘 탭 날짜 옆 괄호에 표시됩니다</span></h2>
+        <div class="set-wdc-grid" id="set-wdc">
+            {% for wd, wd_label in weekdays %}
+            <label class="set-wdc-cell">
+                <span class="set-wdc-label">{{ wd_label }}</span>
+                <input type="text" class="set-wdc-input" data-wd="{{ wd }}" value="{{ weekday_concepts[wd] }}"
+                       placeholder="{{ wd_label }}요일 컨셉" autocomplete="off" aria-label="{{ wd_label }}요일 컨셉">
+            </label>
+            {% endfor %}
+        </div>
+        <div class="set-bt-actions"><span class="set-bt-msg" id="set-wdc-msg"></span></div>
+    </section>
+
     <div>
         <section class="card">
             <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
