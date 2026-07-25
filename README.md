@@ -135,15 +135,23 @@ sqlite3 ~/6block-data/blocks.db < ~/6block-data/backups/blocks-YYYYMMDD.sql
 
 ```
 app/
-  main.py              FastAPI 엔트리(라우팅·저장·폴링/검색 API·PWA 서빙·캐시 헤더)
+  main.py              앱 조립(라우터 등록·CSRF/캐시 미들웨어·PWA·헬스체크)
+  common.py            템플릿 엔진·시간 도우미·하루 골격 생성·3칸 입력·자동 세분화
   config.py            블록/슬롯/카테고리/환경값 정의
   db.py                SQLite 연결(WAL)·스키마 초기화·자동 마이그레이션·설정 캐시
   schema.sql           테이블 스키마
+  routes/
+    day.py             오늘 화면·저장·수집함·외부 입력(Things3·구글 일정)
+    week.py            주간 화면·저장·구분 템플릿 적용·블록테마 자동 채우기
+    plan.py            장기플랜 표·간트·영역/항목 관리
+    settings.py        설정·데이터·연동·.env·백업·재시작
+    analytics.py       분석 지표·실행 퍼널·개선점·기록 검색
+    reflect.py         고결감(고민·결정·감사)과 구글 캘린더 양방향 동기화
   integrations/
     gcal.py            구글 캘린더 비공개 iCal 파싱·캐시(읽기)
     gcal_write.py      고민·감상 → 구글 캘린더 '고민/결심' 쓰기(서비스계정)
     things.py          Things3 Today(AppleScript) 읽기
-  templates/           base·today·week·plan·analytics·search·settings·reflect (Jinja2)
+  templates/           base·today·week·plan·analytics·settings·data·reflect (Jinja2)
   static/              app.js · style.css · sw.js · manifest.json · 아이콘
 scripts/
   backup.py            SQLite .sql 덤프 백업 + 30일 지난 덤프 자동 정리
