@@ -47,11 +47,11 @@ def _seed_categories(conn: sqlite3.Connection):
     """카테고리가 비어 있으면 기본 6종을 넣는다(기존 데이터는 건드리지 않음)."""
     if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]:
         return
-    for order, (name, color) in enumerate(CATEGORIES):
+    for order, name in enumerate(CATEGORIES):
         conn.execute(
-            "INSERT INTO categories (name, color, tone, display_order, is_active) "
-            "VALUES (?, ?, ?, ?, 1)",
-            (name, color, cat_tone(name), order),
+            "INSERT INTO categories (name, tone, display_order, is_active) "
+            "VALUES (?, ?, ?, 1)",
+            (name, cat_tone(name), order),
         )
 
 
@@ -77,7 +77,12 @@ def _seed_settings(conn: sqlite3.Connection):
 
 
 def _migrate(conn: sqlite3.Connection):
-    """기존 DB에 누락된 컬럼을 무중단으로 추가한다."""
+    """기존 DB에 누락된 컬럼을 추가하고, 더 이상 쓰지 않는 컬럼을 정리한다.
+
+    컬럼 추가는 옛 백업(.sql 덤프)을 복원했을 때도 앱이 뜨도록 남겨 둔다.
+    이미 반영이 끝난 일회성 데이터 보정(라벨 이름 변경 등)은 제거했다. 백업은 30일만
+    보관하므로 복원 대상이 되는 덤프는 모두 그 보정 이후의 것이다.
+    """
     cols = {r[1] for r in conn.execute("PRAGMA table_info(weekly_meta)").fetchall()}
     for new_col in ("vow", "memo"):
         if new_col not in cols:
@@ -123,21 +128,9 @@ def _migrate(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE categories ADD COLUMN tone TEXT NOT NULL DEFAULT 'black'")
         for name, tone in CAT_TONE.items():
             conn.execute("UPDATE categories SET tone = ? WHERE name = ?", (tone, name))
-    # 버퍼 블록 이름 변경(점심·기타→점심, 이동·휴식→저녁)을 기존 데이터에 멱등 반영
-    conn.execute("UPDATE blocks SET block_label = '점심' WHERE block_label = '점심·기타'")
-    conn.execute("UPDATE blocks SET block_label = '저녁' WHERE block_label = '이동·휴식'")
-    # B4 마지막 30분(16:30) 슬롯을 같은 날 저녁 블록으로 이동하고 경계를 16:30으로 맞춘다.
-    # 슬롯 데이터(do/did/cat/done)는 그대로 두고 소속 블록(block_id)만 옮기므로 무손실·멱등이다.
-    conn.execute(
-        "UPDATE slots SET block_id = ("
-        "    SELECT e.id FROM blocks e WHERE e.date = slots.date AND e.block_label = '저녁'"
-        ") "
-        "WHERE start_time = '16:30' "
-        "  AND block_id IN (SELECT b.id FROM blocks b WHERE b.block_label = 'B4') "
-        "  AND EXISTS (SELECT 1 FROM blocks e2 WHERE e2.date = slots.date AND e2.block_label = '저녁')"
-    )
-    conn.execute("UPDATE blocks SET end_time = '16:30' WHERE block_label = 'B4' AND end_time = '17:00'")
-    conn.execute("UPDATE blocks SET start_time = '16:30' WHERE block_label = '저녁' AND start_time = '17:00'")
+    # 옛 color(hex) 컬럼 제거. 색은 tone 하나로만 칠하므로 화면·통계 어디서도 쓰지 않는다.
+    if "color" in cat_cols:
+        conn.execute("ALTER TABLE categories DROP COLUMN color")
     # 고민·감상 '다시 볼 날짜'(입력할 때만 저장). 없으면 기록일 기준으로만 동작.
     refl_cols = {r[1] for r in conn.execute("PRAGMA table_info(reflection)").fetchall()}
     if refl_cols and "review_date" not in refl_cols:
@@ -145,15 +138,12 @@ def _migrate(conn: sqlite3.Connection):
     # 고결감: 제목과 내용 분리(제목→구글 summary, 내용→description). 없으면 추가.
     if refl_cols and "title" not in refl_cols:
         conn.execute("ALTER TABLE reflection ADD COLUMN title TEXT")
-    # 종류 명칭 변경(고민·감상·결심 → 고민·결정·감사). 기존 기록을 멱등 일괄 변경.
-    if refl_cols:
-        conn.execute("UPDATE reflection SET kind = '감사' WHERE kind = '감상'")
-        conn.execute("UPDATE reflection SET kind = '결정' WHERE kind = '결심'")
-    # 고결감 다시볼 날짜에 남기는 메모 + 그날 캘린더 이벤트 ID.
+    # 고결감 다시볼 날짜에 남기는 메모.
     if refl_cols and "review_note" not in refl_cols:
         conn.execute("ALTER TABLE reflection ADD COLUMN review_note TEXT")
-    if refl_cols and "review_gcal_event_id" not in refl_cols:
-        conn.execute("ALTER TABLE reflection ADD COLUMN review_gcal_event_id TEXT")
+    # 쓰이지 않는 review_gcal_event_id 제거. 다시보기 사본은 자기 행의 gcal_event_id를 쓴다.
+    if refl_cols and "review_gcal_event_id" in refl_cols:
+        conn.execute("ALTER TABLE reflection DROP COLUMN review_gcal_event_id")
     # 다시보기 항목이 원본과 독립 삭제 가능하도록 출처 ID를 저장한다.
     if refl_cols and "source_id" not in refl_cols:
         conn.execute("ALTER TABLE reflection ADD COLUMN source_id INTEGER")
@@ -161,36 +151,6 @@ def _migrate(conn: sqlite3.Connection):
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:
         conn.execute("ALTER TABLE inbox ADD COLUMN status TEXT NOT NULL DEFAULT ''")
-    # 구분 템플릿 셀: 평일/주말(day_type) 2행 → 요일(weekday 0~6) 7행으로 무손실 전환.
-    # 기존 평일값은 월~금(0~4), 주말값은 토·일(5~6)로 펼쳐 기존 템플릿을 그대로 보존한다.
-    cell_cols = {r[1] for r in conn.execute("PRAGMA table_info(cat_template_cell)").fetchall()}
-    if cell_cols and "day_type" in cell_cols and "weekday" not in cell_cols:
-        conn.execute("ALTER TABLE cat_template_cell RENAME TO _cat_template_cell_old")
-        conn.execute(
-            "CREATE TABLE cat_template_cell ("
-            " id INTEGER PRIMARY KEY,"
-            " template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,"
-            " weekday INTEGER NOT NULL,"
-            " block_label TEXT NOT NULL,"
-            " category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,"
-            " UNIQUE(template_id, weekday, block_label))"
-        )
-        conn.execute(
-            "INSERT INTO cat_template_cell (template_id, weekday, block_label, category_id) "
-            "SELECT o.template_id, wd.n, o.block_label, o.category_id FROM _cat_template_cell_old o "
-            "JOIN (SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4) wd "
-            "WHERE o.day_type = 'weekday'"
-        )
-        conn.execute(
-            "INSERT INTO cat_template_cell (template_id, weekday, block_label, category_id) "
-            "SELECT o.template_id, wd.n, o.block_label, o.category_id FROM _cat_template_cell_old o "
-            "JOIN (SELECT 5 AS n UNION SELECT 6) wd "
-            "WHERE o.day_type = 'weekend'"
-        )
-        conn.execute("DROP TABLE _cat_template_cell_old")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_cat_template_cell ON cat_template_cell(template_id)"
-        )
     # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.
     conn.execute(
         "UPDATE blocks SET category_id = (SELECT id FROM categories WHERE name = '기타' LIMIT 1) "

@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from html import unescape as html_unescape
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORT = int(os.environ.get("SIXBLOCK_TEST_PORT", "8011"))
@@ -219,6 +220,64 @@ def run_checks(db_path):
     code, out = post("/plan/item/delete", {"id": parent})
     n = db_query(db_path, "SELECT COUNT(*) AS c FROM lt_item")[0]["c"]
     check("항목 삭제 시 하위까지 함께 삭제", code == 200 and n == 0, n)
+
+    # 9. 정리한 것들이 실제로 정리됐는지
+    cols = {r["name"] for r in db_query(db_path, "PRAGMA table_info(categories)")}
+    check("categories.color 컬럼 제거", "color" not in cols, sorted(cols))
+    rcols = {r["name"] for r in db_query(db_path, "PRAGMA table_info(reflection)")}
+    check("reflection.review_gcal_event_id 제거", "review_gcal_event_id" not in rcols)
+    code, _ = get("/search?q=x")
+    check("레거시 /search 제거(404)", code == 404, code)
+
+    # 10. 화면에 설정 전체가 실리지 않는지(캘린더 ID·AI 주소 노출 방지)
+    code, html = get("/today")
+    m = re.search(r"window\.__settings = (\{.*?\});", html)
+    keys = set(json.loads(m.group(1)).keys()) if m else set()
+    check("화면에는 필요한 설정 3개만 실림",
+          keys == {"pomo_auto", "pomo_warn5", "collapse_blocks"}, sorted(keys))
+
+    # 11. .env 편집기는 값을 가려서 보여주고, 가린 채 저장해도 실제 값이 유지되는지
+    #     (서버가 임시 폴더의 가짜 .env 를 보도록 되어 있어 실제 .env 는 건드리지 않는다)
+    env_path = pathlib.Path(db_path).parent / ".env"
+    original = env_path.read_text(encoding="utf-8")
+    code, html = get("/settings")
+    check(".env 값이 화면에서 가려짐", "********" in html and "sk-test-secret" not in html)
+    masked = re.search(r'aria-label=".env 내용">(.*?)</textarea>', html, re.S)
+    body = html_unescape(masked.group(1)) if masked else ""
+    code, out = post("/settings/env/save", {"content": body})
+    check("가린 채 저장해도 .env 원본 유지",
+          code == 200 and env_path.read_text(encoding="utf-8") == original, code)
+    code, out = post("/settings/env/save",
+                     {"content": body.replace("AI_MODEL=********", "AI_MODEL=바뀐모델")})
+    after = env_path.read_text(encoding="utf-8")
+    check("가리지 않고 적은 값은 실제로 반영",
+          "AI_MODEL=바뀐모델" in after and "sk-test-secret" in after, after[:80])
+
+    # 12. 검색어의 LIKE 와일드카드가 글자 그대로 처리되는지
+    rows = db_query(db_path,
+                    "SELECT id FROM blocks WHERE date='2026-07-31' ORDER BY block_order")
+    post("/save/field", {"entity": "block", "id": rows[1]["id"],
+                         "field": "plan_text", "value": "달성 50% 목표"})
+    post("/save/field", {"entity": "block", "id": rows[2]["id"],
+                         "field": "plan_text", "value": "퍼센트 없는 계획"})
+    code, html = get("/analytics?q=" + urllib.parse.quote("50%"))
+    check("'50%' 검색이 그 기록을 찾음", "달성 50% 목표" in html)
+    code, html = get("/analytics?q=" + urllib.parse.quote("%"))
+    check("'%' 검색은 %가 든 기록만 찾음",
+          "달성 50% 목표" in html and "퍼센트 없는 계획" not in html)
+
+    # 13. 잘못된 날짜로 온 자동저장은 거부되는지
+    code, out = post("/save/field", {"entity": "meta", "id": "nope", "field": "memo", "value": "x"})
+    check("meta 저장에 잘못된 날짜 거부", code == 400, code)
+    n = db_query(db_path, "SELECT COUNT(*) AS c FROM daily_meta WHERE date='nope'")[0]["c"]
+    check("잘못된 날짜 행이 생기지 않음", n == 0, n)
+
+    # 14. 감사·반성 3칸도 자동저장되는지(예전에는 저장 버튼을 눌러야 했다)
+    post("/save/field", {"entity": "meta", "id": "2026-07-31", "field": "grat2",
+                         "grat1": "가", "grat2": "나", "grat3": ""})
+    row = db_query(db_path, "SELECT gratitude FROM daily_meta WHERE date='2026-07-31'")
+    check("감사·반성 3칸 저장", row and row[0]["gratitude"] == "가\n나\n",
+          row[0]["gratitude"] if row else None)
 
 
 def main():

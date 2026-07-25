@@ -151,10 +151,12 @@
         <li class="insight-item">{{ s }}</li>
         {% endfor %}
     </ul>
-    {% if ai_summary %}
+    {% if ai_on %}
     <div class="insight-ai">
-        <div class="insight-ai-head">AI 제안</div>
-        <div class="insight-ai-body">{{ ai_summary }}</div>
+        <div class="insight-ai-head">AI 제안
+            <button type="button" class="ghost-btn" id="ai-insight-btn" data-rng="{{ rng }}">받기</button>
+        </div>
+        <div class="insight-ai-body" id="ai-insight-body">버튼을 누르면 이 기간 지표를 AI에게 보내 제안을 받습니다.</div>
     </div>
     {% endif %}
 </section>

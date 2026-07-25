@@ -169,13 +169,30 @@
         render();
     }
     function transitionToIdle(auto) {
+        const finished = state.slotStart;
         state.phase = 'IDLE';
         state.endsAt = 0;
         persist();
         bell(2);
         notify('슬롯 완료', auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!');
-        toast('슬롯 완료');
+        toast('슬롯 완료 · 한 일을 적어두세요');
         render();
+        promptDidText(finished);
+    }
+
+    // 방금 끝난 슬롯의 '한일' 입력칸을 열어 커서를 둔다. 칸이 없으면(설정에서 껐거나 다른 날짜)
+    // 아무것도 하지 않는다. 입력값은 기존 자동저장 경로로 그대로 저장된다.
+    function promptDidText(slotStart) {
+        if (!slotStart) return;
+        const row = document.querySelector('.slot[data-start="' + slotStart + '"]');
+        const wrap = row && row.querySelector('.slot-did');
+        const input = wrap && wrap.querySelector('.slot-did-input');
+        if (!input) return;
+        wrap.classList.add('open');
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(() => input.focus(), 350);
+        const closeOnce = () => { wrap.classList.remove('open'); input.removeEventListener('blur', closeOnce); };
+        input.addEventListener('blur', closeOnce);
     }
     function skip() {
         if (state.phase === 'FOCUS') transitionToIdle(false);
@@ -522,6 +539,10 @@
                     el.dataset.asPrefix = 'dplan';
                     el.dataset.asIdx = m[1];
                     bindAutoSave(el, 'meta', dateStr, 'dplan' + m[1], { groupPrefix: 'dplan' });
+                } else if ((m = name.match(/^grat([123])$/))) {
+                    el.dataset.asPrefix = 'grat';
+                    el.dataset.asIdx = m[1];
+                    bindAutoSave(el, 'meta', dateStr, 'grat' + m[1], { groupPrefix: 'grat' });
                 } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
                 else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
             });
@@ -1633,7 +1654,7 @@
             if (opts.groupPrefix) {
                 extra = extra || {};
                 document.querySelectorAll('[data-as-prefix="' + opts.groupPrefix + '"]').forEach((g) => {
-                    extra[g.dataset.asIdx] = g.value;
+                    extra[opts.groupPrefix + g.dataset.asIdx] = g.value;
                 });
             }
             saveField(entity, id, field, value, extra);
@@ -2070,6 +2091,8 @@
         const bindStatus = (sel) => {
             sel.addEventListener('change', () => {
                 const id = sel.dataset.id;
+                const row = sel.closest('.wk-inbox-item');
+                if (row) { row.dataset.status = sel.value; applyInboxFilter(); }
                 if (String(id).indexOf('tmp-') === 0) return;   // 아직 미동기화
                 sendOrQueue(
                     { id: genId(), kind: 'inbox-status', url: '/inbox/status', headers: FORM_HEADERS,
@@ -2094,7 +2117,7 @@
         };
         const addRow = (id, text, opId) => {
             const row = el('div', 'wk-inbox-item');
-            row.dataset.id = id; if (opId) row.dataset.op = opId;
+            row.dataset.id = id; row.dataset.status = ''; if (opId) row.dataset.op = opId;
             const ti = document.createElement('input');
             ti.type = 'text'; ti.className = 'wk-inbox-text'; ti.value = text; ti.dataset.id = id;
             bindEdit(ti);
@@ -2125,6 +2148,22 @@
                 })
                 .finally(() => { inflight = false; });
         };
+        const filterBox = document.getElementById('wk-inbox-filter');
+        let curFilter = 'all';
+        function applyInboxFilter() {
+            list?.querySelectorAll('.wk-inbox-item').forEach((row) => {
+                row.hidden = curFilter !== 'all' && (row.dataset.status || '') !== curFilter;
+            });
+        }
+        filterBox?.querySelectorAll('.wk-if').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                curFilter = btn.dataset.status;
+                filterBox.querySelectorAll('.wk-if').forEach((b) =>
+                    b.classList.toggle('is-active', b === btn));
+                applyInboxFilter();
+            });
+        });
+
         list?.querySelectorAll('.wk-inbox-text').forEach(bindEdit);
         list?.querySelectorAll('.wk-inbox-status').forEach(bindStatus);
         list?.querySelectorAll('.wk-inbox-del').forEach((b) =>
@@ -2372,6 +2411,19 @@
         bindBlockTools();
         bindSettings();
         bindBlockTimes();
+        // 분석 탭: AI 제안은 버튼을 누를 때만 호출한다(화면 로드마다 부르지 않는다).
+        const aiBtn = document.getElementById('ai-insight-btn');
+        aiBtn?.addEventListener('click', () => {
+            const body = document.getElementById('ai-insight-body');
+            aiBtn.disabled = true;
+            if (body) body.textContent = 'AI에게 묻는 중… 몇 초 걸립니다.';
+            postForm('/analytics/ai', { rng: aiBtn.dataset.rng || '7' }).then((d) => {
+                aiBtn.disabled = false;
+                if (body) body.textContent = (d && d.ok) ? d.text
+                    : ((d && d.error) || '호출 실패');
+            });
+        });
+
         bindPlan();
         bindGantt();
         bindPlanAreas();
@@ -2457,7 +2509,10 @@
                     window.location.reload();
                 });
             }
-            navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            // app.js 를 불러온 주소의 ?v= (파일 수정시각)을 그대로 넘겨 캐시 이름에 쓴다.
+            const appSrc = document.querySelector('script[src*="/static/app.js"]')?.src || '';
+            const ver = new URL(appSrc, location.href).searchParams.get('v') || '0';
+            navigator.serviceWorker.register('/sw.js?v=' + ver, { scope: '/' })
                 .then((reg) => { reg.update().catch(() => {}); })
                 .catch(() => {});
         }

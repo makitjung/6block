@@ -58,6 +58,9 @@
 - **Things3 연동은 macOS 전용**입니다. AppleScript로 Today 목록을 읽으므로 시스템 설정 > 개인정보 보호 및 보안 > 자동화에서 권한 허용이 필요합니다. Today 목록만 가져오며 시간 정보는 없습니다.
 - **구글 캘린더**는 "설정 및 공유 > 캘린더 통합 > iCal 형식의 **비공개** 주소(.ics)"를 `.env`의 `GCAL_ICAL_URL`에 넣어야 동작합니다. 비워두면 캘린더만 비활성화되고 앱은 정상 작동합니다.
 - **인증이 없습니다.** 서버는 `0.0.0.0:8000`으로 열리므로 반드시 Tailscale 같은 사설망으로만 접근하세요. 공개 인터넷에 노출하지 마세요.
+- 쓰기 요청(POST)은 **Origin/Referer 검사**로 다른 사이트에서 오는 요청(CSRF)을 막습니다. 다른 도메인·리버스 프록시로 접속해 저장이 403이 되면 `.env`의 `SIXBLOCK_ALLOWED_ORIGINS`에 그 호스트를 넣으세요.
+- 설정 탭의 `.env` 편집기는 값을 `********`로 **가려서** 보여줍니다. 그대로 저장하면 기존 값이 유지되고, 바꾸려면 자리표시를 지우고 새 값을 적으면 됩니다.
+- 더 조이려면 `launchd/io.6block.uvicorn.plist`의 `--host`를 `127.0.0.1`로 바꾸고 `tailscale serve --bg 8000`으로 노출하세요. 이 경우 **먼저 tailscale serve를 설정해야** 폰에서 계속 접속됩니다.
 - **시크릿은 커밋 금지.** `.env`, `*.db`, `*.key`, `*.crt`는 `.gitignore`로 제외되어 있습니다.
 - **설치형 PWA는 설치 시점의 매니페스트(가로회전 등)를 앱에 구워 저장**합니다. `manifest.json`을 바꾸면(예: 세로 잠금 → 가로 허용) 휴대폰에서 **앱을 삭제하고 다시 설치**해야 반영됩니다.
 - **캐시 동작**: 정적 파일·HTML은 `Cache-Control: no-cache` + `?v=<수정시각>` 캐시버스팅이 적용되어, 코드 변경은 새로고침으로 반영됩니다. 다만 이미 옛 버전을 캐시한 기기는 1~2회 새로고침(또는 PWA 재설치)이 필요할 수 있습니다.
@@ -170,3 +173,20 @@ requirements.txt
 하루 골격 생성의 멱등성, 필드 자동저장, 블록 시간 변경 시 장소 보존, 장기 간트(추가·하위·자동 롤업·삭제)입니다.
 
 포트를 바꾸려면 `SIXBLOCK_TEST_PORT=8020 .venv/bin/python tests/run_smoke.py` 처럼 지정합니다.
+
+---
+
+## 7. 백업과 복원
+
+매일 23시에 `~/6block-data/backups/blocks-YYYYMMDD.sql` 덤프가 생기고 OneDrive에도 같은 파일이 복사됩니다(30일 보관). 설정 화면의 데이터 탭에서 즉시 덤프를 만들 수도 있습니다.
+
+복원은 아래 순서로 합니다. 먼저 서버를 내려야 WAL이 섞이지 않습니다.
+
+```bash
+launchctl bootout gui/$(id -u)/io.6block.uvicorn
+mv ~/6block-data/blocks.db ~/6block-data/blocks.db.old
+sqlite3 ~/6block-data/blocks.db < ~/6block-data/backups/blocks-20260725.sql
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.6block.uvicorn.plist
+```
+
+복원 뒤 화면이 정상인지 확인한 다음 `blocks.db.old`를 지우세요. 덤프 파일명을 복원하려는 날짜로 바꿔서 실행합니다.

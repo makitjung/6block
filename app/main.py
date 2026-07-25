@@ -20,6 +20,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from app.config import (
     ALLOWED_ORIGINS,
@@ -46,37 +47,22 @@ from app.integrations import ai, gcal, gcal_write, things
 
 KST = ZoneInfo("Asia/Seoul")
 BASE_DIR = Path(__file__).parent
+
+
+async def _off_loop(fn, *args, **kwargs):
+    """구글 API·AppleScript·AI 호출처럼 느린 동기 함수를 스레드풀에서 실행한다.
+
+    async 라우트 안에서 그대로 부르면 그 몇 초 동안 이벤트 루프가 멈춰 다른 요청(60초
+    실시간 폴링 포함)이 전부 대기한다. 이 함수로 감싸면 그동안에도 서버가 계속 응답한다.
+    """
+    return await run_in_threadpool(fn, *args, **kwargs)
 KO_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
 CORE_LABELS = [b[0] for b in DAY_BLOCKS if b[1]]  # B1..B6
-
-
-def _migrate_gcal_titles():
-    """옛 종류(감상·결심)로 만든 구글 이벤트 제목 접두어를 새 종류로 한 번만 정정한다."""
-    try:
-        if not gcal_write.enabled():
-            return
-        if get_settings().get("reflect_gcal_titles_migrated") == "1":
-            return
-        with get_conn() as conn:
-            rows = conn.execute(
-                "SELECT kind, title, text, tags, gcal_event_id FROM reflection "
-                "WHERE gcal_event_id IS NOT NULL AND kind IN ('감사', '결정') LIMIT 500"
-            ).fetchall()
-        for r in rows:
-            gcal_write.update_event(
-                r["gcal_event_id"], r["kind"], _reflect_title(r["title"], r["text"]),
-                r["text"] or "", r["tags"] or "",
-            )
-        set_setting("reflect_gcal_titles_migrated", "1")
-    except Exception:
-        pass
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    # 옛 구글 이벤트 제목 정정은 시작을 막지 않게 백그라운드에서(한 번만).
-    threading.Thread(target=_migrate_gcal_titles, daemon=True).start()
     yield
 
 
@@ -179,8 +165,20 @@ def _asset_ver() -> str:
         return "1"
 
 
+# 화면(JS)에서 실제로 쓰는 설정만 페이지에 싣는다. 예전에는 app_settings 전체를 내보내
+# 캘린더 ID·AI 주소까지 모든 페이지 소스에 남았다.
+CLIENT_SETTING_KEYS = ("pomo_auto", "pomo_warn5", "collapse_blocks")
+
+
+def _client_settings() -> dict:
+    """브라우저 JS가 읽는 설정만 추린 dict."""
+    s = get_settings()
+    return {k: s.get(k) for k in CLIENT_SETTING_KEYS}
+
+
 templates.env.globals["asset_ver"] = _asset_ver
 templates.env.globals["get_settings"] = get_settings
+templates.env.globals["client_settings"] = _client_settings
 
 
 def today_str() -> str:
@@ -519,10 +517,9 @@ def _day_view(request: Request, date_str: str):
     with get_conn() as conn:
         ensure_day_skeleton(conn, date_str)
         categories = [
-            {"id": r["id"], "name": r["name"], "color": r["color"],
-             "tone": r["tone"]}
+            {"id": r["id"], "name": r["name"], "tone": r["tone"]}
             for r in conn.execute(
-                "SELECT id, name, color, tone FROM categories "
+                "SELECT id, name, tone FROM categories "
                 "WHERE is_active = 1 ORDER BY display_order"
             )
         ]
@@ -749,7 +746,7 @@ async def save_day(date_str: str, request: Request):
                     "SELECT achieve_event_id FROM daily_meta WHERE date = ?", (date_str,)
                 ).fetchone()
             existing = row["achieve_event_id"] if row else None
-            new_id = gcal_write.upsert_achievement_event(date_str, items, existing)
+            new_id = await _off_loop(gcal_write.upsert_achievement_event, date_str, items, existing)
             if new_id != existing:
                 with get_conn() as conn:
                     conn.execute(
@@ -841,6 +838,8 @@ async def save_field(request: Request):
         elif entity == "meta":
             # id 자리에 날짜(문자열)가 온다. field: goal1~3|dplan1~3|memo|vow
             date_str = form.get("id") or ""
+            if not _parse_date(date_str):
+                return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
             if field in ("memo", "vow"):
                 conn.execute(
                     "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
@@ -849,8 +848,8 @@ async def save_field(request: Request):
                     (date_str, value),
                 )
             elif field.startswith("goaltag") or field.startswith("plantag") or field.startswith("grattag"):
-                # 목표/달성/감사 각 줄의 자유 태그 3칸(직접 입력). 바뀐 칸과 그룹 나머지 값을 함께 받아
-                # 합친다. 클라이언트는 prefix+번호(goaltag1) 또는 숫자 키(1/2/3)로 보낼 수 있어 둘 다 받는다.
+                # 목표/달성/감사 각 줄의 자유 태그 3칸(직접 입력). 바뀐 칸과 그룹 나머지 값을
+                # prefix+번호(goaltag1) 키로 함께 받아 줄바꿈으로 합친다.
                 if field.startswith("goaltag"):
                     prefix, col = "goaltag", "goal_tags"
                 elif field.startswith("plantag"):
@@ -863,14 +862,10 @@ async def save_field(request: Request):
                 parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
                 parts = (parts + ["", "", ""])[:3]
                 for i in range(3):
-                    pre_key, num_key = f"{prefix}{i + 1}", str(i + 1)
-                    if pre_key in form:
-                        raw = form.get(pre_key, "") or ""
-                    elif num_key in form:
-                        raw = form.get(num_key, "") or ""
-                    else:
+                    key = f"{prefix}{i + 1}"
+                    if key not in form:
                         continue
-                    parts[i] = raw.replace("\r", " ").replace("\n", " ").strip()
+                    parts[i] = (form.get(key, "") or "").replace("\r", " ").replace("\n", " ").strip()
                 joined = "\n".join(parts)
                 joined = joined if joined.strip() else ""
                 conn.execute(
@@ -880,9 +875,8 @@ async def save_field(request: Request):
                     (date_str, joined),
                 )
             elif field.startswith("goal") or field.startswith("dplan") or field.startswith("grat"):
-                # 목표/달성/감사·반성 3칸: 바뀐 한 칸과 나머지 두 칸(클라이언트가 함께 보냄)을
-                # 합쳐 줄바꿈으로 저장한다. 클라이언트는 세 값을 숫자 키(1/2/3)로, 폼 전체 저장 등은
-                # prefix+번호 키로 보낼 수 있어 둘 다 받는다. 각 칸 내부 줄바꿈은 공백으로 눌러 3칸 구분 보호.
+                # 목표/달성/감사·반성 3칸: 바뀐 한 칸과 나머지 두 칸을 prefix+번호(goal1) 키로
+                # 함께 받아 줄바꿈으로 합친다. 각 칸 내부 줄바꿈은 공백으로 눌러 3칸 구분을 지킨다.
                 if field.startswith("goal"):
                     prefix, col = "goal", "today_goal"
                 elif field.startswith("dplan"):
@@ -895,14 +889,10 @@ async def save_field(request: Request):
                 parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
                 parts = (parts + ["", "", ""])[:3]
                 for i in range(3):
-                    pre_key, num_key = f"{prefix}{i+1}", str(i + 1)
-                    if pre_key in form:
-                        raw = form.get(pre_key, "") or ""
-                    elif num_key in form:
-                        raw = form.get(num_key, "") or ""
-                    else:
+                    key = f"{prefix}{i + 1}"
+                    if key not in form:
                         continue
-                    parts[i] = raw.replace("\r", " ").replace("\n", " ")
+                    parts[i] = (form.get(key, "") or "").replace("\r", " ").replace("\n", " ")
                 joined = "\n".join(p.strip() for p in parts)
                 joined = joined if joined.strip() else ""
                 conn.execute(
@@ -918,6 +908,8 @@ async def save_field(request: Request):
         elif entity == "wmeta":
             # id 자리에 주 시작일(week_start). field: weekly_goal|appointments|vow|memo
             ws = form.get("id") or ""
+            if not _parse_date(ws):
+                return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
             if field not in ("weekly_goal", "appointments", "vow", "memo"):
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
             conn.execute(
@@ -929,6 +921,8 @@ async def save_field(request: Request):
         elif entity == "theme":
             # id=week_start, label=블록 라벨(B1..B6), value=테마 텍스트
             ws = form.get("id") or ""
+            if not _parse_date(ws):
+                return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
             label = (form.get("label") or "").strip()
             if not label:
                 return JSONResponse({"ok": False, "error": "bad-label"}, status_code=400)
@@ -951,7 +945,7 @@ async def save_field(request: Request):
                 ).fetchone()
             items = (row["daily_plan"] or "").split("\n") if row else []
             existing = row["achieve_event_id"] if row else None
-            new_id = gcal_write.upsert_achievement_event(achieve_date, items, existing)
+            new_id = await _off_loop(gcal_write.upsert_achievement_event, achieve_date, items, existing)
             if new_id != existing:
                 with get_conn() as conn:
                     conn.execute(
@@ -1043,7 +1037,7 @@ async def things_add(request: Request):
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
     if not things.enabled():
         return JSONResponse({"ok": False, "error": "things-off"}, status_code=400)
-    ok = things.add_todo(title)
+    ok = await _off_loop(things.add_todo, title)
     if not ok:
         return JSONResponse({"ok": False, "error": "권한 미승인 또는 Things3 미실행"},
                             status_code=502)
@@ -1065,7 +1059,7 @@ async def gcal_event_add(request: Request):
             status_code=400,
         )
     try:
-        ev = gcal_write.create_calendar_event(title, date_str, time_hhmm)
+        ev = await _off_loop(gcal_write.create_calendar_event, title, date_str, time_hhmm)
     except Exception:
         ev = None
     if not ev:
@@ -1248,17 +1242,16 @@ def _week_view(request: Request, monday: date):
             dates,
         ).fetchall()
         categories = [
-            {"id": r["id"], "name": r["name"], "color": r["color"],
-             "tone": r["tone"]}
+            {"id": r["id"], "name": r["name"], "tone": r["tone"]}
             for r in conn.execute(
-                "SELECT id, name, color, tone FROM categories "
+                "SELECT id, name, tone FROM categories "
                 "WHERE is_active = 1 ORDER BY display_order"
             )
         ]
         # 슬롯 구분이 비면(NULL) 그 슬롯이 속한 블록 구분을 따른다(블록→슬롯 상속).
         cat_summary = conn.execute(
             f"""
-            SELECT c.name, c.color, c.tone, COUNT(s.id) AS slot_count
+            SELECT c.name, c.tone, COUNT(s.id) AS slot_count
             FROM slots s
             JOIN blocks b ON b.id = s.block_id
             JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id)
@@ -1401,7 +1394,6 @@ def _week_view(request: Request, monday: date):
     cat_summary_pct = [
         {
             "name": r["name"],
-            "color": r["color"],
             "tone": r["tone"],
             "slot_count": r["slot_count"],
             "hours": r["slot_count"] * 0.5,
@@ -1677,7 +1669,7 @@ async def week_decompose_themes(request: Request):
                 (ws,),
             )
         }
-        contents = _ai_split(context, CORE_LABELS, "", "주") if ai.enabled() else None
+        contents = await _off_loop(_ai_split, context, CORE_LABELS, "", "주") if ai.enabled() else None
         used_ai = contents is not None
         if contents is None:
             contents = _rule_distribute(context, len(CORE_LABELS))
@@ -2077,7 +2069,7 @@ async def plan_decompose(request: Request):
         }
         labels = [lbl for _, lbl in children]
         contents = (
-            _ai_split(parent_text, labels, area_name, PLAN_LEVEL_LABELS[level])
+            await _off_loop(_ai_split, parent_text, labels, area_name, PLAN_LEVEL_LABELS[level])
             if ai.enabled() else None
         )
         used_ai = contents is not None
@@ -2267,7 +2259,8 @@ def settings_view(request: Request):
             "sa_email": gcal_write.service_account_email(),
             "ai_status": ai.status(),
             "env_path": str(_env_file_path()),
-            "env_content": _read_env_text(),
+            # 시크릿은 가려서 보낸다. 실제 값은 서버 파일에만 있고 화면에는 나가지 않는다.
+            "env_content": _mask_env_text(_read_env_text()),
         },
     )
 
@@ -2426,7 +2419,7 @@ async def settings_events_calendar(request: Request):
 @app.post("/settings/events-calendar/test")
 async def settings_events_calendar_test():
     """저장된 일정용 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
-    return JSONResponse(gcal_write.test_events_write())
+    return JSONResponse(await _off_loop(gcal_write.test_events_write))
 
 
 @app.post("/settings/achieve-calendar")
@@ -2441,7 +2434,7 @@ async def settings_achieve_calendar(request: Request):
 @app.post("/settings/achieve-calendar/test")
 async def settings_achieve_calendar_test():
     """저장된 성과 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
-    return JSONResponse(gcal_write.test_achieve_write())
+    return JSONResponse(await _off_loop(gcal_write.test_achieve_write))
 
 
 @app.post("/settings/category/add")
@@ -2466,8 +2459,8 @@ async def settings_cat_add(request: Request):
                 "SELECT COALESCE(MAX(display_order), -1) + 1 FROM categories"
             ).fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO categories (name, color, tone, display_order, is_active) "
-                "VALUES (?, '#202124', ?, ?, 1)",
+                "INSERT INTO categories (name, tone, display_order, is_active) "
+                "VALUES (?, ?, ?, 1)",
                 (name, tone, order),
             )
             cid = cur.lastrowid
@@ -2657,12 +2650,16 @@ async def settings_template_cell(request: Request):
 
 # -- .env 편집 (설정 탭) ----------------------------------------------------
 
-# 설정 탭의 .env 편집기가 프로젝트 루트 .env를 그대로 보여주고 저장한다. 값은 서버 재시작
-# 후 반영된다(config.py가 기동 시 load_dotenv). 개인용(테일스케일 내부) 단일 사용자 전제라
-# 시크릿을 화면엔 보여주되 서버 로그에는 남기지 않고, 백업은 레포 밖(6block-data)에 둔다.
+# 설정 탭의 .env 편집기. 값은 서버 재시작 후 반영된다(config.py가 기동 시 load_dotenv).
+# 이 앱에는 로그인이 없으므로 API 키가 화면·브라우저 캐시에 남지 않도록 값은 ******** 로
+# 가려서 내보내고, 그대로 돌아온 자리표시는 저장할 때 기존 값으로 되돌린다.
+# 값을 바꿀 때는 자리표시를 지우고 새 값을 적으면 된다. 백업은 레포 밖(6block-data)에 둔다.
 def _env_file_path() -> Path:
     """프로젝트 루트의 .env 경로."""
     return BASE_DIR.parent / ".env"
+
+
+MASK = "********"          # 가려진 값 자리표시. 저장할 때 이 값이면 기존 값을 그대로 둔다.
 
 
 def _read_env_text() -> str:
@@ -2673,17 +2670,50 @@ def _read_env_text() -> str:
         return ""
 
 
+def _mask_env_text(text: str) -> str:
+    """KEY=값 의 값을 가린다. 화면·브라우저 캐시·화면 공유에 시크릿이 그대로 남지 않게 한다."""
+    out = []
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            out.append(line)
+            continue
+        key, _, value = line.partition("=")
+        out.append(f"{key}={MASK}" if value.strip() else line)
+    return "\n".join(out)
+
+
+def _unmask_env_text(new_text: str, old_text: str) -> str:
+    """가려진 채로 돌아온 값(********)을 기존 .env의 실제 값으로 되돌린다."""
+    old_values: dict[str, str] = {}
+    for line in old_text.split("\n"):
+        if "=" in line and not line.lstrip().startswith("#"):
+            k, _, v = line.partition("=")
+            old_values[k.strip()] = v
+    out = []
+    for line in new_text.split("\n"):
+        key, _, value = line.partition("=")
+        if value.strip() == MASK and key.strip() in old_values:
+            out.append(f"{key}={old_values[key.strip()]}")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 @app.post("/settings/env/save")
 async def settings_env_save(request: Request):
     """.env 전체 내용을 저장한다. 직전 내용을 6block-data에 백업하고 임시파일로 원자적
-    교체하며 권한 0o600을 유지한다. 저장 후 서버를 재시작해야 값이 반영된다."""
+    교체하며 권한 0o600을 유지한다. 저장 후 서버를 재시작해야 값이 반영된다.
+
+    화면에는 값이 가려진 채로 나가므로, 그대로 돌아온 자리표시는 기존 값으로 되돌린다.
+    """
     form = await request.form()
     content = form.get("content")
     if content is None:
         return JSONResponse({"ok": False, "error": "no-content"}, status_code=400)
     if len(content) > 100_000:
         return JSONResponse({"ok": False, "error": "too-large"}, status_code=400)
-    text = content.replace("\r\n", "\n")
+    text = _unmask_env_text(content.replace("\r\n", "\n"), _read_env_text())
     env_path = _env_file_path()
     tmp = env_path.with_name(".env.tmp")
     try:
@@ -2732,7 +2762,7 @@ async def settings_ai_test():
         return JSONResponse(
             {"ok": False, "error": ".env의 AI_API_KEY와 base URL·모델을 확인하세요"}
         )
-    reply = ai.complete("You reply with a single word.",
+    reply = await _off_loop(ai.complete, "You reply with a single word.",
                         "Reply with the word OK.", max_tokens=5, temperature=0)
     if reply:
         return JSONResponse({"ok": True, "reply": reply[:40]})
@@ -2952,8 +2982,8 @@ def _exec_funnel(conn, start, end):
     }
 
 
-@app.get("/analytics")
-def analytics_view(request: Request, rng: str = "7", q: str = ""):
+def _analytics_data(rng: str) -> dict:
+    """분석 지표를 한 번에 계산한다. 화면(/analytics)과 AI 제안(/analytics/ai)이 함께 쓴다."""
     today = datetime.now(KST).date()
     today_s = today.strftime("%Y-%m-%d")
     with get_conn() as conn:
@@ -3052,37 +3082,64 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
          "pct": round(r["achieved"] / r["planned"] * 100) if r["planned"] else 0}
         for r in block_pd_rows
     ]
-    insights = _build_insights(summary, weekday_data, block_pd, cats)
-    ai_summary = _ai_insights(summary, weekday_data, block_pd, cats) if ai.enabled() else None
+    return {
+        "rng": rng,
+        "range_label": range_label,
+        "start": start,
+        "end": today_s,
+        "today": today,
+        "cats": cats,
+        "days_data": days_data,
+        "pd_data": pd_data,
+        "weekday_data": weekday_data,
+        "block_pd": block_pd,
+        "summary": summary,
+        "funnel": funnel,
+        "insights": _build_insights(summary, weekday_data, block_pd, cats),
+    }
+
+
+@app.get("/analytics")
+def analytics_view(request: Request, rng: str = "7", q: str = ""):
+    data = _analytics_data(rng)
     # 분석·검색 병합: 검색어가 있으면 지난 슬롯/블록 기록을 같은 화면에서 함께 보여준다.
     q = (q or "").strip()
     s_slots, s_blocks = _search_records(q)
-    return templates.TemplateResponse(
-        "analytics.html",
-        {
-            "request": request,
-            "rng": rng,
-            "range_label": range_label,
-            "start": start,
-            "end": today_s,
-            "cats": cats,
-            "days_data": days_data,
-            "pd_data": pd_data,
-            "weekday_data": weekday_data,
-            "block_pd": block_pd,
-            "insights": insights,
-            "ai_summary": ai_summary,
-            "summary": summary,
-            "funnel": funnel,
-            "q": q,
-            "s_slots": s_slots,
-            "s_blocks": s_blocks,
-            "flashback": _on_this_day(today),
-        },
-    )
+    ctx = {k: v for k, v in data.items() if k != "today"}
+    ctx.update({
+        "request": request,
+        # AI 제안은 버튼을 누를 때만 부른다(화면 로드마다 부르면 매번 기다리고 토큰도 쓴다).
+        "ai_on": ai.enabled(),
+        "q": q,
+        "s_slots": s_slots,
+        "s_blocks": s_blocks,
+        "flashback": _on_this_day(data["today"]),
+    })
+    return templates.TemplateResponse("analytics.html", ctx)
+
+
+@app.post("/analytics/ai")
+async def analytics_ai(request: Request):
+    """분석 화면의 'AI 제안 받기' 버튼. 누를 때만 AI를 호출한다(로드마다 부르지 않는다)."""
+    form = await request.form()
+    rng = (form.get("rng") or "7").strip()
+    if not ai.enabled():
+        return JSONResponse({"ok": False, "error": ".env의 AI_API_KEY와 주소·모델을 확인하세요"})
+    data = _analytics_data(rng)
+    text = await _off_loop(_ai_insights, data["summary"], data["weekday_data"],
+                           data["block_pd"], data["cats"])
+    if not text:
+        return JSONResponse({"ok": False, "error": "호출 실패 · 키·주소·모델·잔액을 확인하세요"})
+    return JSONResponse({"ok": True, "text": text})
 
 
 # -- 기록 검색 (분석·검색 탭에 병합) ---------------------------------------
+
+
+def _like_pattern(q: str) -> str:
+    """LIKE 검색어를 안전하게 만든다. %, _ 는 사용자가 친 글자 그대로 찾도록 이스케이프한다."""
+    esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{esc}%"
 
 
 def _search_records(q: str):
@@ -3090,7 +3147,7 @@ def _search_records(q: str):
     q = (q or "").strip()
     if not q:
         return [], []
-    like = f"%{q}%"
+    like = _like_pattern(q)
     with get_conn() as conn:
         slots = [
             dict(r)
@@ -3098,7 +3155,7 @@ def _search_records(q: str):
                 "SELECT s.date, s.start_time, b.block_order, b.block_label, "
                 "       s.do_text, s.did_text "
                 "FROM slots s JOIN blocks b ON b.id = s.block_id "
-                "WHERE s.do_text LIKE ? OR s.did_text LIKE ? "
+                "WHERE s.do_text LIKE ? ESCAPE '\\' OR s.did_text LIKE ? ESCAPE '\\' "
                 "ORDER BY s.date DESC, s.slot_index LIMIT 300",
                 (like, like),
             )
@@ -3108,19 +3165,13 @@ def _search_records(q: str):
             for r in conn.execute(
                 "SELECT date, block_order, block_label, name, plan_text, see_text "
                 "FROM blocks "
-                "WHERE plan_text LIKE ? OR see_text LIKE ? OR name LIKE ? "
+                "WHERE plan_text LIKE ? ESCAPE '\\' OR see_text LIKE ? ESCAPE '\\' "
+                "   OR name LIKE ? ESCAPE '\\' "
                 "ORDER BY date DESC, block_order LIMIT 300",
                 (like, like, like),
             )
         ]
     return slots, blocks
-
-
-@app.get("/search")
-def search_view(q: str = ""):
-    """과거 호환: 검색은 분석·검색(/analytics) 탭으로 이동했다."""
-    target = "/analytics?q=" + urllib.parse.quote((q or "").strip()) if q else "/analytics"
-    return RedirectResponse(url=target)
 
 
 # -- 고결감 (반복 고민·결정·감사) ------------------------------------------
@@ -3225,8 +3276,9 @@ def _reflect_ctx(q: str = "", kind: str = "") -> dict:
         where.append("kind = ?")
         params.append(kind)
     if q:
-        where.append("(title LIKE ? OR text LIKE ? OR tags LIKE ?)")
-        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        where.append("(title LIKE ? ESCAPE '\\' OR text LIKE ? ESCAPE '\\' "
+                     "OR tags LIKE ? ESCAPE '\\')")
+        params += [_like_pattern(q)] * 3
     sql = "SELECT * FROM reflection"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -3339,7 +3391,7 @@ async def reflect_add(request: Request):
     now = datetime.now(KST).isoformat(timespec="seconds")
     # 원본 이벤트는 항상 기록일(event_date)에 올린다.
     try:
-        event_id = gcal_write.create_event(kind, title, text, tags, event_date)
+        event_id = await _off_loop(gcal_write.create_event, kind, title, text, tags, event_date)
     except Exception:
         event_id = None
     with get_conn() as conn:
@@ -3355,7 +3407,7 @@ async def reflect_add(request: Request):
         if review_date and review_date != event_date:
             review_title = f"다시보기: {title}"
             try:
-                rev_event_id = gcal_write.create_event(
+                rev_event_id = await _off_loop(gcal_write.create_event,
                     kind, review_title, text, tags, review_date
                 )
             except Exception:
@@ -3424,7 +3476,7 @@ async def reflect_update(item_id: int, request: Request):
         )
         if r["gcal_event_id"]:
             try:
-                gcal_write.update_event(r["gcal_event_id"], kind, title, text, tags)
+                await _off_loop(gcal_write.update_event, r["gcal_event_id"], kind, title, text, tags)
             except Exception:
                 pass
         # 다시보기 사본 재조정(다시 볼 날짜가 기록일과 다를 때만 존재).
@@ -3436,7 +3488,7 @@ async def reflect_update(item_id: int, request: Request):
             review_title = f"다시보기: {title}"
             if child is None:
                 try:
-                    rev_eid = gcal_write.create_review_copy(
+                    rev_eid = await _off_loop(gcal_write.create_review_copy,
                         kind, review_title, r["review_note"], text, tags, review_date
                     )
                 except Exception:
@@ -3452,11 +3504,11 @@ async def reflect_update(item_id: int, request: Request):
                 # 날짜가 바뀌면 구글 일정도 옮긴다(삭제 후 그날로 재생성).
                 if child["gcal_event_id"]:
                     try:
-                        gcal_write.delete_event(child["gcal_event_id"])
+                        await _off_loop(gcal_write.delete_event, child["gcal_event_id"])
                     except Exception:
                         pass
                 try:
-                    rev_eid = gcal_write.create_review_copy(
+                    rev_eid = await _off_loop(gcal_write.create_review_copy,
                         kind, review_title, r["review_note"], text, tags, review_date
                     )
                 except Exception:
@@ -3470,7 +3522,7 @@ async def reflect_update(item_id: int, request: Request):
             else:
                 if child["gcal_event_id"]:
                     try:
-                        gcal_write.update_review_copy(
+                        await _off_loop(gcal_write.update_review_copy,
                             child["gcal_event_id"], kind, review_title,
                             r["review_note"], text, tags
                         )
@@ -3485,7 +3537,7 @@ async def reflect_update(item_id: int, request: Request):
             # 다시 볼 날짜가 없어졌으면 사본과 그 구글 일정을 지운다.
             if child["gcal_event_id"]:
                 try:
-                    gcal_write.delete_event(child["gcal_event_id"])
+                    await _off_loop(gcal_write.delete_event, child["gcal_event_id"])
                 except Exception:
                     pass
             conn.execute("DELETE FROM reflection WHERE id = ?", (child["id"],))
@@ -3498,18 +3550,16 @@ def reflect_delete(item_id: int):
     사본을 지우면 원본의 '다시 볼 날짜'를 함께 정리한다."""
     with get_conn() as conn:
         r = conn.execute(
-            "SELECT id, gcal_event_id, review_gcal_event_id, source_id "
-            "FROM reflection WHERE id = ?",
+            "SELECT id, gcal_event_id, source_id FROM reflection WHERE id = ?",
             (item_id,),
         ).fetchone()
         if not r:
             return JSONResponse({"ok": True})
-        for eid in (r["gcal_event_id"], r["review_gcal_event_id"]):
-            if eid:
-                try:
-                    gcal_write.delete_event(eid)
-                except Exception:
-                    pass
+        if r["gcal_event_id"]:
+            try:
+                gcal_write.delete_event(r["gcal_event_id"])
+            except Exception:
+                pass
         if r["source_id"]:
             conn.execute(
                 "UPDATE reflection SET review_date = NULL WHERE id = ?", (r["source_id"],)
@@ -3546,7 +3596,7 @@ async def reflect_review_note(item_id: int, request: Request):
     # 사본(다시보기) 캘린더 이벤트 설명을 '다시보기 내용 우선 + 원본'으로 갱신(있을 때만).
     if orig and child and child["gcal_event_id"] and gcal_write.enabled():
         try:
-            gcal_write.update_review_copy(
+            await _off_loop(gcal_write.update_review_copy,
                 child["gcal_event_id"], orig["kind"],
                 f"다시보기: {(orig['title'] or '').strip()}",
                 note, orig["text"] or "", orig["tags"] or "",

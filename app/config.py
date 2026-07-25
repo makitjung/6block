@@ -86,15 +86,8 @@ DAY_BLOCKS = [
     ("B6",   True,  "21:00", "23:00"),
 ]
 
-# (name, color) — 색은 라이트 기준 hex이며 실제 표시는 테마별 톤 변수(--tone-*)로 칠한다
-CATEGORIES = [
-    ("코어", "#1a73e8"),
-    ("점검", "#188038"),
-    ("업무", "#202124"),
-    ("약속", "#d93025"),
-    ("휴식", "#202124"),
-    ("기타", "#202124"),
-]
+# 기본 구분 이름(시드용). 색은 아래 CAT_TONE의 톤 키로만 정해지고 --tone-* 변수로 칠한다.
+CATEGORIES = ["코어", "점검", "업무", "약속", "휴식", "기타"]
 
 # 카테고리 이름 → 색 톤. 코어 파랑, 점검 녹색, 약속 빨강, 업무·휴식·기타 검정.
 CAT_TONE = {
@@ -166,7 +159,6 @@ def slots_for_day(blocks=None):
     return out
 
 
-# 주간 KPI 분모를 설정에서 파생한다(블록·슬롯 구성을 바꾸면 통계가 자동으로 맞춰진다).
-CORE_BLOCK_COUNT = sum(1 for _label, is_core, _s, _e in DAY_BLOCKS if is_core)
-WEEK_CORE_BLOCKS = CORE_BLOCK_COUNT * 7          # 코어 PLAN 사용 분모(주 7일)
-WEEK_TOTAL_HOURS = len(slots_for_day()) * 0.5 * 7  # 기록된 시간 분모(주 전체 슬롯 시간)
+# 주간 KPI 분모를 설정에서 파생한다(블록 구성을 바꾸면 통계가 자동으로 맞춰진다).
+# 기록된 시간 분모는 요일마다 블록 시간이 다를 수 있어 main.py가 7일치를 직접 센다.
+WEEK_CORE_BLOCKS = sum(1 for _l, is_core, _s, _e in DAY_BLOCKS if is_core) * 7

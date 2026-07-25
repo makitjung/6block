@@ -127,9 +127,17 @@
                     <input type="text" id="wk-inbox-input" placeholder="여기서도 바로 수집 (Enter)" autocomplete="off" enterkeyhint="done">
                     <button type="button" class="inbox-add" id="wk-inbox-add" aria-label="수집함에 추가">+</button>
                 </div>
+                <div class="wk-inbox-filter" id="wk-inbox-filter">
+                    <button type="button" class="wk-if is-active" data-status="all">전체</button>
+                    <button type="button" class="wk-if" data-status="">미분류</button>
+                    <button type="button" class="wk-if" data-status="next">다음행동</button>
+                    <button type="button" class="wk-if" data-status="wait">대기</button>
+                    <button type="button" class="wk-if" data-status="someday">언젠가</button>
+                    <button type="button" class="wk-if" data-status="ref">참고</button>
+                </div>
                 <div class="wk-inbox-list" id="wk-inbox-list">
                     {% for it in review_inbox %}
-                    <div class="wk-inbox-item" data-id="{{ it.id }}">
+                    <div class="wk-inbox-item" data-id="{{ it.id }}" data-status="{{ it.status or '' }}">
                         <input type="text" class="wk-inbox-text" value="{{ it.text }}" data-id="{{ it.id }}" autocomplete="off">
                         <select class="wk-inbox-status" data-id="{{ it.id }}" aria-label="상태">
                             <option value="" {% if not it.status %}selected{% endif %}>미분류</option>

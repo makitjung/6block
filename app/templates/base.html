@@ -35,7 +35,7 @@
                 <a href="/today" class="{% if active in ['today', 'week'] %}is-active{% endif %}">주간</a>
                 <a href="/plan"  class="{% if active == 'plan' %}is-active{% endif %}">장기</a>
                 <a href="/reflect" class="{% if active == 'reflect' %}is-active{% endif %}">고결감</a>
-                <a href="/settings" class="{% if active in ['settings', 'analytics', 'search', 'data'] %}is-active{% endif %}">설정</a>
+                <a href="/settings" class="{% if active in ['settings', 'analytics', 'data'] %}is-active{% endif %}">설정</a>
             </nav>
             <div class="topbar-right">
                 <span id="net-status" class="net-status" hidden></span>
@@ -55,10 +55,10 @@
             <a href="/week" class="{% if active == 'week' %}is-active{% endif %}">주간</a>
         </nav>
     </div>
-    {% elif active in ['settings', 'analytics', 'search', 'data'] %}
+    {% elif active in ['settings', 'analytics', 'data'] %}
     <div class="subnav-wrap">
         <nav class="subnav">
-            <a href="/analytics" class="{% if active in ['analytics', 'search'] %}is-active{% endif %}">분석·검색</a>
+            <a href="/analytics" class="{% if active == 'analytics' %}is-active{% endif %}">분석·검색</a>
             <a href="/data" class="{% if active == 'data' %}is-active{% endif %}">데이터</a>
             <a href="/settings" class="{% if active == 'settings' %}is-active{% endif %}">설정</a>
         </nav>
@@ -81,8 +81,8 @@
             <div class="pomo-slot mono"></div>
             <div class="pomo-actions">
                 <button type="button" class="pomo-start" title="지금 슬롯 끝까지 집중 시작">시작</button>
-                <button type="button" class="pomo-skip"  title="현재 단계 스킵">스킵</button>
-                <button type="button" class="pomo-stop"  title="중지">중지</button>
+                <button type="button" class="pomo-skip"  title="지금 끝내고 완료로 기록(종소리·한일 입력)">완료</button>
+                <button type="button" class="pomo-stop"  title="기록 없이 조용히 중지">중지</button>
             </div>
             <button type="button" class="pomo-auto" title="자동 모드 (정각·30분 자동 시작)">AUTO 모드</button>
         </div>
@@ -90,7 +90,7 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <script>window.__settings = {{ get_settings() | tojson }};</script>
+    <script>window.__settings = {{ client_settings() | tojson }};</script>
     <script src="/static/app.js?v={{ asset_ver() }}"></script>
 </body>
 </html>

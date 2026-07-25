@@ -1,8 +1,8 @@
 -- 6블록 카테고리, 블록/슬롯, 일/주 메타, 주간 블록 테마, GTD 수집함을 저장하는 단일 스키마
+-- 색은 tone(팔레트 키) 하나로만 칠한다. 옛 color(hex) 컬럼은 마이그레이션에서 제거된다.
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    color TEXT NOT NULL,
     tone TEXT NOT NULL DEFAULT 'black',
     display_order INTEGER NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1

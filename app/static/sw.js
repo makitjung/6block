@@ -1,5 +1,7 @@
 // 6block PWA 서비스 워커 - HTML은 항상 최신, 정적 자원은 네트워크 우선 + 오프라인 캐시 폴백
-const CACHE_NAME = '6block-v16';
+// 캐시 이름은 등록 주소의 ?v=(app.js·style.css 수정시각)에서 자동으로 정해진다.
+// 파일이 바뀌면 새 캐시가 생기고 activate에서 옛 캐시를 지우므로 손으로 버전을 올릴 일이 없다.
+const CACHE_NAME = '6block-' + (new URL(self.location).searchParams.get('v') || 'dev');
 const CORE_ASSETS = [
     '/static/style.css',
     '/static/app.js',
