@@ -144,6 +144,29 @@ app/
   static/              app.js · style.css · sw.js · manifest.json · 아이콘
 scripts/
   backup.py            SQLite .sql 덤프 백업 + 30일 지난 덤프 자동 정리
+tests/
+  run_smoke.py         전체 스모크 테스트(임시 서버·임시 DB로 실행)
+  smoke_server.py      테스트용 서버(운영 DB·8000 포트를 건드리지 않음)
 requirements.txt
 .env.example
 ```
+
+---
+
+## 6. 테스트
+
+코드를 고친 뒤에는 아래 한 줄로 전체를 확인합니다. 추가 설치 없이 표준 라이브러리만 씁니다.
+
+```bash
+.venv/bin/python tests/run_smoke.py
+```
+
+임시 폴더에 새 DB를 만들고 127.0.0.1:8011에 테스트 서버를 띄워 실제 HTTP 요청으로 38개 항목을
+확인한 뒤, 서버를 내리고 임시 폴더를 지웁니다. **운영 DB(`~/6block-data/blocks.db`)와 8000 포트는
+건드리지 않습니다.** 구글 캘린더·Things3 연동은 테스트에서 꺼집니다. 모두 통과하면 종료코드 0,
+하나라도 실패하면 1을 돌려주므로 배포 전 확인이나 자동화에 그대로 쓸 수 있습니다.
+
+확인하는 범위는 주요 화면 8개의 정상 응답, CSRF Origin 차단, 요일별 세션 시간(저장·검증·되돌리기),
+하루 골격 생성의 멱등성, 필드 자동저장, 블록 시간 변경 시 장소 보존, 장기 간트(추가·하위·자동 롤업·삭제)입니다.
+
+포트를 바꾸려면 `SIXBLOCK_TEST_PORT=8020 .venv/bin/python tests/run_smoke.py` 처럼 지정합니다.
