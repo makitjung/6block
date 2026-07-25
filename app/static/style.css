@@ -181,6 +181,8 @@ button { font: inherit; cursor: pointer; }
 .theme-toggle:hover { background: var(--surface-3); transform: translateY(-1px); }
 
 main { max-width: 1180px; margin: 0 auto; padding: 20px 18px 40px; }
+/* 고결감처럼 카드를 여러 열로 늘어놓는 화면은 웹에서 폭을 더 쓴다 */
+main.main-wide { max-width: 1440px; }
 
 /* === Generic inputs === */
 textarea, select, input[type=text] {
@@ -1086,9 +1088,15 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .reflect-compose .rf-tags { width: 100%; min-height: 46px; padding: 12px 14px; font-size: 14px; }
 .reflect-compose .rf-review input[type="date"] { max-width: 140px; font-size: 12px; padding: 4px 6px; }
 
-.reflect-filter { margin: 14px 0 0; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.reflect-filter {
+    margin: 0 0 4px; display: flex; gap: 10px; align-items: center;
+    justify-content: space-between; flex-wrap: wrap;
+    padding: 8px 10px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-pill); box-shadow: var(--sh-1);
+}
 .rf-search { display: flex; gap: 8px; align-items: center; flex: 1 1 240px; }
-.rf-search input[type="search"] { flex: 1; }
+.rf-search input[type="search"] { flex: 1; border-color: transparent; background: var(--surface-2); }
+.rf-search input[type="search"]:focus { border-color: var(--border-focus); background: var(--surface); }
 .rf-kinds { display: inline-flex; gap: 2px; background: var(--surface-3); padding: 3px; border-radius: var(--r-pill); }
 .rf-kinds a { padding: 6px 14px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--text-muted); text-decoration: none; }
 .rf-kinds a:hover { color: var(--text); }
@@ -1096,22 +1104,42 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 
 /* 카드 3열 그리드 */
 .reflect-grid { margin: 12px 0 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
-.rf-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--sh-1); display: flex; flex-direction: column; gap: 4px; }
+.rf-card {
+    position: relative; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); padding: 12px 14px 12px 16px; box-shadow: var(--sh-1);
+    display: flex; flex-direction: column; gap: 4px; overflow: hidden;
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+/* 종류를 왼쪽 색 띠로 먼저 알아보게 한다(고민 주황·결정 보라·감사 청록) */
+.rf-card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: var(--rf-tone, var(--border-strong));
+}
+.rf-card[data-kind="고민"] { --rf-tone: var(--tone-orange); }
+.rf-card[data-kind="결정"] { --rf-tone: var(--tone-purple); }
+.rf-card[data-kind="감사"] { --rf-tone: var(--tone-teal); }
+.rf-card[data-kind="감상"] { --rf-tone: var(--tone-teal); }
+.rf-card[data-kind="결심"] { --rf-tone: var(--tone-purple); }
+.rf-card:hover { box-shadow: var(--sh-2); border-color: var(--border-strong); }
 .rf-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rf-card-head .rf-date { color: var(--text-muted); font-size: 12px; }
-.rf-badge { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: var(--r-pill); background: var(--surface-3); }
-.rf-badge[data-kind="고민"] { color: var(--tone-orange); }
-.rf-badge[data-kind="결정"] { color: var(--tone-purple); }
-.rf-badge[data-kind="감사"] { color: var(--tone-teal); }
-.rf-badge[data-kind="감상"] { color: var(--tone-teal); }
-.rf-badge[data-kind="결심"] { color: var(--tone-purple); }
+.rf-badge {
+    font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: var(--r-pill);
+    background: var(--surface-3); color: var(--rf-tone, var(--text-muted));
+    box-shadow: inset 0 0 0 1px currentColor;
+}
+/* 배지는 카드 밖(오늘·주간 탭)에서도 쓰이므로 자기 종류로도 색을 정한다 */
+.rf-badge[data-kind="고민"] { --rf-tone: var(--tone-orange); }
+.rf-badge[data-kind="결정"] { --rf-tone: var(--tone-purple); }
+.rf-badge[data-kind="감사"] { --rf-tone: var(--tone-teal); }
+.rf-badge[data-kind="감상"] { --rf-tone: var(--tone-teal); }
+.rf-badge[data-kind="결심"] { --rf-tone: var(--tone-purple); }
 .rf-card-title { text-align: left; background: none; border: none; padding: 0; width: 100%; cursor: pointer; font-weight: 700; color: var(--text); line-height: 1.4; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .rf-card-title:hover { color: var(--accent); }
 .rf-card.expanded .rf-card-title { -webkit-line-clamp: unset; }
 .rf-card-body { display: none; margin-top: 4px; }
 .rf-card.expanded .rf-card-body { display: block; }
 .rf-body { white-space: pre-wrap; color: var(--text); line-height: 1.5; font-size: 13px; }
-.rf-tags-row { margin-top: 6px; font-size: 12px; color: var(--accent-soft-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rf-card-actions { margin-top: 8px; display: flex; gap: 8px; }
 .rf-card-actions button { font-size: 12px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-pill); padding: 3px 12px; cursor: pointer; color: var(--text-muted); }
 .rf-card-actions .rf-edit:hover { color: var(--accent); border-color: var(--accent); }
@@ -1283,11 +1311,11 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
     padding: 1px 6px; color: var(--accent-soft-text); white-space: nowrap; }
 
 /* 고결감: 2분할 레이아웃 */
-.reflect-layout { display: flex; gap: 16px; align-items: flex-start; }
+.reflect-layout { display: flex; gap: 18px; align-items: flex-start; }
 .reflect-left { flex: 0 0 340px; min-width: 260px; position: sticky; top: 72px; display: flex; flex-direction: column; gap: 12px; }
 .reflect-right { flex: 1 1 0; min-width: 0; }
-.reflect-right .reflect-grid { grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 1180px) { .reflect-right .reflect-grid { grid-template-columns: repeat(2, 1fr); } }
+/* 폭이 넓으면 열이 저절로 늘어난다(웹 3~4열, 좁으면 2열) */
+.reflect-right .reflect-grid { grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
 
 /* 고결감: 카드 헤더 */
 .rf-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
@@ -1306,9 +1334,9 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .rf-head-actions .rf-del:hover { background: #fee2e2; border-color: #f87171; color: #dc2626; }
 
 /* 고결감: 카드 미리보기 본문(넘치면 잘림) */
-.rf-title-view { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 2px;
+.rf-title-view { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.rf-body-view { font-size: 13px; color: var(--text-muted); white-space: pre-wrap; overflow: hidden; }
+.rf-body-view { font-size: 13px; line-height: 1.6; color: var(--text-soft); white-space: pre-wrap; overflow: hidden; }
 .rf-preview:hover .rf-title-view { color: var(--accent); }
 
 /* 고결감: 인라인 편집 패널 */
@@ -1322,19 +1350,32 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .rf-inline-edit .rf-edit-text { width: 100%; resize: vertical; }
 .rf-inline-edit .rf-edit-tags { width: 100%; }
 
-/* 고결감: 일정한 크기의 카드 + 미리보기(넘치면 '더보기') */
-.reflect-right .rf-card { height: 230px; overflow: hidden; }
-/* 다시보기 사본 카드: 다시보기 내용(위) + 원본(아래 참고). 고정 높이를 풀어 안 잘리게 한다 */
-.reflect-right .rf-card[data-source] { height: auto; overflow: visible; }
+/* 고결감: 카드 높이를 맞춰 격자가 들쭉날쭉하지 않게 한다(넘치면 '더보기') */
+.reflect-right .rf-card { height: 264px; }
+/* 다시보기 사본: 다시보기 내용(위)은 다 보이고 원본은 남은 높이만큼만 보인다 */
+.rf-card.is-revisit { background: var(--accent-soft); border-color: var(--gt-d0-bd); }
 .rf-revisit { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
 .rf-revisit-label { font-size: 12px; font-weight: 700; color: var(--accent); }
 .rf-revisit-sub { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
 .rf-revisit-input { width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border);
-    border-radius: 8px; background: var(--accent-soft); color: var(--text); resize: vertical; }
+    border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; }
 .rf-revisit-input:focus { outline: none; border-color: var(--accent); }
-.rf-card[data-source] .rf-ref { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 8px; opacity: .8; }
+.rf-card.is-revisit .rf-ref { border-top: 1px dashed var(--border-strong); margin-top: 4px; padding-top: 8px; }
+/* 사본 카드는 배경이 달라 '더보기' 그라데이션도 같은 색으로 맞춘다 */
+.rf-card.is-revisit .rf-preview.is-clipped .rf-more {
+    background: linear-gradient(180deg, transparent, var(--accent-soft) 72%);
+}
 .rf-ref-label { display: inline-block; margin-bottom: 3px; font-size: 11px; font-weight: 700;
     color: var(--text-muted); letter-spacing: .02em; }
+/* 태그 칩: 누르면 그 태그로 검색된다 */
+.rf-tags-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.rf-tag {
+    font-size: 11px; font-weight: 600; line-height: 1.5; padding: 2px 8px;
+    border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-muted);
+    border: 1px solid transparent; white-space: nowrap;
+}
+button.rf-tag { cursor: pointer; }
+button.rf-tag:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 button.rf-badge.rf-kind-cycle { border: none; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border); }
 .rf-preview { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; cursor: pointer; }

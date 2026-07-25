@@ -58,7 +58,8 @@
         </nav>
     </div>
     {% endif %}
-    <main>{% block content %}{% endblock %}</main>
+    <!-- 고결감은 폰보다 웹에서 오래 보는 화면이라 본문 폭을 넓게 쓴다 -->
+    <main{% if active == 'reflect' %} class="main-wide"{% endif %}>{% block content %}{% endblock %}</main>
 
     <aside id="pomo" class="pomo" aria-label="포모도로 타이머">
         <button type="button" class="pomo-dial" title="집중 타이머 (눌러서 컨트롤 열기)">

@@ -1919,6 +1919,16 @@
             list.querySelectorAll('.rf-preview').forEach((p) =>
                 p.addEventListener('click', () => openEditModal(p.closest('.rf-card'))));
 
+            // 태그 칩 클릭: 그 태그를 검색창에 넣어 같은 태그 기록만 남긴다
+            list.querySelectorAll('.rf-tag-btn').forEach((b) =>
+                b.addEventListener('click', () => {
+                    const box = document.getElementById('rf-search-input');
+                    if (!box) return;
+                    box.value = b.dataset.tag || '';
+                    applySearch();
+                    box.focus();
+                }));
+
             // 다시보기 사본: '다시보기 내용'을 버튼 없이 자동 저장(원본 review_note + 사본 캘린더 반영)
             list.querySelectorAll('.rf-revisit-input').forEach((ta) => {
                 if (ta.dataset.rfnote) return;

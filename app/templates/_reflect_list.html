@@ -1,7 +1,7 @@
 {# 고결감 카드 목록(전체 화면과 부분 갱신이 함께 쓰는 partial) #}
 {% if items %}
 {% for it in items %}
-<article class="rf-card" data-id="{{ it.id }}"
+<article class="rf-card{% if it.source_id %} is-revisit{% endif %}" data-id="{{ it.id }}"
     {% if it.source_id %}data-source="{{ it.source_id }}"{% endif %}
     {% if it.review_child_id %}data-child="{{ it.review_child_id }}"{% endif %}
     data-kind="{{ it.kind }}"
@@ -42,16 +42,24 @@
     <div class="rf-preview rf-ref" title="클릭하면 원본 전체 보기">
         <span class="rf-ref-label">원본 내용</span>
         {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
-        {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
-        <span class="rf-more">더보기</span>
+        {% if it.tags %}
+        <div class="rf-tags-row">
+            {% for tg in (it.tags or '').split() %}<span class="rf-tag">{{ tg }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        <span class="rf-more">원본 더보기</span>
     </div>
     {% else %}
     <div class="rf-preview" title="클릭하면 전체 보기·수정">
         <div class="rf-title-view">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
         {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
-        {% if it.tags %}<div class="rf-tags-row">{{ it.tags }}</div>{% endif %}
         <span class="rf-more">더보기</span>
     </div>
+    {% if it.tags %}
+    <div class="rf-tags-row">
+        {% for tg in (it.tags or '').split() %}<button type="button" class="rf-tag rf-tag-btn" data-tag="{{ tg }}" title="이 태그로 찾기">{{ tg }}</button>{% endfor %}
+    </div>
+    {% endif %}
     {% endif %}
 </article>
 {% endfor %}
