@@ -79,10 +79,15 @@ def wait_up(proc, timeout=40):
 
 def run_checks(db_path):
     # 1. 주요 화면이 모두 열리는지
-    for path in ("/today", "/week", "/plan", "/plan?view=gantt", "/settings",
+    for path in ("/today", "/week", "/plan", "/settings",
                  "/analytics", "/data", "/reflect"):
         code, _ = get(path)
         check(f"GET {path} 200", code == 200, code)
+    code, html = get("/today")
+    nav = re.findall(r'<nav class="topnav">(.*?)</nav>', html, re.S)
+    labels = re.findall(r">([^<>]+)</a>", nav[0]) if nav else []
+    check("상위 탭 5개(오늘·주간·장기·고결감·설정)",
+          labels == ["오늘", "주간", "장기", "고결감", "설정"], labels)
 
     # 2. 설정 화면 구조(그룹 4개 + 세션시간 공통·월~일 8칸)
     code, html = get("/settings")
@@ -185,13 +190,14 @@ def run_checks(db_path):
           [dict(r) for r in rows])
     post("/settings/blocktimes/reset", {"scope": ""})
 
-    # 8. 장기 간트 · 추가 → 하위 추가 → 상위 자동 계산 → 삭제
-    code, html = get("/plan?view=gantt")
+    # 8. 장기 계획 막대 · 추가 → 하위 추가 → 상위 자동 계산 → 삭제
+    code, html = get("/plan")
     areas = re.findall(r'class="gt-add" data-area="(\d+)"', html)
-    check("간트 화면에 영역별 추가 버튼", len(areas) >= 2, len(areas))
+    check("장기 화면에 영역별 추가 버튼", len(areas) >= 2, len(areas))
+    check("장기 화면에 표(격자)가 없음", "plan-grid" not in html and "pg-input" not in html)
     code, out = post("/plan/item/add", {"area_id": areas[0], "title": "노무사 1차 합격",
                                         "start": "2026-08-01", "end": "2026-09-30"})
-    check("간트 항목 추가", code == 200 and out.get("ok"), out)
+    check("계획 막대 항목 추가", code == 200 and out.get("ok"), out)
     parent = out.get("id")
     code, out = post("/plan/item/add", {"area_id": areas[0], "parent_id": parent,
                                         "title": "노동법 1회독",
@@ -212,10 +218,37 @@ def run_checks(db_path):
                                         "end": "2026-08-02"})
     check("상위 항목 값이 잘못되면 거부", code == 400, code)
 
-    code, html = get("/plan?level=month&anchor=2026-08-01&view=gantt")
-    check("간트 막대가 그려짐", 'class="gt-bar' in html and "노동법 1회독" in html)
+    code, html = get("/plan?level=month&anchor=2026-08-01")
+    check("계획 막대가 그려짐", 'class="gt-bar' in html and "노동법 1회독" in html)
+    # 상위 항목 한 줄 안에 상위(depth 0)와 하위(depth 1) 막대가 함께 겹쳐 그려진다
+    row = re.search(r'<div class="gt-row gt-itemrow"[^>]*>.*?</div>\s*</div>', html, re.S)
+    seg = row.group(0) if row else ""
+    check("상위 막대 안에 하위 막대가 겹쳐 그려짐",
+          'data-depth="0"' in seg and 'data-depth="1"' in seg, seg[:120])
+
+    # 주간 탭 '이번 주 장기 항목' → 진척률 편집·주간 목표로 옮기기
     code, html = get("/week/2026-08-03")
-    check("주간 탭 맥락에 이 주 간트 항목 노출", "노동법 1회독" in html)
+    check("주간 탭에 이 주 장기 항목 노출",
+          "노동법 1회독" in html and 'class="wk-lt-prog-input"' in html)
+    code, out = post("/week/item-to-goal", {"week_start": "2026-08-03", "item_id": child})
+    goal = db_query(db_path,
+                    "SELECT weekly_goal FROM weekly_meta WHERE week_start='2026-08-03'")
+    check("장기 항목을 주간 목표로 옮김",
+          code == 200 and goal and goal[0]["weekly_goal"] == "노동법 1회독", out)
+    code, out = post("/week/item-to-goal", {"week_start": "2026-08-03", "item_id": child})
+    goal = db_query(db_path,
+                    "SELECT weekly_goal FROM weekly_meta WHERE week_start='2026-08-03'")
+    check("같은 항목을 두 번 옮겨도 중복되지 않음",
+          goal[0]["weekly_goal"] == "노동법 1회독", goal[0]["weekly_goal"])
+    code, out = post("/week/item-to-theme",
+                     {"week_start": "2026-08-03", "item_id": child, "label": "B3"})
+    th = db_query(db_path, "SELECT theme_text FROM weekly_block_themes "
+                           "WHERE week_start='2026-08-03' AND block_label='B3'")
+    check("장기 항목을 블록 이름으로 옮김",
+          code == 200 and th and th[0]["theme_text"] == "노동법 1회독", out)
+    code, out = post("/week/item-to-theme",
+                     {"week_start": "2026-08-03", "item_id": child, "label": "없는블록"})
+    check("없는 블록으로는 옮기지 않음", code == 400, code)
 
     code, out = post("/plan/item/delete", {"id": parent})
     n = db_query(db_path, "SELECT COUNT(*) AS c FROM lt_item")[0]["c"]
@@ -278,6 +311,37 @@ def run_checks(db_path):
     row = db_query(db_path, "SELECT gratitude FROM daily_meta WHERE date='2026-07-31'")
     check("감사·반성 3칸 저장", row and row[0]["gratitude"] == "가\n나\n",
           row[0]["gratitude"] if row else None)
+
+    # 15. 오늘 컨셉 3칸(빠른 수집함 자리)
+    code, html = get("/day/2026-07-31")
+    check("오늘 탭에 컨셉 3칸", html.count('name="concept') == 3, html.count('name="concept'))
+    post("/save/field", {"entity": "meta", "id": "2026-07-31", "field": "concept1",
+                         "concept1": "몰입", "concept2": "", "concept3": "정리"})
+    row = db_query(db_path, "SELECT concept FROM daily_meta WHERE date='2026-07-31'")
+    check("컨셉 3칸 저장", row and row[0]["concept"] == "몰입\n\n정리",
+          row[0]["concept"] if row else None)
+
+    # 16. 수집함 표시 설정(기본 끔 → 켜면 오늘·주간 모두 다시 보인다)
+    code, html = get("/day/2026-07-31")
+    code, wk = get("/week/2026-07-27")
+    check("기본은 수집함 숨김",
+          'id="inbox-input"' not in html and 'id="wk-inbox-input"' not in wk)
+    post("/settings/save", {"show_inbox": "1"})
+    code, html = get("/day/2026-07-31")
+    code, wk = get("/week/2026-07-27")
+    check("설정을 켜면 수집함이 다시 보임",
+          'id="inbox-input"' in html and 'id="wk-inbox-input"' in wk)
+    post("/settings/save", {"show_inbox": "0"})
+
+    # 17. 요일 컨셉(설정 7칸 → 오늘 탭 날짜 옆 괄호)
+    code, out = post("/settings/weekday-concepts",
+                     {f"wd{i}": ("금요일컨셉" if i == 4 else "") for i in range(7)})
+    check("요일 컨셉 저장", code == 200 and out.get("ok"), out)
+    code, html = get("/day/2026-07-31")          # 2026-07-31은 금요일
+    check("오늘 탭 날짜 옆에 그 요일 컨셉",
+          '<span class="hero-wdc">(금요일컨셉)</span>' in html)
+    code, html = get("/day/2026-07-30")          # 목요일은 비어 있어 괄호도 없음
+    check("컨셉이 비면 괄호도 없음", "hero-wdc" not in html)
 
 
 def main():
