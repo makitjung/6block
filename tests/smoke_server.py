@@ -20,10 +20,10 @@ import app.db as db  # noqa: E402
 
 db.DB_PATH = cfg.DB_PATH
 
-import app.main as main  # noqa: E402
 from app.main import app  # noqa: E402
 import app.integrations.gcal_write as gcal_write  # noqa: E402
 import app.integrations.things as things  # noqa: E402
+import app.routes.settings as settings_routes  # noqa: E402
 
 # .env 편집기는 임시 폴더의 가짜 .env 를 보게 한다(실제 프로젝트 .env 를 절대 건드리지 않는다).
 TEST_ENV = TEST_DIR / ".env"
@@ -32,7 +32,7 @@ if not TEST_ENV.exists():
         "# 테스트용\nAI_API_KEY=sk-test-secret\nAI_MODEL=test-model\nEMPTY=\n",
         encoding="utf-8",
     )
-main._env_file_path = lambda: TEST_ENV
+settings_routes._env_file_path = lambda: TEST_ENV
 
 # 외부 연동은 테스트에서 끈다(구글 API 호출·AppleScript 권한 창을 띄우지 않기 위함).
 things.enabled = lambda: False

@@ -135,7 +135,7 @@
         {% endfor %}
     </section>
 
-    <div class="split-2">
+    <div>
         <section class="card">
             <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
             <div class="set-cat-list" id="set-cat-list">
@@ -169,17 +169,6 @@
             </div>
         </section>
 
-        <section class="card">
-            <h2 class="card-title">요일별 컨셉 <span class="card-sub">그 요일을 어떤 컨셉으로 보낼지 · 오늘 각 블록 오른쪽에 표시됩니다</span></h2>
-            <div class="set-weekday-grid" id="set-weekday">
-                {% for w in weekday_concepts %}
-                <label class="set-wd-row">
-                    <span class="set-wd-label">{{ w.label }}</span>
-                    <input type="text" class="set-wd-input" data-weekday="{{ w.weekday }}" value="{{ w.text }}" placeholder="{{ w.label }}요일 컨셉" autocomplete="off">
-                </label>
-                {% endfor %}
-            </div>
-        </section>
     </div>
 
     <section class="card set-template-card">

@@ -1169,10 +1169,6 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .ps-wd-text.empty { color: var(--text-subtle); font-style: italic; }
 @media (max-width: 560px) { .ps-cols { grid-template-columns: 1fr; } }
 /* 설정: 요일별 컨셉 입력 */
-.set-weekday-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
-.set-wd-row { display: flex; align-items: center; gap: 8px; }
-.set-wd-label { flex: 0 0 28px; font-weight: 700; color: var(--text-soft); }
-.set-wd-input { flex: 1; }
 
 /* 세션(블록) 시간 편집 */
 .set-blocktimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }

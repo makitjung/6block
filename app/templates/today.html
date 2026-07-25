@@ -278,10 +278,6 @@
                             <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
                         </label>
                     </div>
-                    <div class="field ps-weekday">
-                        <span class="field-label">{{ weekday_label }} 컨셉</span>
-                        <div class="ps-wd-text{% if not weekday_concept %} empty{% endif %}">{{ weekday_concept or '설정 탭에서 요일 컨셉을 적어두세요' }}</div>
-                    </div>
                 </div>
             </div>
             {% endif %}

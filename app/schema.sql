@@ -147,13 +147,6 @@ CREATE TABLE IF NOT EXISTS reflection (
 
 CREATE INDEX IF NOT EXISTS idx_reflection_kind ON reflection(kind, id);
 
--- 요일별 컨셉(월~일). 그 요일을 어떤 컨셉으로 보낼지. 오늘 각 블록 오른쪽에 표시한다.
-CREATE TABLE IF NOT EXISTS weekday_concept (
-    weekday INTEGER PRIMARY KEY,         -- 0=월 ~ 6=일 (date.weekday())
-    text TEXT,
-    updated_at TEXT NOT NULL
-);
-
 -- 구분 템플릿(요일 월~일 × 코어블록 구분). 주별로 골라 42칸(7일×6블록) 블록 구분을 일괄 입력한다.
 CREATE TABLE IF NOT EXISTS cat_template (
     id INTEGER PRIMARY KEY,

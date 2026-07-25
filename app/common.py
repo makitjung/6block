@@ -1,0 +1,298 @@
+# 화면(라우터) 모듈이 공통으로 쓰는 것들. 템플릿 엔진, 시간·날짜 도우미,
+# 하루 골격 생성, 3칸 입력 처리, 계획 자동 세분화를 모아 둔다.
+import json
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
+
+from app.config import DAY_BLOCKS, slots_for_day
+from app.db import get_day_blocks, get_settings
+from app.integrations import ai
+
+KST = ZoneInfo("Asia/Seoul")
+BASE_DIR = Path(__file__).parent
+
+
+async def _off_loop(fn, *args, **kwargs):
+    """구글 API·AppleScript·AI 호출처럼 느린 동기 함수를 스레드풀에서 실행한다.
+
+    async 라우트 안에서 그대로 부르면 그 몇 초 동안 이벤트 루프가 멈춰 다른 요청(60초
+    실시간 폴링 포함)이 전부 대기한다. 이 함수로 감싸면 그동안에도 서버가 계속 응답한다.
+    """
+    return await run_in_threadpool(fn, *args, **kwargs)
+KO_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
+CORE_LABELS = [b[0] for b in DAY_BLOCKS if b[1]]  # B1..B6
+
+templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+def _ko_weekday(date_str: str) -> str:
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    return KO_WEEKDAYS[d.weekday()]
+
+
+def _pretty_date(date_str: str) -> str:
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    return f"{d.month}월 {d.day}일 {KO_WEEKDAYS[d.weekday()]}요일"
+
+
+def _short_date(date_str: str) -> str:
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    return f"{d.month}.{d.day}"
+
+
+templates.env.filters["ko_weekday"] = _ko_weekday
+templates.env.filters["pretty_date"] = _pretty_date
+templates.env.filters["short_date"] = _short_date
+
+
+def _asset_ver() -> str:
+    """app.js/style.css의 최신 수정시각을 캐시버스팅 쿼리값으로 반환(파일 바뀌면 자동 변경)."""
+    try:
+        mtimes = [
+            (BASE_DIR / "static" / "app.js").stat().st_mtime,
+            (BASE_DIR / "static" / "style.css").stat().st_mtime,
+        ]
+        return str(int(max(mtimes)))
+    except OSError:
+        return "1"
+
+
+# 화면(JS)에서 실제로 쓰는 설정만 페이지에 싣는다. 예전에는 app_settings 전체를 내보내
+# 캘린더 ID·AI 주소까지 모든 페이지 소스에 남았다.
+CLIENT_SETTING_KEYS = ("pomo_auto", "pomo_warn5", "collapse_blocks")
+
+
+def _client_settings() -> dict:
+    """브라우저 JS가 읽는 설정만 추린 dict."""
+    s = get_settings()
+    return {k: s.get(k) for k in CLIENT_SETTING_KEYS}
+
+
+templates.env.globals["asset_ver"] = _asset_ver
+templates.env.globals["get_settings"] = get_settings
+templates.env.globals["client_settings"] = _client_settings
+
+
+def today_str() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d")
+
+
+def week_start(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def _weekday_of(date_str: str) -> int:
+    """'YYYY-MM-DD'의 요일(0=월 ~ 6=일). 요일별 세션 시간을 고르는 데 쓴다."""
+    return datetime.strptime(date_str, "%Y-%m-%d").date().weekday()
+
+
+def _skeleton_matches_config(conn, date_str: str) -> bool:
+    """DB의 그날 블록 골격이 현재 효과적 설정(요일별 시간 편집 반영)과 정확히 같은지."""
+    have = [
+        (r["block_label"], r["start_time"], r["end_time"])
+        for r in conn.execute(
+            "SELECT block_label, start_time, end_time FROM blocks "
+            "WHERE date = ? ORDER BY block_order",
+            (date_str,),
+        )
+    ]
+    want = [
+        (label, start, end)
+        for (label, _core, start, end) in get_day_blocks(_weekday_of(date_str))
+    ]
+    return have == want
+
+
+def _day_has_content(conn, date_str: str) -> bool:
+    """그날에 사용자가 입력한 내용이 있는지(슬롯 do·한 일·구분·완료, 블록 plan·see·이름·구분)."""
+    if conn.execute(
+        "SELECT 1 FROM slots WHERE date = ? AND ("
+        "TRIM(COALESCE(do_text,'')) != '' OR TRIM(COALESCE(did_text,'')) != '' "
+        "OR category_id IS NOT NULL OR done = 1) LIMIT 1",
+        (date_str,),
+    ).fetchone():
+        return True
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM blocks WHERE date = ? AND ("
+            "TRIM(COALESCE(plan_text,'')) != '' OR TRIM(COALESCE(see_text,'')) != '' "
+            # 점심·저녁 버퍼 블록은 기본 구분이 '기타'로 자동 세팅되므로 사용자 내용이 아니다.
+            # 코어 블록의 구분만 사용자 내용으로 친다(안 그러면 모든 날이 '내용 있음'이 돼
+            # 세션 시간 변경이 빈 날에도 반영되지 않는다).
+            "OR (is_core = 1 AND category_id IS NOT NULL) OR TRIM(COALESCE(name,'')) != '' "
+            # 장소만 지정해 둔 날도 사용자 입력이다(빠지면 시간 변경 시 골격 재생성으로 유실된다).
+            "OR TRIM(COALESCE(location,'')) != '') LIMIT 1",
+            (date_str,),
+        ).fetchone()
+    )
+
+
+def ensure_day_skeleton(conn, date_str: str):
+    """블록·슬롯이 없으면 생성한다. 설정이 바뀌었고 입력이 없는 날은 새 배치로 자동 재생성한다."""
+    if conn.execute(
+        "SELECT 1 FROM blocks WHERE date = ? LIMIT 1", (date_str,)
+    ).fetchone():
+        # 골격이 현재 설정과 같거나, 사용자가 입력한 내용이 있으면 그대로 둔다.
+        if _skeleton_matches_config(conn, date_str) or _day_has_content(conn, date_str):
+            return
+        # 설정이 바뀌었고 입력이 없는 날은 옛 골격을 지우고 새 배치로 다시 만든다.
+        conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
+        conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    day_blocks = get_day_blocks(_weekday_of(date_str))
+    # 점심·저녁 버퍼 블록은 기본 구분을 '기타'로 시드해 시간 분포 통계에 잡히게 한다.
+    etc_row = conn.execute(
+        "SELECT id FROM categories WHERE name = '기타' LIMIT 1"
+    ).fetchone()
+    etc_id = etc_row["id"] if etc_row else None
+    default_cat = {"점심": etc_id, "저녁": etc_id}
+    block_ids = {}
+    for order, (label, is_core, start, end) in enumerate(day_blocks):
+        cur = conn.execute(
+            """
+            INSERT INTO blocks (date, block_order, block_label, is_core,
+                                start_time, end_time, category_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (date_str, order, label, 1 if is_core else 0, start, end,
+             default_cat.get(label), now),
+        )
+        block_ids[label] = cur.lastrowid
+    for slot_idx, label, s_t, e_t in slots_for_day(day_blocks):
+        conn.execute(
+            """
+            INSERT INTO slots (date, block_id, slot_index, start_time, end_time,
+                               updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (date_str, block_ids[label], slot_idx, s_t, e_t, now),
+        )
+
+
+def _name_override(value, inherited: str):
+    """블록 이름 입력값을 주간 상속과 비교해 덮어쓰기 값(없으면 None)을 돌려준다.
+
+    비었거나 주간 이름과 같으면 None(주간 값을 따름), 다르면 그 값으로 덮어쓴다.
+    """
+    v = (value or "").strip()
+    return None if (not v or v == inherited) else v
+
+
+def _split3(s) -> list[str]:
+    """줄바꿈으로 저장된 목표/계획을 정확히 3칸으로 분리(빈 칸 유지)."""
+    parts = (s or "").split("\n")
+    return (parts + ["", "", ""])[:3]
+
+
+def _join3(form, prefix: str) -> str:
+    """폼의 prefix1/2/3 값을 줄바꿈으로 합친다. 각 칸 내부의 줄바꿈은 공백으로 눌러
+    3칸 구분(줄바꿈)이 깨지지 않게 한다. 모두 비면 빈 문자열."""
+    vals = [
+        (form.get(f"{prefix}{i}", "") or "").replace("\r", " ").replace("\n", " ").strip()
+        for i in (1, 2, 3)
+    ]
+    joined = "\n".join(vals)
+    return joined if joined.strip() else ""
+
+
+def _parse_date(s) -> date | None:
+    """'YYYY-MM-DD' 를 date 로. 형식이 틀리면 None."""
+    try:
+        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+# -- 검색어 처리 (분석·고결감 공용) ------------------------------------------
+
+
+def _like_pattern(q: str) -> str:
+    """LIKE 검색어를 안전하게 만든다. %, _ 는 사용자가 친 글자 그대로 찾도록 이스케이프한다."""
+    esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{esc}%"
+
+
+# -- 자동 세분화 (규칙기반 기본 + 선택적 AI) --------------------------------
+
+
+def _child_periods(level: str, period_key: str):
+    """상위 (level, period_key)의 바로 아래 단위와 자식 기간 목록.
+
+    반환 (child_level, [(period_key, label), ...]). 세분화 불가면 (None, []).
+    """
+    try:
+        if level == "year":
+            y = int(period_key)
+            return "quarter", [(f"{y}-Q{q}", f"{q}분기") for q in range(1, 5)]
+        if level == "quarter":
+            ys, qs = period_key.split("-Q")
+            y, q = int(ys), int(qs)
+            m0 = (q - 1) * 3 + 1
+            return "month", [(f"{y}-{m:02d}", f"{m}월") for m in range(m0, m0 + 3)]
+        if level == "month":
+            y, m = (int(x) for x in period_key.split("-"))
+            first = date(y, m, 1)
+            last = (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
+            monday = first - timedelta(days=first.weekday())
+            out = []
+            while monday <= last:
+                out.append((monday.strftime("%Y-%m-%d"), f"{monday.month}/{monday.day} 주"))
+                monday += timedelta(days=7)
+            return "week", out
+    except (ValueError, AttributeError):
+        return None, []
+    return None, []
+
+
+def _child_anchor(level: str, period_key: str) -> str:
+    """세분화 후 이동할 자식 단위 화면의 anchor(날짜 문자열)."""
+    if level == "year":
+        return f"{period_key}-01-01"
+    if level == "quarter":
+        ys, qs = period_key.split("-Q")
+        return f"{int(ys)}-{(int(qs) - 1) * 3 + 1:02d}-01"
+    return f"{period_key}-01"  # month → 그 달 1일
+
+
+def _rule_distribute(parent_text: str, n: int) -> list[str]:
+    """부모 텍스트를 자식 n개 내용으로 나눈다. 여러 줄이면 분배, 한 줄이면 참고로 복제."""
+    lines = [ln.strip() for ln in (parent_text or "").splitlines() if ln.strip()]
+    if not lines:
+        return [""] * n
+    if len(lines) == 1:
+        return [lines[0]] * n
+    buckets: list[list[str]] = [[] for _ in range(n)]
+    for i, ln in enumerate(lines):
+        buckets[i % n].append(ln)
+    return ["\n".join(b) for b in buckets]
+
+
+def _ai_split(parent_text: str, labels: list[str], area_name: str,
+              parent_label: str) -> list[str] | None:
+    """AI로 상위 계획을 각 자식 기간(labels)별 내용으로 나눈다. 실패·미설정 시 None."""
+    n = len(labels)
+    system = ("당신은 개인 시간관리 코치입니다. 상위 계획을 하위 기간별 구체적 "
+              "실행 항목으로 나눕니다. 한국어로 간결하게 답합니다.")
+    user = (
+        f"영역: {area_name or '(없음)'}\n"
+        f"상위({parent_label}) 계획:\n{parent_text}\n\n"
+        f"이 계획을 다음 {n}개 기간에 나눠, 각 기간에 할 구체적 항목 1~3개를 "
+        f"제시하세요: {', '.join(labels)}.\n"
+        f"반드시 길이 {n}의 JSON 문자열 배열만 출력하세요. "
+        "각 원소는 그 기간 내용이며 여러 항목은 줄바꿈으로 구분합니다."
+    )
+    reply = ai.complete(system, user, max_tokens=800, temperature=0.5)
+    if not reply:
+        return None
+    try:
+        arr = json.loads(reply[reply.index("["):reply.rindex("]") + 1])
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(arr, list) or not arr:
+        return None
+    arr = [str(x).strip() for x in arr]
+    return (arr + [""] * n)[:n]

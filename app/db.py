@@ -151,6 +151,8 @@ def _migrate(conn: sqlite3.Connection):
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:
         conn.execute("ALTER TABLE inbox ADD COLUMN status TEXT NOT NULL DEFAULT ''")
+    # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
+    conn.execute("DROP TABLE IF EXISTS weekday_concept")
     # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.
     conn.execute(
         "UPDATE blocks SET category_id = (SELECT id FROM categories WHERE name = '기타' LIMIT 1) "

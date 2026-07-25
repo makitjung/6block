@@ -1056,14 +1056,6 @@
             });
         });
 
-        // 요일별 컨셉 자동 저장
-        document.querySelectorAll('.set-wd-input').forEach((inp) => {
-            inp.addEventListener('change', () => {
-                postForm('/settings/weekday', { weekday: inp.dataset.weekday, text: inp.value })
-                    .then((d) => { if (d && d.ok) toast('요일 컨셉 저장'); });
-            });
-        });
-
         // 구분 템플릿: 추가·이름변경·삭제·셀(평일/주말×블록) 저장
         document.getElementById('set-tpl-add-btn')?.addEventListener('click', () => {
             const inp = document.getElementById('set-tpl-new-name');
