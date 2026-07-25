@@ -58,6 +58,15 @@ GCAL_CALENDARS = [
     if c["url"]
 ]
 
+# CSRF 방어에서 추가로 허용할 출처(호스트[:포트]). 평소엔 비워 둔다. 리버스 프록시나
+# 다른 도메인으로 접속해 POST가 403이 되면 그 호스트를 쉼표로 구분해 넣는다.
+# 예) SIXBLOCK_ALLOWED_ORIGINS=6block.example.com,100.64.0.5:8000
+ALLOWED_ORIGINS = {
+    h.strip().lower()
+    for h in os.getenv("SIXBLOCK_ALLOWED_ORIGINS", "").split(",")
+    if h.strip()
+}
+
 # 선택적 AI 연결(자동 세분화·개선점 문장 생성). OpenAI 호환 chat/completions 엔드포인트를 쓴다.
 # 키는 보안상 .env(AI_API_KEY)에만 두고, 주소·모델은 설정 탭에서 덮어쓸 수 있다(app_settings).
 # 셋 중 하나라도 비면 AI는 비활성이고 규칙기반으로만 동작한다.
