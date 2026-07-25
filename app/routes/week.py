@@ -99,27 +99,15 @@ def _week_view(request: Request, monday: date):
         wk_templates = conn.execute(
             "SELECT id, name FROM cat_template ORDER BY display_order, id"
         ).fetchall()
-        # 장기 계획 맥락: 이 주가 속한 연·분기·월 계획과 장기 탭의 이 주(주 단위) 계획을 함께 보여준다.
-        wk_areas = conn.execute(
-            "SELECT id, name FROM lt_area WHERE is_active = 1 ORDER BY display_order"
-        ).fetchall()
-        ctx_q = (monday.month - 1) // 3 + 1
-        ctx_levels = [
-            ("year", str(monday.year), "연"),
-            ("quarter", f"{monday.year}-Q{ctx_q}", "분기"),
-            ("month", f"{monday.year}-{monday.month:02d}", "월"),
-            ("week", week_start_str, "주"),
-        ]
-        lt_rows = conn.execute(
-            "SELECT area_id, level, content FROM lt_plan "
-            "WHERE (level='year' AND period_key=?) OR (level='quarter' AND period_key=?) "
-            "   OR (level='month' AND period_key=?) OR (level='week' AND period_key=?)",
-            (ctx_levels[0][1], ctx_levels[1][1], ctx_levels[2][1], ctx_levels[3][1]),
-        ).fetchall()
-        # 간트 항목 중 이 주에 걸친 것. 연·분기 계획이 이번 주에 어디까지 닿는지 함께 본다.
+        # 이번 주 장기 항목: 장기 탭 계획 막대 중 이 주에 걸친 것. 여기서 진척률을 고치고
+        # 주간 목표·블록 테마로 바로 옮긴다(장기 ↔ 주간 연동 지점).
         wk_items = conn.execute(
-            "SELECT area_id, title, start_date, end_date, progress FROM lt_item "
-            "WHERE start_date <= ? AND end_date >= ? ORDER BY start_date, id",
+            "SELECT i.id, i.title, i.start_date, i.end_date, i.progress, "
+            "       a.name AS area_name, "
+            "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
+            "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
+            "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
+            "ORDER BY a.display_order, i.start_date, i.id",
             (dates[6], dates[0]),
         ).fetchall()
         # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
@@ -176,25 +164,14 @@ def _week_view(request: Request, monday: date):
         week_allday[ds] = allday
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
-    # 장기 계획 맥락을 영역별로 묶는다(연·분기·월·주 중 내용 있는 것만).
-    lt_map = {(r["area_id"], r["level"]): (r["content"] or "") for r in lt_rows}
-    items_by_area: dict[int, list] = {}
-    for r in wk_items:
-        items_by_area.setdefault(r["area_id"], []).append({
-            "title": r["title"], "progress": r["progress"],
+    week_items = [
+        {
+            "id": r["id"], "title": r["title"], "area_name": r["area_name"],
+            "progress": r["progress"], "has_children": bool(r["has_children"]),
             "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
-        })
-    plan_context = []
-    for ar in wk_areas:
-        rows = [
-            {"level": lv, "level_label": lv_label, "anchor": week_start_str,
-             "content": (lt_map.get((ar["id"], lv)) or "").strip()}
-            for lv, _key, lv_label in ctx_levels
-            if (lt_map.get((ar["id"], lv)) or "").strip()
-        ]
-        gitems = items_by_area.get(ar["id"], [])
-        if rows or gitems:
-            plan_context.append({"name": ar["name"], "rows": rows, "gantt": gitems})
+        }
+        for r in wk_items
+    ]
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = WEEK_CORE_BLOCKS
 
