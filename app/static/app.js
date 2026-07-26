@@ -236,7 +236,11 @@
     }
 
     // ---- main tick -------------------------------------------------------
+    // 자동 시작은 이 탭을 실제로 쓰고 있을 때만 건다. 다른 기기에 며칠씩 열어둔 탭이
+    // 저 혼자 슬롯을 시작해 종을 울리던 것을 막는다. 다시 손대면 곧바로 되살아난다.
+    const AUTO_IDLE_MS = 3 * 60 * 60 * 1000;
     let lastBoundaryFired = '';
+    let lastActiveAt = Date.now();   // 이 탭에서 마지막으로 사용자가 조작한 시각
     let lastUserInteract = 0;   // 마지막 사용자 스크롤·터치 시각(자동 추적 억제용)
     let lastNowSlot = '';       // 마지막으로 추적한 현재 30분 슬롯(HH:MM)
     let lastRenderSlot = '';    // 슬롯·블록 강조를 마지막으로 다시 칠한 슬롯(매초 재계산 방지)
@@ -248,7 +252,7 @@
         if (state.phase === 'IDLE') {
             // 슬롯이 시작될 때 자동 시작. 슬롯 행이 있는 오늘 화면에서만 걸린다.
             // 장기플랜·고민·설정처럼 슬롯 행이 없는 화면에 탭이 떠 있어도 저절로 울리지 않는다.
-            if (state.auto && sec < 3) {
+            if (state.auto && sec < 3 && Date.now() - lastActiveAt < AUTO_IDLE_MS) {
                 const el = currentSlotEl(now);
                 const nowMin = now.getHours() * 60 + now.getMinutes();
                 if (el && nowMin === hhmmToMin(el.dataset.start)
@@ -2713,8 +2717,13 @@
 
         // 사용자가 직접 스크롤·터치 중이면 자동 슬롯 추적을 잠시 멈춤
         ['wheel', 'touchstart', 'touchmove', 'pointerdown'].forEach((ev) => {
-            window.addEventListener(ev, () => { lastUserInteract = Date.now(); }, { passive: true });
+            window.addEventListener(ev, () => {
+                lastUserInteract = Date.now();
+                lastActiveAt = lastUserInteract;
+            }, { passive: true });
         });
+        // 타이핑도 '이 탭을 쓰는 중'으로 친다(한 일·메모 입력). 자동 시작이 이 값을 본다.
+        window.addEventListener('keydown', () => { lastActiveAt = Date.now(); }, { passive: true });
 
         // 화면 회전·리사이즈 시 현재 슬롯으로 재포커스(가로 전환에서 어긋남 방지)
         let reflowTimer = null;
