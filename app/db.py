@@ -1,6 +1,8 @@
 # SQLite 연결과 스키마 초기화, 누락 컬럼 자동 마이그레이션을 담당하는 데이터 액세스 헬퍼
 import fcntl
 import json
+import re
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,6 +18,12 @@ from app.config import (
 )
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+
+
+def uid_from_created(created: str | None) -> str:
+    """생성시각 문자열로 기록 공용 키(YYYYMMDD-HHMM-난수4, Record FORMAT.md 표준)를 만든다."""
+    digits = re.sub(r"\D", "", created or "")[:12].ljust(12, "0")
+    return f"{digits[:8]}-{digits[8:12]}-{secrets.token_hex(2)}"
 
 
 def init_db():
@@ -150,6 +158,15 @@ def _migrate(conn: sqlite3.Connection):
     # 다시보기 항목이 원본과 독립 삭제 가능하도록 출처 ID를 저장한다.
     if refl_cols and "source_id" not in refl_cols:
         conn.execute("ALTER TABLE reflection ADD COLUMN source_id INTEGER")
+    # Record 기록 통합용 공용 키(uid). 없으면 추가하고, 빈 행은 생성시각 기반으로 채운다.
+    if refl_cols:
+        if "uid" not in refl_cols:
+            conn.execute("ALTER TABLE reflection ADD COLUMN uid TEXT")
+        for r in conn.execute(
+            "SELECT id, created_at FROM reflection WHERE uid IS NULL OR uid = ''"
+        ).fetchall():
+            conn.execute("UPDATE reflection SET uid = ? WHERE id = ?",
+                         (uid_from_created(r[1]), r[0]))
     # GTD 명료화: 수집함 항목 상태(''=미분류·next·wait·someday·ref). 없으면 추가.
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:

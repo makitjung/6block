@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.common import KST, _like_pattern, _off_loop, templates, today_str
-from app.db import get_conn
+from app.db import get_conn, uid_from_created
 from app.integrations import gcal_write
 
 router = APIRouter()
@@ -75,10 +75,10 @@ def _import_gcal_reflections(force: bool = False):
             if r is None:
                 conn.execute(
                     "INSERT INTO reflection (kind, title, text, tags, event_date, "
-                    "review_date, created_at, gcal_event_id, synced) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                    "review_date, created_at, gcal_event_id, synced, uid) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
                     (ev["kind"], ev["title"], ev["content"], ev["tags"], ev["date"],
-                     None, now, eid),
+                     None, now, eid, uid_from_created(now)),
                 )
             elif (
                 (r["kind"] or "") != ev["kind"]
@@ -235,10 +235,10 @@ async def reflect_add(request: Request):
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO reflection (kind, title, text, tags, event_date, review_date, "
-            "created_at, gcal_event_id, synced) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, gcal_event_id, synced, uid) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kind, title, text, tags, event_date, review_date, now, event_id,
-             1 if event_id else 0),
+             1 if event_id else 0, uid_from_created(now)),
         )
         new_id = cur.lastrowid
         # 다시 볼 날짜가 있으면 별도 '다시보기' 항목을 생성한다(원본과 독립 삭제 가능).
@@ -252,10 +252,10 @@ async def reflect_add(request: Request):
                 rev_event_id = None
             conn.execute(
                 "INSERT INTO reflection (kind, title, text, tags, event_date, "
-                "created_at, gcal_event_id, source_id, synced) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_at, gcal_event_id, source_id, synced, uid) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (kind, review_title, text, tags, review_date, now,
-                 rev_event_id, new_id, 1 if rev_event_id else 0),
+                 rev_event_id, new_id, 1 if rev_event_id else 0, uid_from_created(now)),
             )
     return JSONResponse({"ok": True, "id": new_id, "synced": bool(event_id)})
 
@@ -333,10 +333,10 @@ async def reflect_update(item_id: int, request: Request):
                     rev_eid = None
                 conn.execute(
                     "INSERT INTO reflection (kind, title, text, tags, event_date, "
-                    "created_at, gcal_event_id, source_id, synced) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, gcal_event_id, source_id, synced, uid) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (kind, review_title, text, tags, review_date, now, rev_eid,
-                     item_id, 1 if rev_eid else 0),
+                     item_id, 1 if rev_eid else 0, uid_from_created(now)),
                 )
             elif (child["event_date"] or "") != review_date:
                 # 날짜가 바뀌면 구글 일정도 옮긴다(삭제 후 그날로 재생성).
