@@ -244,26 +244,17 @@
     function tick() {
         const now = new Date();
         const sec = now.getSeconds();
-        const min = now.getMinutes();
 
         if (state.phase === 'IDLE') {
-            // 슬롯이 시작될 때 자동 시작. 슬롯 행이 아예 없는 화면에서만 정각·30분을 쓴다.
+            // 슬롯이 시작될 때 자동 시작. 슬롯 행이 있는 오늘 화면에서만 걸린다.
+            // 장기플랜·고민·설정처럼 슬롯 행이 없는 화면에 탭이 떠 있어도 저절로 울리지 않는다.
             if (state.auto && sec < 3) {
-                const ranges = slotRanges();
-                if (ranges.length) {
-                    const el = currentSlotEl(now);
-                    const nowMin = now.getHours() * 60 + now.getMinutes();
-                    if (el && nowMin === hhmmToMin(el.dataset.start)
-                        && lastBoundaryFired !== el.dataset.start) {
-                        lastBoundaryFired = el.dataset.start;
-                        startFocus(el.dataset.start);
-                    }
-                } else if (min === 0 || min === 30) {
-                    const key = `${now.getHours()}:${min}`;
-                    if (lastBoundaryFired !== key) {
-                        lastBoundaryFired = key;
-                        startFocus(currentSlotKey(now));
-                    }
+                const el = currentSlotEl(now);
+                const nowMin = now.getHours() * 60 + now.getMinutes();
+                if (el && nowMin === hhmmToMin(el.dataset.start)
+                    && lastBoundaryFired !== el.dataset.start) {
+                    lastBoundaryFired = el.dataset.start;
+                    startFocus(el.dataset.start);
                 }
             }
         } else if (state.phase === 'FOCUS') {
