@@ -214,6 +214,26 @@ def reflect_list(q: str = "", kind: str = "", force: int = 0):
     })
 
 
+@router.get("/reflect/api/items")
+def reflect_api_items(q: str = "", kind: str = "", sync: int = 1):
+    """외부 앱(Record 고결감 탭)용 JSON 목록. HTML 대신 구조화된 항목을 돌려준다.
+    sync=1 이면 조회 전에 구글 캘린더에서 만든 것도 가져와 반영한다."""
+    if sync:
+        _import_gcal_reflections()
+    ctx = _reflect_ctx(q, kind)
+    keys = ("id", "uid", "kind", "title", "text", "tags", "event_date", "review_date",
+            "review_note", "created_at", "source_id", "synced", "review_child_id")
+    return JSONResponse({
+        "ok": True,
+        "kinds": list(REFLECT_KINDS),
+        "items": [{k: it.get(k) for k in keys} for it in ctx["items"]],
+        "upcoming": [{k: u.get(k) for k in ("id", "uid", "title", "review_date")}
+                     for u in ctx["upcoming_reviews"]],
+        "tags": ctx["all_tags"],
+        "gcal_on": ctx["gcal_write_on"],
+    })
+
+
 @router.post("/reflect/add")
 async def reflect_add(request: Request):
     form = await request.form()
