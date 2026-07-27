@@ -339,10 +339,10 @@ def run_checks(db_path):
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (parent,))[0]
     check("블록이 저장됨", v["block_label"] == "B3", dict(v))
     _c, h = get("/plan?level=month&anchor=2026-08-01")
-    check("블록은 항목마다 제 것만 본다(하위는 상위를 따라가지 않는다)",
+    check("상위를 블록에 놓으면 하위도 그 줄에 같이 온다",
           "노무사 1차 합격" in block_seg(h, "B3")
-          and "노동법 1회독" not in block_seg(h, "B3")
-          and "노동법 1회독" in block_seg(h, ""), block_seg(h, "B3")[:160])
+          and "노동법 1회독" in block_seg(h, "B3")
+          and "노동법 1회독" not in block_seg(h, ""), block_seg(h, "B3")[:160])
     code, out = post("/plan/item/update", {"id": child, "block": "B5"})
     _c, h = get("/plan?level=month&anchor=2026-08-01")
     check("하위에 블록을 따로 주면 그 줄로 빠짐",
@@ -377,6 +377,15 @@ def run_checks(db_path):
     code, out = post("/plan/item/update", {"id": child, "block": "없는블록"})
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
     check("모르는 블록 값은 미지정으로", v["block_label"] is None, dict(v))
+    # 상위를 어느 블록에 놓으면 하위 사슬도 같은 블록으로 따라간다
+    code, out = post("/plan/item/update", {"id": parent, "block": "B4,B6"})
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
+    check("상위를 블록에 놓으면 하위도 같이 배치됨", v["block_label"] == "B4,B6", dict(v))
+    # 그 뒤 하위만 따로 빼 두면 상위의 다른 수정에는 안 딸려간다
+    post("/plan/item/update", {"id": child, "block": "B5"})
+    post("/plan/item/update", {"id": parent, "title": "노무사 1차 합격"})
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
+    check("따로 뺀 하위는 상위의 다른 수정에 안 딸려감", v["block_label"] == "B5", dict(v))
     # 상위가 하위보다 위 칸에 온다(상위 lane < 하위 lane)
     post("/plan/item/update", {"id": parent, "block": "B3"})
     post("/plan/item/update", {"id": child, "block": "B3"})

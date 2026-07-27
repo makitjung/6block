@@ -543,7 +543,8 @@ async def plan_item_update(request: Request):
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
+            "SELECT start_date, end_date, block_label FROM lt_item WHERE id = ?",
+            (item_id,),
         ).fetchone()
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
@@ -564,6 +565,17 @@ async def plan_item_update(request: Request):
         new_s, new_e = _parse_date(s), _parse_date(e)
         if old_s and old_e and new_s and new_e:
             _lt_apply_delta(conn, item_id, (new_s - old_s).days, (new_e - old_e).days, now)
+        # 상위를 어느 블록에 놓으면 하위 사슬도 같은 블록으로 따라 옮긴다. 실제로 바뀔 때만
+        # 내려보내므로, 그 뒤에 하위를 따로 다른 블록으로 빼 두면 그대로 남는다.
+        if "block_label" in fields and fields["block_label"] != row["block_label"]:
+            kids = _lt_descendants(conn, item_id)
+            if kids:
+                ph = ",".join("?" * len(kids))
+                conn.execute(
+                    f"UPDATE lt_item SET block_label = ?, updated_at = ? "
+                    f"WHERE id IN ({ph})",
+                    (fields["block_label"], now, *kids),
+                )
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True})
 
