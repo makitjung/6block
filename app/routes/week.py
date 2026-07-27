@@ -41,6 +41,8 @@ def _week_view(request: Request, monday: date):
     dates = [(monday + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
     placeholders = ",".join("?" * len(dates))
     week_start_str = monday.strftime("%Y-%m-%d")
+    # 그 해의 몇 번째 주인지(ISO 기준, 월요일 시작이라 이 앱의 주 나누기와 같다)
+    week_no = monday.isocalendar()[1]
     prev_week = (monday - timedelta(days=7)).strftime("%Y-%m-%d")
     next_week = (monday + timedelta(days=7)).strftime("%Y-%m-%d")
     with get_conn() as conn:
@@ -207,6 +209,7 @@ def _week_view(request: Request, monday: date):
         {
             "request": request,
             "week_start": week_start_str,
+            "week_no": week_no,
             "prev_week": prev_week,
             "next_week": next_week,
             "dates": dates,

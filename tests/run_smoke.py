@@ -287,6 +287,12 @@ def run_checks(db_path):
     _c, h = get("/plan?level=week&anchor=2026-07-27")
     check("달이 바뀌는 열에 표시",
           'class="gt-brk">8월' in h and 'data-lv="month"' in h)
+    # 그 해의 몇 번째 주인지(ISO). 2026-07-27 주는 31주차.
+    check("장기 주 열에 몇 주차 표시",
+          "~8/2 · 31주" in h and "~8/9 · 32주" in h, h.count("주</span>"))
+    _c, h = get("/week/2026-07-27")
+    check("주간 제목 아래 기간 옆에 몇 주차 표시",
+          '<span class="hero-wk">31주차</span>' in h)
     # 기간 길이로 나눈 4구분(장기 6개월↑ · 중기 1~6개월 · 단기 1개월↓ · 초단기 1주↓)
     spans = {}
     for title, s, e in (("초단기막대", "2026-08-01", "2026-08-07"),

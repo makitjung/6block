@@ -99,7 +99,7 @@ def _plan_columns(level: str, anchor: date):
             prev_month = monday.month
             key = monday.strftime("%Y-%m-%d")
             cols.append({"key": key, "label": f"{monday.month}/{monday.day}",
-                         "sub": f"~{end.month}/{end.day}",
+                         "sub": f"~{end.month}/{end.day} · {monday.isocalendar()[1]}주",
                          "current": monday == cur_monday, "week_link": key,
                          "drill_level": None, "drill_anchor": None,
                          "start": monday, "end": end,
