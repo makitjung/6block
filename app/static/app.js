@@ -1523,6 +1523,8 @@
         });
 
         bindGanttDrag(gantt);
+        tieMultiBlockBars(gantt);
+        window.addEventListener('resize', () => tieMultiBlockBars(gantt));
 
         gantt.querySelectorAll('.gt-edit').forEach((box) => {
             const id = box.dataset.id;
@@ -1539,7 +1541,6 @@
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 postForm('/plan/item/update', data).then((d) => {
                     if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
-                    if (d.widened) toast('하위를 모두 품도록 기간을 넓혔습니다');
                     location.reload();
                 });
             });
@@ -1571,6 +1572,7 @@
             pastBtn.textContent = '지난 항목 ' + pastBtn.dataset.count
                                 + (on ? '개 숨기기' : '개 보기');
             pastBtn.classList.toggle('is-on', on);
+            tieMultiBlockBars(gantt);      // 막대가 나타나거나 사라지면 연결선을 다시 긋는다
         });
 
         // 현재 기간 열이 화면에 들어오도록 가로 스크롤(항목 이름 열에 가리지 않게)
@@ -1809,6 +1811,38 @@
     }
 
     // ---- 장기: 막대 끌어 옮기기 ------------------------------------------
+    // 한 항목을 여러 블록에 걸어 두면 같은 막대가 줄마다 나온다. 그 막대들을 옅은 세로선으로
+    // 이어 "하나가 여러 군데에 나뉘어 있다"는 게 보이게 한다. 막대는 날짜가 같아 가로 위치도
+    // 같으므로 왼쪽 끝 근처에 선 하나만 그으면 된다. 폭이 바뀌면 다시 긋는다.
+    function tieMultiBlockBars(gantt) {
+        gantt.querySelectorAll('.gt-tie').forEach((el) => el.remove());
+        const byId = new Map();
+        gantt.querySelectorAll('.gt-bar').forEach((b) => {
+            if (!b.offsetParent) return;             // 접힌 지난 항목은 뺀다
+            if (!byId.has(b.dataset.id)) byId.set(b.dataset.id, []);
+            byId.get(b.dataset.id).push(b);
+        });
+        const base = gantt.getBoundingClientRect();
+        byId.forEach((bars) => {
+            if (bars.length < 2) return;
+            const rects = bars.map((b) => b.getBoundingClientRect());
+            const top = Math.min(...rects.map((r) => r.bottom));
+            const bottom = Math.max(...rects.map((r) => r.top));
+            if (bottom <= top) return;
+            const style = getComputedStyle(bars[0]);
+            const tie = document.createElement('span');
+            tie.className = 'gt-tie';
+            tie.style.left = (rects[0].left - base.left
+                              + Math.min(14, rects[0].width / 2)) + 'px';
+            tie.style.top = (top - base.top) + 'px';
+            tie.style.height = (bottom - top) + 'px';
+            tie.style.setProperty('--gt-tone', style.getPropertyValue('--gt-tone'));
+            tie.style.setProperty('--gt-hue', style.getPropertyValue('--gt-hue'));
+            gantt.appendChild(tie);
+            bars.forEach((b) => b.classList.add('is-tied'));
+        });
+    }
+
     // 좌우로 끌면 끈 픽셀을 그대로 날짜로 바꿔 그만큼 기간이 옮겨지고(열 단위로 튀지 않는다),
     // 다른 막대 위에 놓으면 그 막대의 하위계획이 된다. 다른 블록(B1~B6·미지정) 줄에 놓으면
     // 잡은 줄에서 빠져 놓은 줄로 옮겨간다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
@@ -1829,7 +1863,7 @@
         const MIN_RESIZABLE = 14;   // 이보다 좁은 막대는 통째 이동만(끝을 잡을 자리가 없다)
         const reset = () => {
             if (drag) {
-                drag.bar.classList.remove('is-dragging', 'is-resizing');
+                drag.bar.classList.remove('is-dragging', 'is-resizing', 'is-nesting');
                 drag.bar.style.transform = '';
                 drag.bar.style.left = drag.css.left;
                 drag.bar.style.width = drag.css.width;
@@ -1837,21 +1871,21 @@
             clearMarks();
             drag = null;
         };
-        // 가로로만 끄는 것은 기간 이동, 위아래로 뚜렷하게 끄는 것만 붙이기·블록 이동으로 본다.
-        // 이렇게 갈라 놓아야 옆으로 미는 도중 밑에 깔린 막대의 하위로 빨려 들어가지 않는다.
-        const VERT = 12;
-        const wantsDrop = (dx, dy) => Math.abs(dy) > VERT && Math.abs(dy) * 2 > Math.abs(dx);
-        // 포인터 아래에 있는 드롭 대상(끌고 있는 막대는 잠시 통과시켜 밑을 본다)
-        const dropTargetAt = (x, y, dx, dy) => {
-            if (!wantsDrop(dx, dy)) return null;
+        const VERT = 16;    // 같은 줄 안에서 붙이기로 보려면 이만큼은 위아래로 끌어야 한다
+        // 포인터 아래에 있는 드롭 대상(끌고 있는 막대는 잠시 통과시켜 밑을 본다).
+        // 줄을 벗어났으면 곧바로 붙이기·블록 이동이고, 같은 줄에서는 위아래로 뚜렷하게
+        // 끌었을 때만이다. 그래야 옆으로 미는 도중 밑에 깔린 막대에 빨려 들어가지 않는다.
+        const dropTargetAt = (x, y, dy) => {
             drag.bar.style.pointerEvents = 'none';
             const under = document.elementFromPoint(x, y);
             drag.bar.style.pointerEvents = '';
             if (!under) return null;
+            const row = under.closest('.gt-blockrow');
+            const sameRow = row === drag.row;
+            if (sameRow && Math.abs(dy) <= VERT) return null;
             const bar = under.closest('.gt-bar');
             if (bar && bar !== drag.bar) return { kind: 'bar', el: bar };
-            const row = under.closest('.gt-blockrow');
-            if (row && row !== drag.row) return { kind: 'block', el: row, block: row.dataset.block };
+            if (row && !sameRow) return { kind: 'block', el: row, block: row.dataset.block };
             return null;
         };
 
@@ -1898,8 +1932,9 @@
                 bar.classList.add('is-dragging');
                 bar.style.transform = `translate(${dx}px, ${dy}px)`;
                 clearMarks();
-                const t = dropTargetAt(e.clientX, e.clientY, dx, dy);
+                const t = dropTargetAt(e.clientX, e.clientY, dy);
                 if (t) t.el.classList.add('is-drop-target');
+                bar.classList.toggle('is-nesting', !!(t && t.kind === 'bar'));
             });
             bar.addEventListener('pointerup', (e) => {
                 if (!drag || drag.bar !== bar) return;
@@ -1916,14 +1951,12 @@
                     if (days === 0) return;
                     postForm('/plan/item/resize',
                              { id: id, edge: edge, days: days }).then((d) => {
-                        if (!d || !d.ok) { toast((d && d.error) || '기간을 바꾸지 못했습니다'); return; }
-                        if (d.widened) toast('하위를 모두 품도록 기간을 넓혔습니다');
-                        location.reload();
+                        if (d && d.ok) location.reload();
+                        else toast((d && d.error) || '기간을 바꾸지 못했습니다');
                     });
                     return;
                 }
-                const target = dropTargetAt(e.clientX, e.clientY,
-                                            dx, e.clientY - drag.y0);
+                const target = dropTargetAt(e.clientX, e.clientY, e.clientY - drag.y0);
                 reset();
                 if (target && target.kind === 'bar') {
                     postForm('/plan/item/reparent',

@@ -459,14 +459,19 @@ def run_checks(db_path):
           r["start_date"] == "2026-08-01" and r["end_date"] == "2027-01-31", dict(r))
     code, out = post("/plan/item/resize", {"id": other, "edge": "start", "days": "400"})
     check("기간이 뒤집히면 거부", code == 400, out)
+    # 적어 넣은 기간은 하위가 있어도 그대로 남는다(예전에는 하위를 품도록 되돌려 놔서
+    # 하위가 있는 항목은 날짜를 고쳐도 안 바뀌는 것처럼 보였다).
     code, out = post("/plan/item/update", {"id": parent, "title": "노무사 1차 합격",
                                            "start": "2026-11-01", "end": "2026-11-30"})
     p = db_query(db_path,
                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
-    # 하위(8/20~11/15)를 벗어나는 시작일은 되돌아오고, 하위보다 뒤인 종료일은 그대로 둔다.
-    check("상위 기간을 하위보다 좁게 고치면 하위를 품도록 되돌림",
-          out.get("widened") is True and p["start_date"] == "2026-08-20"
-          and p["end_date"] == "2026-11-30", dict(p))
+    check("하위가 있어도 적어 넣은 기간이 그대로 저장됨",
+          p["start_date"] == "2026-11-01" and p["end_date"] == "2026-11-30", dict(p))
+    code, out = post("/plan/item/resize", {"id": parent, "edge": "start", "days": "-10"})
+    p = db_query(db_path,
+                 "SELECT start_date FROM lt_item WHERE id=?", (parent,))[0]
+    check("하위가 있어도 끈 대로 기간이 줄고 늘어남",
+          p["start_date"] == "2026-10-22", dict(p))
     post("/plan/item/delete", {"id": other})
 
     code, out = post("/plan/item/delete", {"id": parent})

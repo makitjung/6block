@@ -199,28 +199,6 @@ def _lt_rollup(conn, item_id: int | None):
         cur = pid
 
 
-def _lt_cover_children(conn, item_id: int) -> bool:
-    """이 항목을 자기 하위 전체를 품도록 넓힌다. 넓혔으면 True(기간을 직접 고칠 때 쓴다)."""
-    agg = conn.execute(
-        "SELECT MIN(start_date) AS s, MAX(end_date) AS e, COUNT(*) AS n "
-        "FROM lt_item WHERE parent_id = ?",
-        (item_id,),
-    ).fetchone()
-    if not agg or not agg["n"]:
-        return False
-    row = conn.execute(
-        "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
-    ).fetchone()
-    s, e = min(row["start_date"], agg["s"]), max(row["end_date"], agg["e"])
-    if s == row["start_date"] and e == row["end_date"]:
-        return False
-    conn.execute(
-        "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
-        (s, e, datetime.now(KST).isoformat(timespec="seconds"), item_id),
-    )
-    return True
-
-
 MAX_LANE = 2      # 겹쳐 그릴 하위 단계(0=상위, 1·2=하위). 더 깊은 항목은 2단계로 눌러 그린다.
 
 # 막대 색 진하기는 기간 길이가 아니라 계층 단계로 정한다. 최상위가 가장 진하고 하위로 갈수록 연하다.
@@ -470,11 +448,10 @@ async def plan_item_update(request: Request):
             f"UPDATE lt_item SET {sets}, updated_at = ? WHERE id = ?",
             (*fields.values(), now, item_id),
         )
-        # 하위가 있는 항목의 기간도 직접 고칠 수 있다. 다만 하위를 밖으로 밀어낼 수는 없어
-        # 하위를 모두 품도록 되돌린다.
-        widened = _lt_cover_children(conn, item_id)
+        # 적어 넣은 기간은 하위가 있어도 그대로 둔다. 예전에는 하위를 모두 품도록
+        # 되돌려 놔서 상위 항목은 날짜를 고쳐도 안 바뀌는 것처럼 보였다.
         _lt_rollup(conn, item_id)
-    return JSONResponse({"ok": True, "widened": widened})
+    return JSONResponse({"ok": True})
 
 
 @router.post("/plan/item/shift")
@@ -519,7 +496,7 @@ async def plan_item_shift(request: Request):
 async def plan_item_resize(request: Request):
     """막대의 한쪽 끝(edge=start|end)만 끈 만큼(일 단위) 늘리거나 줄인다.
 
-    하위가 있는 항목도 줄일 수 있지만 하위를 모두 품는 선까지만 줄어든다.
+    하위가 있어도 끈 대로 줄어든다(하위가 상위 밖으로 삐져나오면 그대로 보인다).
     """
     form = await request.form()
     try:
@@ -552,9 +529,8 @@ async def plan_item_resize(request: Request):
             "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
             (s.isoformat(), e.isoformat(), now, item_id),
         )
-        widened = _lt_cover_children(conn, item_id)
         _lt_rollup(conn, item_id)
-    return JSONResponse({"ok": True, "widened": widened})
+    return JSONResponse({"ok": True})
 
 
 @router.post("/plan/item/reparent")

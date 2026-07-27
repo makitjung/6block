@@ -1712,6 +1712,16 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-handle.r { right: 0; }
 .gt-bar.clip-l .gt-handle.l, .gt-bar.clip-r .gt-handle.r { cursor: grab; }
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 하위로 들어갈 자리에 왔을 때 끌고 있는 막대도 함께 표시한다 */
+.gt-bar.is-nesting { outline: 2px dashed var(--accent); outline-offset: 2px; }
+/* 한 항목이 여러 블록에 걸려 있을 때 그 막대들을 잇는 옅은 실선 */
+.gt-tie {
+    position: absolute; width: 0; z-index: 0; pointer-events: none;
+    border-left: 1px solid color-mix(in srgb, var(--gt-tone) 60%, transparent);
+    filter: hue-rotate(var(--gt-hue, 0deg));
+}
+/* 이어진 막대는 왼쪽 끝을 살짝 두껍게 해 선이 어디서 나오는지 보이게 한다 */
+.gt-bar.is-tied { border-left-width: 3px; }
 /* 다른 블록 줄 위에 놓으면 그 블록으로 옮겨진다 */
 .gt-blockrow.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
 /* 막대 위 삭제(✕): 마우스를 올렸을 때만 오른쪽 끝에 나타난다 */
