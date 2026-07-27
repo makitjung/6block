@@ -2861,6 +2861,14 @@
             pomo.querySelector('.pomo-auto')?.addEventListener('click', () => toggleAuto());
         }
 
+        // 로고: 보고 있던 화면 그대로 새로고침. href 는 같은 주소라 새 탭으로 열어도 그 화면이다.
+        // 같은 주소 링크는 브라우저가 이동을 건너뛰기도 해서 여기서 직접 다시 불러온다.
+        document.querySelector('a.logo')?.addEventListener('click', (e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;   // 새 탭·새 창은 그대로
+            e.preventDefault();
+            location.reload();
+        });
+
         // 테마 토글
         document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
 

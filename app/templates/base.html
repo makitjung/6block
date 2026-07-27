@@ -27,7 +27,9 @@
 <body>
     <header class="topbar">
         <div class="topbar-inner">
-            <a href="/today" class="logo">
+            {# 로고를 누르면 보고 있던 화면 그대로 새로고침한다(오늘로 옮기지 않는다) #}
+            <a href="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
+               class="logo" title="이 화면 새로고침">
                 <span class="logo-mark"></span>
                 <span class="logo-text">6block</span>
             </a>
