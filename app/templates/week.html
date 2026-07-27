@@ -45,8 +45,9 @@
         {% if week_items %}
         <div class="wk-lt-list">
             {% for it in week_items %}
-            <div class="wk-lt-row" data-id="{{ it.id }}">
-                <span class="wk-lt-area">{{ it.area_name }}</span>
+            <div class="wk-lt-row" data-id="{{ it.id }}" style="--d: {{ it.depth }}">
+                {% if it.depth %}<span class="wk-lt-sub" title="{{ it.area_name }} · 하위 항목">└</span>
+                {% else %}<span class="wk-lt-area">{{ it.area_name }}</span>{% endif %}
                 <span class="wk-lt-title">{{ it.title }}</span>
                 <span class="wk-lt-range mono">{{ it.range }}</span>
                 <label class="wk-lt-prog">

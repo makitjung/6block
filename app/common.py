@@ -207,6 +207,34 @@ def _parse_date(s) -> date | None:
         return None
 
 
+# -- 장기 항목 상하관계 (오늘·주간 공용) --------------------------------------
+
+
+def lt_tree_order(rows) -> list[dict]:
+    """장기 항목을 상위 바로 아래에 하위가 오도록 줄 세우고 depth(겹 단계)를 붙인다.
+
+    상위 기간은 하위를 모두 품으므로, 하위가 뽑힌 목록에는 상위도 반드시 함께 있다.
+    그래도 상위가 빠진 줄은 최상위로 올려 목록에서 사라지지 않게 한다.
+    들어온 차례(영역 순서)는 그대로 지킨다.
+    """
+    items = [dict(r) for r in rows]
+    ids = {it["id"] for it in items}
+    by_parent: dict = {}
+    for it in items:
+        pid = it["parent_id"] if it["parent_id"] in ids else None
+        by_parent.setdefault(pid, []).append(it)
+    out: list[dict] = []
+
+    def walk(pid, depth: int):
+        for it in by_parent.get(pid, []):
+            it["depth"] = depth
+            out.append(it)
+            walk(it["id"], depth + 1)
+
+    walk(None, 0)
+    return out
+
+
 # -- 검색어 처리 (분석·고결감 공용) ------------------------------------------
 
 

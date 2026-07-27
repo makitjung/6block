@@ -12,6 +12,7 @@ from app.common import (
     _parse_date,
     _split3,
     ensure_day_skeleton,
+    lt_tree_order,
     templates,
     today_str,
     week_start,
@@ -92,29 +93,36 @@ def _day_agenda(blocks, d, is_today):
     return cal_events, task_list, block_events
 
 
-def _lt_items_on(conn, d) -> list[dict]:
+def _lt_items_on(conn, d) -> list[list[dict]]:
     """그 날짜에 걸친 장기 항목(장기 탭 계획 막대). 오늘 탭 위 한 줄 띠에 쓴다.
 
     장기 탭에서 만든 기간이 실제로 그날을 덮는 것만 골라, 남은 일수(D-n)를 붙여 준다.
+    반환은 [상위, 그 하위들...] 덩어리의 목록이다(줄바꿈에도 상하관계가 끊기지 않게).
     """
     date_str = d.strftime("%Y-%m-%d")
     rows = conn.execute(
-        "SELECT i.id, i.title, i.end_date, i.progress, a.name AS area_name "
+        "SELECT i.id, i.parent_id, i.title, i.end_date, i.progress, a.name AS area_name "
         "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
         "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
         "ORDER BY a.display_order, i.end_date, i.id",
         (date_str, date_str),
     ).fetchall()
     out = []
-    for r in rows:
+    for r in lt_tree_order(rows):        # 상위 바로 뒤에 그 하위가 오도록 줄 세운다
         end = _parse_date(r["end_date"])
         left = (end - d).days if end else 0
         out.append({
             "id": r["id"], "title": r["title"], "area_name": r["area_name"],
-            "progress": r["progress"],
+            "progress": r["progress"], "depth": r["depth"],
             "dday": "D-day" if left <= 0 else f"D-{left}",
         })
-    return out
+    groups: list[list[dict]] = []
+    for it in out:
+        if it["depth"] == 0 or not groups:
+            groups.append([it])
+        else:
+            groups[-1].append(it)
+    return groups
 
 
 def _day_view(request: Request, date_str: str):

@@ -12,6 +12,7 @@ from app.common import (
     _rule_distribute,
     _short_date,
     ensure_day_skeleton,
+    lt_tree_order,
     templates,
     today_str,
     week_start,
@@ -102,7 +103,7 @@ def _week_view(request: Request, monday: date):
         # 이번 주 장기 항목: 장기 탭 계획 막대 중 이 주에 걸친 것. 여기서 진척률을 고치고
         # 주간 목표·블록 테마로 바로 옮긴다(장기 ↔ 주간 연동 지점).
         wk_items = conn.execute(
-            "SELECT i.id, i.title, i.start_date, i.end_date, i.progress, "
+            "SELECT i.id, i.parent_id, i.title, i.start_date, i.end_date, i.progress, "
             "       a.name AS area_name, "
             "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
             "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
@@ -164,13 +165,15 @@ def _week_view(request: Request, monday: date):
         week_allday[ds] = allday
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
+    # 상위 바로 뒤에 그 하위가 오도록 줄 세우고 겹 단계(depth)를 붙인다.
     week_items = [
         {
             "id": r["id"], "title": r["title"], "area_name": r["area_name"],
             "progress": r["progress"], "has_children": bool(r["has_children"]),
+            "depth": r["depth"],
             "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
         }
-        for r in wk_items
+        for r in lt_tree_order(wk_items)
     ]
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = WEEK_CORE_BLOCKS

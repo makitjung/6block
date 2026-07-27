@@ -1673,6 +1673,12 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     border: 1px solid var(--border); border-radius: var(--r-sm);
 }
 .wk-lt-row:hover { border-color: var(--border-strong); }
+/* 하위 항목은 한 겹씩 들여쓰고 영역 이름 자리에 └ 를 넣어 상하관계를 드러낸다 */
+.wk-lt-row { margin-left: calc(var(--d, 0) * 20px); }
+.wk-lt-sub {
+    font-size: 13px; font-weight: 700; color: var(--text-subtle);
+    text-align: center; white-space: nowrap; padding: 2px 8px;
+}
 .wk-lt-area {
     font-size: 11px; font-weight: 700; color: var(--accent-soft-text);
     background: var(--accent-soft); border: 1px solid var(--border-focus);
@@ -1702,13 +1708,17 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     font-size: 11px; font-weight: 800; color: var(--text-subtle);
     letter-spacing: .04em; white-space: nowrap;
 }
-.lt-strip-list { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.lt-strip-list { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
+.lt-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .lt-chip {
     display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
     padding: 4px 10px; font-size: 12px; text-decoration: none; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill);
 }
 .lt-chip:hover { border-color: var(--border-strong); }
+/* 하위 항목은 한 겹씩 들여쓰고 영역 이름 대신 └ 를 달아 상하관계를 드러낸다 */
+.lt-chip { margin-left: calc(var(--d, 0) * 14px); }
+.lt-chip-sub { font-size: 11px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
 .lt-chip-area { font-size: 11px; font-weight: 700; color: var(--accent-soft-text); white-space: nowrap; }
 .lt-chip-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt-chip-dday { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }

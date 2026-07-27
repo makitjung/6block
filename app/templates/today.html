@@ -24,14 +24,20 @@
     <section class="lt-strip" aria-label="이 날짜에 걸친 장기 항목">
         <span class="lt-strip-label">장기</span>
         <div class="lt-strip-list">
-            {% for it in lt_today %}
-            <a class="lt-chip" href="/plan?level=month&amp;anchor={{ date_str }}"
-               title="{{ it.area_name }} · {{ it.title }} · 진척 {{ it.progress }}% · {{ it.dday }}">
-                <span class="lt-chip-area">{{ it.area_name }}</span>
-                <span class="lt-chip-title">{{ it.title }}</span>
-                <span class="lt-chip-dday mono">{{ it.dday }}</span>
-                <span class="lt-chip-prog mono">{{ it.progress }}%</span>
-            </a>
+            {% for grp in lt_today %}
+            <!-- 상위 하나와 그 하위들을 한 덩어리로 묶어 줄바꿈에도 상하관계가 끊기지 않게 한다 -->
+            <div class="lt-group">
+                {% for it in grp %}
+                <a class="lt-chip" href="/plan?level=month&amp;anchor={{ date_str }}" style="--d: {{ it.depth }}"
+                   title="{{ it.area_name }} · {{ it.title }} · 진척 {{ it.progress }}% · {{ it.dday }}{% if it.depth %} · {{ grp[0].title }} 의 하위{% endif %}">
+                    {% if it.depth %}<span class="lt-chip-sub" aria-label="하위 항목">└</span>
+                    {% else %}<span class="lt-chip-area">{{ it.area_name }}</span>{% endif %}
+                    <span class="lt-chip-title">{{ it.title }}</span>
+                    <span class="lt-chip-dday mono">{{ it.dday }}</span>
+                    <span class="lt-chip-prog mono">{{ it.progress }}%</span>
+                </a>
+                {% endfor %}
+            </div>
             {% endfor %}
         </div>
     </section>
