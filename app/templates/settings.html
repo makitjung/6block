@@ -17,11 +17,11 @@
     <span class="set-chip">템플릿 {{ cat_templates | length }}개</span>
 </div>
 
-<nav class="set-nav" aria-label="설정 그룹 바로가기">
-    <a href="#set-g-behavior">화면·동작</a>
-    <a href="#set-g-structure">시간·구조</a>
-    <a href="#set-g-link">연동</a>
-    <a href="#set-g-server">서버</a>
+<nav class="set-nav" id="set-tabs" aria-label="설정 그룹">
+    <button type="button" class="is-active" data-tab="set-g-behavior">화면·동작</button>
+    <button type="button" data-tab="set-g-structure">시간·구조</button>
+    <button type="button" data-tab="set-g-link">연동</button>
+    <button type="button" data-tab="set-g-server">서버</button>
 </nav>
 
 <section class="set-group" id="set-g-behavior">
@@ -112,7 +112,7 @@
     </div>
 </section>
 
-<section class="set-group" id="set-g-structure">
+<section class="set-group" id="set-g-structure" hidden>
     <h2 class="set-group-title">시간 · 구조 <span class="set-group-sub">하루를 나누는 방식과 구분 체계</span></h2>
 
     <section class="card">
@@ -163,9 +163,8 @@
         <div class="set-bt-actions"><span class="set-bt-msg" id="set-wdc-msg"></span></div>
     </section>
 
-    <div>
-        <section class="card">
-            <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
+    <section class="card">
+        <h2 class="card-title">구분 관리 <span class="card-sub">색은 팔레트에서 고르고, 순서·표시를 바꿉니다</span></h2>
             <div class="set-cat-list" id="set-cat-list">
                 {% for c in categories %}
                 <div class="set-cat-row{% if not c.is_active %} is-hidden{% endif %}" data-id="{{ c.id }}">
@@ -195,12 +194,10 @@
                 </select>
                 <button type="button" class="primary-btn" id="set-cat-add-btn">추가</button>
             </div>
-        </section>
+    </section>
 
-    </div>
-
-    <section class="card set-template-card">
-        <h2 class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트를 만들어 두면 주간 탭에서 한 번에 채웁니다</span></h2>
+    <details class="card set-template-card">
+        <summary class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트를 만들어 두면 주간 탭에서 한 번에 채웁니다</span></summary>
         <div id="set-tpl-list">
             {% for t in cat_templates %}
             <div class="set-tpl" data-id="{{ t.id }}">
@@ -231,10 +228,10 @@
             <input type="text" id="set-tpl-new-name" placeholder="새 템플릿 이름 (예: 집중주)" autocomplete="off">
             <button type="button" class="primary-btn" id="set-tpl-add-btn">추가</button>
         </div>
-    </section>
+    </details>
 </section>
 
-<section class="set-group" id="set-g-link">
+<section class="set-group" id="set-g-link" hidden>
     <h2 class="set-group-title">연동 <span class="set-group-sub">구글 캘린더와 AI · 한 번 맞춰두면 손댈 일이 적습니다</span></h2>
     <div class="split-2">
         <section class="card">
@@ -301,7 +298,7 @@
     </div>
 </section>
 
-<section class="set-group" id="set-g-server">
+<section class="set-group" id="set-g-server" hidden>
     <h2 class="set-group-title">서버 <span class="set-group-sub">코드·환경변수를 바꾼 뒤 반영</span></h2>
     <section class="card">
         <h2 class="card-title">재시작 <span class="card-sub">기록·백업·내보내기는 데이터 탭에 있습니다</span></h2>

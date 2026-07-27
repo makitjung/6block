@@ -1056,6 +1056,26 @@
         postForm('/settings/category/move', { id: id, dir: dir })
             .then((d) => { if (d && d.ok) location.reload(); });
     }
+    // 설정 그룹 탭. 한 번에 한 그룹만 보여 스크롤을 줄인다(고른 탭은 주소 #에 남긴다).
+    function bindSettingsTabs() {
+        const nav = document.getElementById('set-tabs');
+        if (!nav) return;
+        const tabs = [...nav.querySelectorAll('button')];
+        const show = (id) => {
+            tabs.forEach((b) => {
+                const on = b.dataset.tab === id;
+                b.classList.toggle('is-active', on);
+                document.getElementById(b.dataset.tab).hidden = !on;
+            });
+        };
+        tabs.forEach((b) => b.addEventListener('click', () => {
+            show(b.dataset.tab);
+            history.replaceState(null, '', '#' + b.dataset.tab);
+        }));
+        const want = location.hash.slice(1);
+        if (want && tabs.some((b) => b.dataset.tab === want)) show(want);
+    }
+
     function bindSettings() {
         const addBtn = document.getElementById('set-cat-add-btn');
         // 설정·데이터 페이지가 아니면 종료(데이터 탭의 백업·CSV·삭제 버튼도 여기서 바인딩)
@@ -2834,6 +2854,7 @@
 
         bindSlotChecks();
         bindBlockTools();
+        bindSettingsTabs();
         bindSettings();
         bindBlockTimes();
         // 분석 탭: AI 제안은 버튼을 누를 때만 호출한다(화면 로드마다 부르지 않는다).

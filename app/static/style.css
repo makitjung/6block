@@ -982,7 +982,17 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .block-stack-bar { display: flex; justify-content: center; margin-bottom: 10px; }
 .block.blk-collapsed { display: none; }
 /* === 설정 페이지 === */
-.set-cat-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+/* 구분이 많아 한 줄씩 쌓으면 너무 길다. 3열로 나눠 한눈에 들어오게 한다. */
+.set-cat-list {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px; margin-bottom: 12px;
+}
+@media (max-width: 820px) { .set-cat-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .set-cat-list { grid-template-columns: minmax(0, 1fr); } }
+/* 3열에서는 이름칸이 좁아지므로 색 고르기와 버튼을 더 작게 눌러 담는다 */
+.set-cat-list .set-cat-row { gap: 5px; padding: 6px 8px; }
+.set-cat-list .set-cat-tone { width: auto; min-width: 62px; padding: 3px 4px; font-size: 12px; }
+.set-cat-list .set-cat-name { padding: 3px 6px; }
 .set-cat-row {
     display: flex; align-items: center; gap: 8px;
     background: var(--surface-2); border: 1px solid var(--border);
@@ -1528,12 +1538,18 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     padding: 8px 20px; margin-bottom: 6px;
     background: var(--bg); border-bottom: 1px solid var(--border);
 }
-.set-nav a {
-    font-size: 13px; font-weight: 700; color: var(--text-muted); text-decoration: none;
-    padding: 5px 12px; border-radius: var(--r-pill); background: var(--surface-3);
+.set-nav button {
+    font-size: 13px; font-weight: 700; color: var(--text-muted); cursor: pointer;
+    padding: 5px 12px; border: 1px solid transparent;
+    border-radius: var(--r-pill); background: var(--surface-3);
 }
-.set-nav a:hover { color: var(--accent); background: var(--accent-soft); }
-.set-group { padding: 6px 20px 4px; scroll-margin-top: 104px; }
+.set-nav button:hover { color: var(--accent); background: var(--accent-soft); }
+.set-nav button.is-active {
+    color: var(--accent); background: var(--surface);
+    border-color: var(--border-focus); box-shadow: var(--sh-1);
+}
+.set-group { padding: 6px 20px 4px; }
+.set-group[hidden] { display: none; }
 .set-group-title {
     display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
     margin: 10px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
