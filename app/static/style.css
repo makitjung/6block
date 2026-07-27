@@ -1659,11 +1659,13 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     font-size: 13px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
     border: none; border-radius: var(--r-pill); padding: 2px 9px; cursor: pointer;
 }
-/* 하위 항목이 있는 줄은 막대를 겹쳐 그려야 하므로 단계 수(data-lanes)만큼 높이를 준다 */
-.gt-blockrow[data-lanes="1"] { min-height: 46px; }
-.gt-blockrow[data-lanes="2"] { min-height: 58px; }
+/* 막대는 서로 가리지 않게 위아래 칸(lane)에 나눠 담는다. 칸 수만큼 줄을 높인다.
+   블록마다 적어도 두 칸을 두므로 한 줄에 두 항목이 겹치지 않고 들어간다. */
+.gt-blockrow { --lane-h: 26px; min-height: calc(var(--lanes, 2) * var(--lane-h) + 6px); }
 .gt-bar {
-    position: absolute; top: 3px; bottom: 3px; min-width: 6px;
+    position: absolute; min-width: 6px;
+    top: calc(3px + var(--lane, 0) * var(--lane-h, 26px));
+    height: calc(var(--lane-h, 26px) - 4px);
     display: flex; align-items: center; overflow: hidden; cursor: pointer;
     padding: 0; border: 1px solid; border-radius: var(--r-sm); text-align: left;
     z-index: 1;
@@ -1685,12 +1687,8 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
     filter: hue-rotate(var(--gt-hue));
 }
-/* 자리는 상하위 관계로 정한다. 상위 막대 안쪽 아래에 하위 막대가 겹쳐 들어간다. */
-.gt-bar[data-depth="1"] { top: 44%; bottom: 4px; z-index: 2; }
-.gt-bar[data-depth="2"] { top: 66%; bottom: 4px; z-index: 3; }
-/* 하위를 품은 막대는 글자를 위쪽에 붙여 아래 겹친 막대와 겹치지 않게 한다 */
-.gt-bar.is-parent { align-items: flex-start; }
-.gt-bar.is-parent[data-depth="0"] { border-style: dashed; }
+/* 하위를 품은 막대는 테두리를 점선으로 해 잎 항목과 구분한다(자리는 안 겹친다) */
+.gt-bar.is-parent { border-style: dashed; }
 .gt-bar:hover { box-shadow: var(--sh-2); }
 .gt-bar.clip-l { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: dotted; }
 .gt-bar.clip-r { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-style: dotted; }
@@ -1714,6 +1712,12 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* 하위로 들어갈 자리에 왔을 때 끌고 있는 막대도 함께 표시한다 */
 .gt-bar.is-nesting { outline: 2px dashed var(--accent); outline-offset: 2px; }
+/* 방금 끌어 옮긴 막대. 화면 밖·지난 항목으로 나가도 찾을 수 있게 잠깐 깜빡인다 */
+@keyframes gt-found {
+    0%, 100% { box-shadow: none; }
+    35%      { box-shadow: 0 0 0 3px var(--accent); }
+}
+.gt-bar.is-focus { animation: gt-found 1.1s ease-in-out 2; }
 /* 한 항목이 여러 블록에 걸려 있을 때 그 막대들을 잇는 옅은 실선 */
 .gt-tie {
     position: absolute; width: 0; z-index: 0; pointer-events: none;

@@ -47,7 +47,7 @@
     {% if past_count %}
     <button type="button" id="pg-past-toggle" class="ghost-btn" data-count="{{ past_count }}">지난 항목 {{ past_count }}개 보기</button>
     {% endif %}
-    <span class="plan-hint">좌우로 끌면 끈 만큼 기간 이동 · 양 끝을 끌면 기간 조절 · <b>위아래로</b> 끌어 다른 막대에 놓으면 하위계획, 빈 블록 줄에 놓으면 그 블록으로 이동</span>
+    <span class="plan-hint">좌우로 끌면 끈 만큼 기간 이동 · 양 끝을 끌면 기간 조절 · <b>다른 막대 위에서 잠깐 멈추면</b> 그 막대의 하위계획으로 · 다른 블록 줄 빈 자리에 놓으면 그 블록으로 이동</span>
 </div>
 
 <details class="card theme-fold">
@@ -86,7 +86,7 @@
 
 {% else %}
 <div class="plan-scroll">
-    <div class="gantt" data-level="{{ level }}" data-days="{{ span_days }}" style="--cols: {{ columns | length }}">
+    <div class="gantt{% if focus_past %} show-past{% endif %}" data-level="{{ level }}" data-days="{{ span_days }}" style="--cols: {{ columns | length }}">
         {# 해·분기·달이 바뀌는 자리에 세로선 하나. 격자 위에 겹쳐 그려 줄이 늘지 않는다. #}
         {% for col in columns %}{% if col.brk %}
         <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
@@ -113,7 +113,7 @@
            막대를 눌렀을 때 그 줄 안의 편집칸만 열려야 한다). #}
         {% for row in gantt %}
         <div class="gt-group" data-block="{{ row.key }}">
-        <div class="gt-row gt-blockrow{% if not row.key %} is-none{% endif %}" data-lanes="{{ row.lanes }}" data-block="{{ row.key }}">
+        <div class="gt-row gt-blockrow{% if not row.key %} is-none{% endif %}" style="--lanes: {{ row.lanes }}" data-block="{{ row.key }}">
             <div class="gt-lead gt-blocklead">
                 <span class="gt-blockname">{{ row.label }}</span>
                 <span class="gt-blocktime mono">{{ row.time }}</span>
@@ -122,10 +122,10 @@
             <div class="gt-track">
                 {% for b in row.bars %}
                 <button type="button"
-                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}"
-                        data-depth="{{ b.depth }}" data-level="{{ b.level }}"
+                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}{% if b.id == focus_id %} is-focus{% endif %}"
+                        data-level="{{ b.level }}" data-lane="{{ b.lane }}"
                         data-id="{{ b.id }}" data-blocks="{{ b.blocks }}"
-                        style="left: {{ b.left }}%; width: {{ b.width }}%; --gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg"
+                        style="left: {{ b.left }}%; width: {{ b.width }}%; --lane: {{ b.lane }}; --gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg"
                         title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.days }}일 · {{ b.level_label }} · {{ b.progress }}%{% if b.blocks %} · {{ b.blocks }}{% endif %}">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>
                     <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>

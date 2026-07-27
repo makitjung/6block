@@ -323,11 +323,14 @@ def run_checks(db_path):
             if f'data-block="{key}"' in s.split(">", 1)[0] + ">":
                 return s.split('<div class="gt-form"')[0]
         return ""
-    # 같은 블록 줄 안에서 상위(depth 0)와 하위(depth 1) 막대가 겹쳐 그려진다.
+    # 같은 블록 줄에서 기간이 겹치는 막대는 위아래 칸(lane)으로 갈라 서로 가리지 않는다.
     # 아직 블록을 안 준 항목이라 미지정(data-block="") 줄에 함께 들어 있다.
     seg = block_seg(html, "")
-    check("같은 블록 줄에서 상위 막대 안에 하위 막대가 겹쳐 그려짐",
-          'data-depth="0"' in seg and 'data-depth="1"' in seg, seg[:160])
+    lanes = re.findall(r'data-lane="(\d+)"', seg)
+    check("겹치는 막대는 서로 다른 칸에 담긴다",
+          len(lanes) >= 2 and len(set(lanes)) == len(lanes), lanes)
+    check("블록 줄은 적어도 두 칸을 둔다",
+          re.search(r'gt-blockrow[^>]*--lanes: (\d+)', seg).group(1) >= "2", seg[:120])
 
     # 8-1. 블록(B1~B6) 배정과 영역 색
     code, out = post("/plan/item/update", {"id": parent, "block": "B3"})
@@ -424,6 +427,18 @@ def run_checks(db_path):
           and p["start_date"] == "2026-07-27" and c["start_date"] == "2026-08-27",
           {"before": before, "parent": p["start_date"], "child": c["start_date"]})
     post("/plan/item/shift", {"id": parent, "days": "-7"})
+    # 끌어서 보이는 기간 밖으로 보내도 사라지지 않는다. focus 를 주면 그 항목이 보이는
+    # 자리로 화면이 옮겨 가고, 지난 항목이 됐으면 접힘도 풀린다.
+    _c, h = get(f"/plan?level=month&anchor=2026-08-01&focus={child}")
+    check("옮긴 항목이 화면 밖이면 그 자리로 따라간다",
+          f'data-id="{child}"' in h and "is-focus" in h)
+    _c, o = post("/plan/item/add", {"area_id": areas[0], "title": "지나간 막대",
+                                    "start": "2020-01-01", "end": "2020-01-31"})
+    gone = o.get("id")
+    _c, h = get(f"/plan?level=month&anchor=2026-08-01&focus={gone}")
+    check("지난 항목으로 나가도 접히지 않고 보인다",
+          'class="gantt show-past"' in h and "지나간 막대" in h)
+    post("/plan/item/delete", {"id": gone})
 
     code, out = post("/plan/item/add", {"area_id": areas[1], "title": "체력 만들기",
                                         "start": "2026-08-01", "end": "2026-12-31"})

@@ -199,7 +199,27 @@ def _lt_rollup(conn, item_id: int | None):
         cur = pid
 
 
-MAX_LANE = 2      # 겹쳐 그릴 하위 단계(0=상위, 1·2=하위). 더 깊은 항목은 2단계로 눌러 그린다.
+# 블록 한 줄에 적어도 이만큼 칸을 둔다. 기간이 겹치는 막대는 아래 칸으로 내려 서로 가리지 않는다.
+MIN_LANES = 2
+
+
+def _assign_lanes(bars: list[dict]) -> int:
+    """한 줄 안에서 막대를 위아래 칸에 나눠 담는다. 쓴 칸 수(최소 MIN_LANES)를 돌려준다.
+
+    시작이 이른 것부터 훑으며 아직 안 겹치는 첫 칸에 넣는다. 날짜는 'YYYY-MM-DD'라
+    문자열 비교가 곧 날짜 비교다. 화면에 보이는 구간(vs~ve)으로 재야 눈에 겹치지 않는다.
+    """
+    ends: list[str] = []
+    for b in sorted(bars, key=lambda x: (x["vs"], x["ve"], x["id"])):
+        for i, end in enumerate(ends):
+            if b["vs"] > end:
+                ends[i] = b["ve"]
+                b["lane"] = i
+                break
+        else:
+            b["lane"] = len(ends)
+            ends.append(b["ve"])
+    return max(len(ends), MIN_LANES)
 
 # 막대 색 진하기는 기간 길이가 아니라 계층 단계로 정한다. 최상위가 가장 진하고 하위로 갈수록 연하다.
 MAX_LEVEL = 3
@@ -270,8 +290,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
 
     색은 영역 톤(tone), 진하기는 계층 단계(level·최상위가 가장 진함), 색조 비틀기(hue)는
     같은 영역 안에서 뿌리끼리 구분하려고 준다. 한 뿌리의 하위들은 뿌리와 같은 색조를 쓴다.
-    상위·하위는 한 줄에서 겹쳐 그리며, depth 는 그 줄에 함께 있는 조상 수로만 센다
-    (하위가 다른 블록으로 빠지면 그 줄에서는 다시 맨 위 단계가 된다).
+    상하위 관계는 색 진하기로만 나타내고, 자리는 겹치지 않게 위아래 칸(lane)으로 나눈다.
     left/width 는 보이는 기간 전체에 대한 퍼센트라 템플릿이 계산 없이 그린다.
     """
     total = (span_end - span_start).days + 1
@@ -303,6 +322,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row = dict(it)
         row["own_blocks"] = _split_blocks(it["block_label"])
         row["blocks"] = ",".join(blocks)
+        row["vs"], row["ve"] = vs.isoformat(), ve.isoformat()   # 칸 나누기용(보이는 구간)
         row["level"] = min(level, MAX_LEVEL)
         row["level_label"] = LEVEL_LABELS[min(level, MAX_LEVEL)]
         row["hue"] = hue
@@ -321,18 +341,15 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
 
     bars_by_block: dict[str, list] = {r["key"]: [] for r in rows}
 
-    def walk(it, parent_blocks: list[str], parent_depth: dict, level: int, hue: int):
+    def walk(it, parent_blocks: list[str], level: int, hue: int):
         blocks = _split_blocks(it["block_label"]) or parent_blocks or [""]
-        # 상위가 없는 줄에 새로 나타난 막대는 그 줄에서 맨 위 단계부터 다시 센다.
-        depth = {k: min(parent_depth[k] + 1, MAX_LANE) if k in parent_depth else 0
-                 for k in blocks}
         b = bar(it, blocks, level, hue)
         if b["visible"]:
             for k in blocks:
-                bars_by_block[k].append({**b, "depth": depth[k]})
+                bars_by_block[k].append({**b})   # 줄마다 칸(lane)이 달라 사본으로 담는다
         for c in children.get(it["id"], []):
             if overlaps(c):
-                walk(c, blocks, depth, level + 1, hue)
+                walk(c, blocks, level + 1, hue)
 
     seen: dict[int, int] = {}       # 영역마다 뿌리를 몇 개 봤는지(색조를 돌려 쓰려고)
     for it in children.get(None, []):
@@ -340,11 +357,11 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
             continue
         n = seen.get(it["area_id"], 0)
         seen[it["area_id"]] = n + 1
-        walk(it, [], {}, 0, HUE_STEPS[n % len(HUE_STEPS)])
+        walk(it, [], 0, HUE_STEPS[n % len(HUE_STEPS)])
 
     # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
     return [{**row,
-             "lanes": max((b["depth"] for b in bars_by_block[row["key"]]), default=0),
+             "lanes": _assign_lanes(bars_by_block[row["key"]]),
              "bars": bars_by_block[row["key"]]}
             for row in rows]
 
@@ -628,11 +645,26 @@ async def plan_item_delete(request: Request):
 
 
 @router.get("/plan")
-def plan_view(request: Request, level: str = "month", anchor: str = ""):
+def plan_view(request: Request, level: str = "month", anchor: str = "", focus: str = ""):
     # 기본은 월 단위(오늘이 든 분기의 3개월). 연·분기는 축소로, 주는 확대로 간다.
     if level not in PLAN_LEVELS:
         level = "month"
     a = _parse_anchor(anchor)
+    # focus = 방금 끌어 옮긴 항목. 그 항목이 보이는 기간 밖으로 나갔으면 화면을 그쪽으로
+    # 옮겨 준다. 안 그러면 끌던 막대가 그냥 사라진 것처럼 보인다(지난 항목도 마찬가지라
+    # 아래에서 focus_past 로 '지난 항목 보기'를 자동으로 켠다).
+    focus_id = int(focus) if focus.isdigit() else 0
+    if focus_id:
+        with get_conn() as conn:
+            r = conn.execute(
+                "SELECT start_date, end_date FROM lt_item WHERE id = ?", (focus_id,)
+            ).fetchone()
+        fs = _parse_date(r["start_date"]) if r else None
+        fe = _parse_date(r["end_date"]) if r else None
+        if fs and fe:
+            seen_cols, _hd = _plan_columns(level, a)
+            if not (fs <= seen_cols[-1]["end"] and fe >= seen_cols[0]["start"]):
+                a = fs
     cols, header = _plan_columns(level, a)
     span_start, span_end = cols[0]["start"], cols[-1]["end"]
     with get_conn() as conn:
@@ -656,6 +688,9 @@ def plan_view(request: Request, level: str = "month", anchor: str = ""):
         ) if r["area_id"] in ids]
     # 기본으로 접히는 지난 항목 수(0이면 '지난 항목 보기' 버튼도 내보내지 않는다)
     past_count = sum(1 for row in gantt for b in row["bars"] if b["past"])
+    # 방금 옮긴 항목이 지난 항목이 됐으면 접힌 채로 두지 않고 펼쳐서 보여 준다
+    focus_past = any(b["past"] for row in gantt for b in row["bars"]
+                     if b["id"] == focus_id)
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -681,6 +716,8 @@ def plan_view(request: Request, level: str = "month", anchor: str = ""):
             "levels": PLAN_LEVELS,
             "level_labels": PLAN_LEVEL_LABELS,
             "gantt": gantt,
+            "focus_id": focus_id,
+            "focus_past": focus_past,
             "all_items": all_items,
             "core_blocks": CORE_BLOCKS,
             "tones": TONES,
