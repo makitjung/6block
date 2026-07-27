@@ -1419,23 +1419,31 @@
             btn.addEventListener('click', () => openForm(btn.dataset.area, '', '')));
 
         gantt.querySelectorAll('.gt-form').forEach((form) => {
+            let sending = false;    // 보내는 중 다시 누르면 같은 항목이 2개 저장된다
             const submit = () => {
+                if (sending) return;
                 const title = (form.querySelector('.gt-f-title').value || '').trim();
                 const start = form.querySelector('.gt-f-start').value;
                 const end = form.querySelector('.gt-f-end').value;
                 if (!title) { toast('항목 이름을 입력하세요'); return; }
                 if (!start || !end) { toast('시작일과 종료일을 고르세요'); return; }
+                sending = true;
                 postForm('/plan/item/add', {
                     area_id: form.dataset.area, title: title, start: start, end: end,
                     parent_id: form.querySelector('.gt-f-parent').value,
                 }).then((d) => {
-                    if (d && d.ok) location.reload();
-                    else toast((d && d.error) || '추가 실패');
+                    if (d && d.ok) { location.reload(); return; }   // 성공하면 그대로 잠근다
+                    sending = false;
+                    toast((d && d.error) || '추가 실패');
                 });
             };
             form.querySelector('.gt-f-save')?.addEventListener('click', submit);
+            // 한글 IME 조합 Enter(229/isComposing)는 무시해 2회 추가를 막는다.
             form.querySelector('.gt-f-title')?.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); submit(); }
+                if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+                    e.preventDefault();
+                    submit();
+                }
             });
             form.querySelector('.gt-f-cancel')?.addEventListener('click', () => { form.hidden = true; });
             // 길이 버튼: 어느 화면 단위에서든 1주·1개월·1분기·1년짜리 막대를 바로 만든다.
@@ -1509,6 +1517,15 @@
                 const b = ev.currentTarget;
                 openForm(b.dataset.area, b.dataset.parent, b.dataset.title);
             });
+        });
+
+        // 지난 항목(종료일이 오늘 이전) 접기·펴기. 새로고침하면 다시 접힌 상태로 돌아간다.
+        const pastBtn = document.getElementById('pg-past-toggle');
+        pastBtn?.addEventListener('click', () => {
+            const on = gantt.classList.toggle('show-past');
+            pastBtn.textContent = '지난 항목 ' + pastBtn.dataset.count
+                                + (on ? '개 숨기기' : '개 보기');
+            pastBtn.classList.toggle('is-on', on);
         });
 
         // 현재 기간 열이 화면에 들어오도록 가로 스크롤(항목 이름 열에 가리지 않게)

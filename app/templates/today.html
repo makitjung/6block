@@ -19,6 +19,24 @@
         </div>
     </section>
 
+    {% if lt_today %}
+    <!-- 이 날짜에 걸친 장기 항목(장기 탭 계획 막대). 읽기 전용 띠, 누르면 장기 탭으로 -->
+    <section class="lt-strip" aria-label="이 날짜에 걸친 장기 항목">
+        <span class="lt-strip-label">장기</span>
+        <div class="lt-strip-list">
+            {% for it in lt_today %}
+            <a class="lt-chip" href="/plan?level=month&amp;anchor={{ date_str }}"
+               title="{{ it.area_name }} · {{ it.title }} · 진척 {{ it.progress }}% · {{ it.dday }}">
+                <span class="lt-chip-area">{{ it.area_name }}</span>
+                <span class="lt-chip-title">{{ it.title }}</span>
+                <span class="lt-chip-dday mono">{{ it.dday }}</span>
+                <span class="lt-chip-prog mono">{{ it.progress }}%</span>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
     <!-- 오늘 컨텍스트: 목표 3 · 계획 3 + 외부 일정·할 일(최상단 1회) + 빠른 수집함 -->
     <section class="context-card">
         <div class="goal-plan">

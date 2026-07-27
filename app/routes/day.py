@@ -92,6 +92,31 @@ def _day_agenda(blocks, d, is_today):
     return cal_events, task_list, block_events
 
 
+def _lt_items_on(conn, d) -> list[dict]:
+    """그 날짜에 걸친 장기 항목(장기 탭 계획 막대). 오늘 탭 위 한 줄 띠에 쓴다.
+
+    장기 탭에서 만든 기간이 실제로 그날을 덮는 것만 골라, 남은 일수(D-n)를 붙여 준다.
+    """
+    date_str = d.strftime("%Y-%m-%d")
+    rows = conn.execute(
+        "SELECT i.id, i.title, i.end_date, i.progress, a.name AS area_name "
+        "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
+        "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
+        "ORDER BY a.display_order, i.end_date, i.id",
+        (date_str, date_str),
+    ).fetchall()
+    out = []
+    for r in rows:
+        end = _parse_date(r["end_date"])
+        left = (end - d).days if end else 0
+        out.append({
+            "id": r["id"], "title": r["title"], "area_name": r["area_name"],
+            "progress": r["progress"],
+            "dday": "D-day" if left <= 0 else f"D-{left}",
+        })
+    return out
+
+
 def _day_view(request: Request, date_str: str):
     d = datetime.strptime(date_str, "%Y-%m-%d").date()
     prev_date = (d - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -128,6 +153,8 @@ def _day_view(request: Request, date_str: str):
             "SELECT id, text FROM inbox WHERE done = 0 ORDER BY id DESC"
         ).fetchall()
         # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
+        # 그날에 걸친 장기 계획(장기 탭 막대)을 오늘 화면 위에 띠로 노출
+        lt_today = _lt_items_on(conn, d)
         due_reflections = conn.execute(
             "SELECT id, kind, title, text, tags, event_date, review_note FROM reflection "
             "WHERE (review_date = ? AND source_id IS NULL) "
@@ -202,6 +229,7 @@ def _day_view(request: Request, date_str: str):
             "goal_tags": goal_tags,
             "plan_tags": plan_tags,
             "grat_tags": grat_tags,
+            "lt_today": lt_today,
             "themes_by_label": themes_by_label,
             "block_name_by_id": block_name_by_id,
             "block_events": block_events,

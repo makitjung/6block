@@ -253,6 +253,7 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
     left/width 는 보이는 기간 전체에 대한 퍼센트, depth 는 겹칠 단계라 템플릿이 계산 없이 그린다.
     """
     total = (span_end - span_start).days + 1
+    today = datetime.now(KST).date()
     rows_by_area: dict[int, list] = {a["id"]: [] for a in areas}
     children: dict[int | None, list] = {}
     for r in conn.execute(
@@ -286,6 +287,7 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["has_children"] = bool(children.get(it["id"]))
         row["span_class"], row["span_label"] = _span_class(s, e)
         row["days"] = (e - s).days + 1
+        row["past"] = e < today        # 종료일이 지난 항목은 화면에서 기본으로 접는다
         return row
 
     def walk(it, depth: int, bars: list):
@@ -306,6 +308,7 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
                 "progress": root["progress"],
                 "span_class": root["span_class"],
                 "span_label": root["span_label"],
+                "past": root["past"],
                 "lanes": max(b["depth"] for b in bars),
                 "bars": [b for b in bars if b["visible"]],
                 "edits": bars,
@@ -628,6 +631,10 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
             "ORDER BY is_active DESC, display_order"
         ).fetchall()
         gantt = _gantt_areas(conn, areas, span_start, span_end)
+    # 기본으로 접히는 지난 항목 수(0이면 '지난 항목 보기' 버튼도 내보내지 않는다)
+    past_count = sum(
+        1 for ar in gantt for r in ar["rows"] for b in r["bars"] if b["past"]
+    )
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -653,6 +660,7 @@ def plan_view(request: Request, level: str = "year", anchor: str = ""):
             "levels": PLAN_LEVELS,
             "level_labels": PLAN_LEVEL_LABELS,
             "gantt": gantt,
+            "past_count": past_count,
             "span_start": span_start.strftime("%Y-%m-%d"),
             "span_end": span_end.strftime("%Y-%m-%d"),
             "default_start": default_start.strftime("%Y-%m-%d"),

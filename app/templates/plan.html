@@ -37,6 +37,9 @@
         <span class="pl-key" data-span="s"></span>단기 1개월↓
         <span class="pl-key" data-span="xs"></span>초단기 1주↓
     </span>
+    {% if past_count %}
+    <button type="button" id="pg-past-toggle" class="ghost-btn" data-count="{{ past_count }}">지난 항목 {{ past_count }}개 보기</button>
+    {% endif %}
     <span class="plan-hint">막대 가운데를 끌면 기간 이동 · 양 끝을 끌면 기간 조절 · 다른 막대 위에 놓으면 하위계획 · 영역 줄에 놓으면 최상위</span>
 </div>
 
@@ -77,8 +80,10 @@
                 {% for col in columns %}
                 <div class="gt-col {% if col.current %}is-now{% endif %}">
                     <span class="gt-col-label">
+                        {% if loop.first %}<a class="gt-nav" href="/plan?level={{ level }}&anchor={{ prev_anchor }}" title="이전 기간 보기" aria-label="이전 기간 보기">‹</a>{% endif %}
                         {% if col.drill_level %}<a class="gt-drill" href="/plan?level={{ col.drill_level }}&anchor={{ col.drill_anchor }}" title="{{ col.label }} 펼치기">{{ col.label }}</a>{% else %}{{ col.label }}{% endif %}
                         {% if col.week_link %}<a class="gt-week" href="/week/{{ col.week_link }}" title="이 주의 주간 화면">↗</a>{% endif %}
+                        {% if loop.last %}<a class="gt-nav" href="/plan?level={{ level }}&anchor={{ next_anchor }}" title="다음 기간 보기" aria-label="다음 기간 보기">›</a>{% endif %}
                     </span>
                     {% if col.sub %}<span class="gt-col-sub mono">{{ col.sub }}</span>{% endif %}
                 </div>
@@ -110,7 +115,7 @@
         </div>
 
         {% for it in area.rows %}
-        <div class="gt-row gt-itemrow" data-lanes="{{ it.lanes }}" data-id="{{ it.id }}">
+        <div class="gt-row gt-itemrow{% if it.past %} is-past{% endif %}" data-lanes="{{ it.lanes }}" data-id="{{ it.id }}">
             <div class="gt-lead">
                 <span class="gt-span" data-span="{{ it.span_class }}">{{ it.span_label }}</span>
                 <span class="gt-title">{{ it.title }}</span>
@@ -119,7 +124,7 @@
             <div class="gt-track">
                 {% for b in it.bars %}
                 <button type="button"
-                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}"
+                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}"
                         data-depth="{{ b.depth }}" data-span="{{ b.span_class }}"
                         style="left: {{ b.left }}%; width: {{ b.width }}%"
                         data-id="{{ b.id }}"
