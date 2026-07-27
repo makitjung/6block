@@ -1940,10 +1940,29 @@
         };
         const HOLD = 350;   // 다른 막대 위에서 이만큼 멈춰 있으면 '하위로 넣기'로 잡는다
         const REARM = 25;   // 그만큼 움직이면 멈춤 판정을 처음부터 다시 센다
-        const SNAP = 7;     // 끌 때는 주 단위로 붙는다(정확한 날짜는 편집칸에 적는다)
         const DETACH = 20;  // 하위 막대를 이만큼 곧장 아래로 끌면 상위에서 뗀다
-        // 끈 픽셀을 주 단위 날수로. 하루 단위로 떨리지 않게 7일씩 끊어 붙인다.
-        const dragDays = (dx) => Math.round(dx * daysPerPx(drag.track) / SNAP) * SNAP;
+        const DAY = 86400000;
+        const iso = (s) => new Date(s + 'T00:00:00');
+        // 그 날짜에서 가장 가까운 '그 요일'로 옮긴다(0=월 … 6=일)
+        const toWd = (d, want) => {
+            const wd = (d.getDay() + 6) % 7;
+            const fwd = (want - wd + 7) % 7;
+            const back = (wd - want + 7) % 7;
+            const out = new Date(d);
+            out.setDate(out.getDate() + (fwd <= back ? fwd : -back));
+            return out;
+        };
+        // 끈 픽셀을 날수로. 옮긴 자리에서 시작은 월요일, 종료는 일요일에 맞춘다.
+        // (7일씩 끊는 게 아니라 주의 경계에 붙는다. 원래 요일이 어중간해도 주에 맞춰진다.)
+        const dragDays = (dx) => {
+            const edge = drag.edge === 'end' ? 'end' : 'start';
+            const src = drag.bar.dataset[edge];
+            if (!src) return 0;
+            const from = iso(src);
+            const moved = new Date(from);      // 자정끼리 재야 시각 잔여분에 하루가 안 밀린다
+            moved.setDate(moved.getDate() + Math.round(dx * daysPerPx(drag.track)));
+            return Math.round((toWd(moved, edge === 'end' ? 6 : 0) - from) / DAY);
+        };
         // 그 날수를 다시 픽셀로. 끄는 동안 막대를 이 값만큼만 움직여야 "보이는 자리 = 놓일 자리"다.
         const snapPx = (dx) => {
             const dpp = daysPerPx(drag.track);
@@ -1954,19 +1973,22 @@
         tip.className = 'gt-tip';
         tip.hidden = true;
         gantt.appendChild(tip);
-        const md = (iso, add) => {
-            const d = new Date(iso + 'T00:00:00');
+        const WD = ['월', '화', '수', '목', '금', '토', '일'];
+        const at = (src, add) => {
+            const d = iso(src);
             d.setDate(d.getDate() + add);
-            return (d.getMonth() + 1) + '/' + d.getDate();
+            return d;
         };
+        const md = (d, yr) => (yr ? String(d.getFullYear()).slice(2) + '.' : '')
+            + (d.getMonth() + 1) + '/' + d.getDate() + '(' + WD[(d.getDay() + 6) % 7] + ')';
         const showTip = (days, px) => {
             const s = drag.bar.dataset.start;
             const e = drag.bar.dataset.end;
             if (!s || !e) return;
-            const ds = drag.edge === 'end' ? 0 : days;
-            const de = drag.edge === 'start' ? 0 : days;
-            const wk = days / SNAP;
-            tip.textContent = (wk > 0 ? '+' : '') + wk + '주 · ' + md(s, ds) + '~' + md(e, de);
+            const a = at(s, drag.edge === 'end' ? 0 : days);
+            const b = at(e, drag.edge === 'start' ? 0 : days);
+            const yr = a.getFullYear() !== b.getFullYear();   // 해를 넘기면 연도도 적는다
+            tip.textContent = md(a, yr) + '~' + md(b, yr);
             const base = gantt.getBoundingClientRect();
             const top = drag.px.top - base.top;
             tip.style.left = Math.max(0, drag.px.left - base.left + px) + 'px';

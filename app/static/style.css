@@ -51,8 +51,8 @@
 
     /* 장기 간트 막대: 색은 영역(--gt-tone), 진하기는 계층 단계. 최상위가 가장 진하다.
        글자는 톤을 거의 검정에 섞어 네 단계 어디에서든 읽히게 한다. */
-    --gt-mix-0: 64%;  --gt-mix-1: 44%;  --gt-mix-2: 26%;  --gt-mix-3: 12%;
-    --gt-tx-mix: 34%;  --gt-tx-base: #0b0d10;
+    --gt-mix-0: 78%;  --gt-mix-1: 42%;  --gt-mix-2: 14%;
+    --gt-tx-mix: 14%;  --gt-tx-base: #0b0d10;
 
     /* shape */
     --r-sm: 8px;
@@ -109,8 +109,8 @@
     --cal-yellow: #fdd663;
     --cal-red: #f28b82;
     /* 다크에서는 톤 자체가 밝은 파스텔이라 덜 섞고, 글자는 흰색 쪽으로 밝힌다. */
-    --gt-mix-0: 44%;  --gt-mix-1: 30%;  --gt-mix-2: 18%;  --gt-mix-3: 9%;
-    --gt-tx-mix: 30%;  --gt-tx-base: #ffffff;
+    --gt-mix-0: 46%;  --gt-mix-1: 26%;  --gt-mix-2: 10%;
+    --gt-tx-mix: 12%;  --gt-tx-base: #ffffff;
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --sh-2: 0 2px 6px rgba(0, 0, 0, 0.5);
     --sh-3: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -1678,7 +1678,6 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 .gt-bar[data-level="1"], .gt-e-lv[data-level="1"], .pl-key[data-level="1"] { --gt-mix: var(--gt-mix-1); }
 .gt-bar[data-level="2"], .gt-e-lv[data-level="2"], .pl-key[data-level="2"] { --gt-mix: var(--gt-mix-2); }
-.gt-bar[data-level="3"], .gt-e-lv[data-level="3"], .pl-key[data-level="3"] { --gt-mix: var(--gt-mix-3); }
 .gt-bar {
     background: color-mix(in srgb, var(--gt-tone) var(--gt-mix), var(--surface));
     border-color: var(--gt-tone);

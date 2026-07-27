@@ -304,9 +304,9 @@ def run_checks(db_path):
     check("기간 구분(장기·중기·단기)은 색에 쓰지 않음",
           'data-span=' not in html and "초단기" not in html)
     levels = dict(re.findall(r'class="gt-e-lv" data-level="(\d)"[^>]*>([^<·]+)·', html))
-    check("계층 단계로 진하기를 나눔",
-          levels.get("0", "").strip() == "최상위" and levels.get("1", "").strip() == "하위 1단계",
-          levels)
+    check("계층 단계로 진하기를 나눔(3단계)",
+          levels.get("0", "").strip() == "최상위" and levels.get("1", "").strip() == "하위"
+          and "3" not in levels, levels)
     # 같은 영역에서 뿌리가 여럿이면 색조를 조금씩 돌려 서로 구분한다
     _c, o = post("/plan/item/add", {"area_id": areas[0], "title": "같은영역 두번째",
                                     "start": "2026-08-01", "end": "2026-09-30"})
@@ -386,6 +386,20 @@ def run_checks(db_path):
                    re.findall(r'data-lane="(\d+)"[^>]*data-id="(\d+)"', seg))
     check("상위가 하위보다 위 칸에 놓인다",
           lane_of.get(str(parent)) < lane_of.get(str(child)), lane_of)
+    # 한 줄 안에서는 영역 표시 순서대로 위에서 아래로 놓인다
+    _c, o = post("/plan/item/add", {"area_id": areas[3], "block": "B3", "title": "뒤 영역",
+                                    "start": "2026-08-05", "end": "2026-08-20"})
+    late = o.get("id")
+    _c, o = post("/plan/item/add", {"area_id": areas[1], "block": "B3", "title": "앞 영역",
+                                    "start": "2026-09-01", "end": "2026-09-20"})
+    early = o.get("id")
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    lane2 = dict((m[1], int(m[0])) for m in
+                 re.findall(r'data-lane="(\d+)"[^>]*data-id="(\d+)"', block_seg(h, "B3")))
+    check("영역 순서가 빠른 항목이 위 칸에 놓인다",
+          lane2.get(str(early), 9) < lane2.get(str(late), 9), lane2)
+    post("/plan/item/delete", {"id": late})
+    post("/plan/item/delete", {"id": early})
     post("/plan/item/update", {"id": child, "block": ""})
     # 막대 색 = 영역 톤, 진하기 = 기간 구분(--gt-tone 과 data-span 이 함께 실린다)
     check("막대에 영역 색이 실림", "--gt-tone: var(--tone-" in h)

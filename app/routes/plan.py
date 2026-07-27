@@ -242,15 +242,21 @@ def _assign_lanes(bars: list[dict]) -> int:
         lanes[i].append((b["vs"], b["ve"]))
         b["lane"] = i
 
-    # 하위를 거느린 묶음부터 자리를 잡고 그 칸 범위를 통째로 잡아 둔다(사이에 남이 못 낀다).
-    # 낱개 항목은 잡히지 않은 칸에서 기간이 안 겹치면 서로 칸을 나눠 써 줄이 낮아진다.
+    # 영역 표시 순서대로 위에서 아래로 놓는다. 같은 영역 안에서는 기간이 안 겹치면 칸을
+    # 나눠 쓰고, 영역이 바뀌면 지금까지 쓴 칸 아래로 내려 영역끼리 섞이지 않게 한다.
+    # 묶음(상위+하위)은 연속한 칸 범위를 통째로 잡아 사이에 남이 못 끼게 한다.
     ordered = sorted(fams.values(),
-                     key=lambda f: (len(f) < 2, min(b["vs"] for b in f), f[0]["id"]))
+                     key=lambda f: (f[0]["area_order"], min(b["vs"] for b in f),
+                                    f[0]["id"]))
+    floor, seen_area = 0, None
     for fam in ordered:
+        if seen_area is not None and fam[0]["area_order"] != seen_area:
+            floor = max((b["lane"] for b in bars if "lane" in b), default=-1) + 1
+        seen_area = fam[0]["area_order"]
         members = sorted(fam, key=lambda x: (x["level"], x["vs"], x["ve"], x["id"]))
         if len(members) < 2:
             b = members[0]
-            i = 0
+            i = floor
             while not open_at(i, b):
                 i += 1
             put(i, b)
@@ -267,7 +273,7 @@ def _assign_lanes(bars: list[dict]) -> int:
                 k += 1
             span[k].append((b["vs"], b["ve"]))
             rel[b["id"]] = k
-        base = 0
+        base = floor
         while not all(open_at(base + rel[b["id"]], b) for b in members):
             base += 1
         for b in members:
@@ -303,8 +309,9 @@ def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):
         )
 
 # 막대 색 진하기는 기간 길이가 아니라 계층 단계로 정한다. 최상위가 가장 진하고 하위로 갈수록 연하다.
-MAX_LEVEL = 3
-LEVEL_LABELS = ["최상위", "하위 1단계", "하위 2단계", "하위 3단계"]
+# 3단계까지만 나눠 진하기 차이를 뚜렷하게 둔다(더 깊은 하위는 마지막 단계로 눌러 그린다).
+MAX_LEVEL = 2
+LEVEL_LABELS = ["최상위", "하위", "하위2"]
 
 # 같은 영역에서 계획을 여럿 돌릴 때 서로 구분되도록 뿌리(최상위 항목)마다 색조를 조금씩 돌린다(도).
 # 영역 색 계열은 알아볼 만큼만 비틀고, 한 항목의 하위들은 뿌리와 같은 색조를 쓴다.
@@ -378,6 +385,8 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
     today = datetime.now(KST).date()
     tones = {a["id"]: a["tone"] for a in areas}
     names = {a["id"]: a["name"] for a in areas}
+    # 영역 표시 순서(프로젝트·투자·학습…). 한 줄 안에서 이 순서대로 위에서 아래로 놓는다.
+    orders = {a["id"]: i for i, a in enumerate(areas)}
     rows = _block_rows()
     children: dict[int | None, list] = {}
     for r in conn.execute(
@@ -418,6 +427,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["past"] = e < today        # 종료일이 지난 항목은 화면에서 기본으로 접는다
         row["tone"] = tones.get(it["area_id"], "blue")
         row["area_name"] = names.get(it["area_id"], "")
+        row["area_order"] = orders.get(it["area_id"], 999)
         return row
 
     bars_by_block: dict[str, list] = {r["key"]: [] for r in rows}
