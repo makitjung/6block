@@ -29,7 +29,11 @@ def _month_last(y: int, m: int) -> date:
 
 
 def _plan_columns(level: str, anchor: date):
-    """(열 목록, 헤더 라벨). 열은 key·label·sub·current·week_link·drill_*·start·end 를 가진다.
+    """(열 목록, 헤더 라벨). 보고 있는 기간이 왼쪽에서 두 번째 열에 오도록 앞에 하나를 더 둔다.
+
+    연은 5칸, 분기·월·주는 4칸이다. 열은 key·label·sub·current·week_link·drill_*·start·end
+    와 함께 brk(더 큰 단위가 바뀌는 자리의 이름)·brk_level(year|quarter|month)을 가진다.
+    brk 는 첫 열에는 달지 않는다(왼쪽 끝에는 그을 자리가 없다).
 
     drill_level/drill_anchor: 그 열 머리글을 누르면 들어갈 다음(더 잘은) 단위와 anchor.
     start/end: 그 열이 덮는 실제 날짜 구간(date). 간트 막대 위치 계산에 쓴다.
@@ -37,73 +41,93 @@ def _plan_columns(level: str, anchor: date):
     today = datetime.now(KST).date()
     cols: list[dict] = []
     if level == "year":
-        y0 = anchor.year
-        for y in range(y0, y0 + 6):
+        y0 = anchor.year - 1                    # 보고 있는 해가 두 번째
+        for y in range(y0, y0 + 5):
             cols.append({"key": str(y), "label": str(y), "sub": "",
                          "current": y == today.year, "week_link": None,
                          "drill_level": "quarter", "drill_anchor": f"{y}-01-01",
-                         "start": date(y, 1, 1), "end": date(y, 12, 31)})
-        header = f"{y0}–{y0 + 5}"
+                         "start": date(y, 1, 1), "end": date(y, 12, 31),
+                         "brk": "", "brk_level": ""})
+        header = f"{y0}–{y0 + 4}"
     elif level == "quarter":
-        y = anchor.year
-        for q in range(1, 5):
-            m0 = (q - 1) * 3 + 1
+        q_start = date(anchor.year, (anchor.month - 1) // 3 * 3 + 1, 1)
+        for i in range(4):
+            s = _add_months(q_start, (i - 1) * 3)
+            y, m0 = s.year, s.month
+            q = (m0 - 1) // 3 + 1
             cols.append({"key": f"{y}-Q{q}", "label": f"{q}분기",
-                         "sub": f"{m0}~{q * 3}월",
+                         "sub": f"{m0}~{m0 + 2}월",
                          "current": y == today.year and (today.month - 1) // 3 + 1 == q,
                          "week_link": None,
                          "drill_level": "month",
                          "drill_anchor": f"{y}-{m0:02d}-01",
-                         "start": date(y, m0, 1), "end": _month_last(y, q * 3)})
-        header = f"{y}년"
+                         "start": s, "end": _month_last(y, m0 + 2),
+                         "brk": f"{y}년" if (q == 1 and i) else "",
+                         "brk_level": "year" if (q == 1 and i) else ""})
+        header = _span_header(cols)
     elif level == "month":
-        # 기본은 anchor가 속한 분기의 3개월만 포커싱해 보여준다(← → 로 분기 단위 이동).
-        y = anchor.year
-        q = (anchor.month - 1) // 3 + 1
-        m0 = (q - 1) * 3 + 1
-        for m in range(m0, m0 + 3):
+        m_start = date(anchor.year, anchor.month, 1)
+        for i in range(4):
+            s = _add_months(m_start, i - 1)
+            y, m = s.year, s.month
+            if m == 1:
+                brk, lv = f"{y}년", "year"
+            elif m in (4, 7, 10):
+                brk, lv = f"{(m - 1) // 3 + 1}분기", "quarter"
+            else:
+                brk, lv = "", ""
             cols.append({"key": f"{y}-{m:02d}", "label": f"{m}월", "sub": "",
                          "current": y == today.year and m == today.month,
                          "week_link": None,
                          "drill_level": "week", "drill_anchor": f"{y}-{m:02d}-01",
-                         "start": date(y, m, 1), "end": _month_last(y, m)})
-        header = f"{y}년 {q}분기 ({m0}~{m0 + 2}월)"
+                         "start": s, "end": _month_last(y, m),
+                         "brk": brk if i else "", "brk_level": lv if i else ""})
+        header = _span_header(cols)
     else:  # week
-        y, m = anchor.year, anchor.month
-        first = date(y, m, 1)
-        last = _month_last(y, m)
-        monday = first - timedelta(days=first.weekday())
         cur_monday = today - timedelta(days=today.weekday())
-        while monday <= last:
-            key = monday.strftime("%Y-%m-%d")
+        first = anchor - timedelta(days=anchor.weekday() + 7)   # 보고 있는 주가 두 번째
+        prev_month = None
+        for i in range(4):
+            monday = first + timedelta(weeks=i)
             end = monday + timedelta(days=6)
+            if prev_month is None or monday.month == prev_month:
+                brk, lv = "", ""
+            elif monday.month == 1:
+                brk, lv = f"{monday.year}년", "year"
+            else:
+                brk, lv = f"{monday.month}월", "month"
+            prev_month = monday.month
+            key = monday.strftime("%Y-%m-%d")
             cols.append({"key": key, "label": f"{monday.month}/{monday.day}",
                          "sub": f"~{end.month}/{end.day}",
                          "current": monday == cur_monday, "week_link": key,
                          "drill_level": None, "drill_anchor": None,
-                         "start": monday, "end": end})
-            monday += timedelta(days=7)
-        header = f"{y}년 {m}월"
+                         "start": monday, "end": end,
+                         "brk": brk, "brk_level": lv})
+        header = _span_header(cols)
     return cols, header
 
 
+def _span_header(cols) -> str:
+    """보이는 기간 전체를 한 줄로. 해가 같으면 해를 한 번만 적는다."""
+    s, e = cols[0]["start"], cols[-1]["end"]
+    if s.year == e.year:
+        return f"{s.year}년 {s.month}월 – {e.month}월"
+    return f"{s.year}년 {s.month}월 – {e.year}년 {e.month}월"
+
+
 def _plan_nav(level: str, anchor: date):
-    """현재 단위에서 이전/다음 기간으로 이동할 anchor(YYYY-MM-DD 문자열) 쌍."""
+    """이전/다음 anchor(YYYY-MM-DD 문자열) 쌍. 그 단위 하나만큼만 옮긴다."""
     if level == "year":
-        return f"{anchor.year - 6:04d}-01-01", f"{anchor.year + 6:04d}-01-01"
-    if level == "quarter":
         return f"{anchor.year - 1:04d}-01-01", f"{anchor.year + 1:04d}-01-01"
+    if level == "quarter":
+        return (_add_months(anchor, -3).strftime("%Y-%m-%d"),
+                _add_months(anchor, 3).strftime("%Y-%m-%d"))
     if level == "month":
-        # 월 뷰는 분기(3개월) 단위로 앞뒤 이동한다.
-        q = (anchor.month - 1) // 3 + 1
-        m0 = (q - 1) * 3 + 1
-        prev_q = date(anchor.year - 1, 10, 1) if m0 == 1 else date(anchor.year, m0 - 3, 1)
-        next_q = date(anchor.year + 1, 1, 1) if m0 == 10 else date(anchor.year, m0 + 3, 1)
-        return prev_q.strftime("%Y-%m-%d"), next_q.strftime("%Y-%m-%d")
-    y, m = anchor.year, anchor.month
-    prev_last = date(y, m, 1) - timedelta(days=1)          # 지난달 말일
-    next_first = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
-    return prev_last.strftime("%Y-%m-01"), next_first.strftime("%Y-%m-%d")
+        return (_add_months(anchor, -1).strftime("%Y-%m-%d"),
+                _add_months(anchor, 1).strftime("%Y-%m-%d"))
+    return ((anchor - timedelta(days=7)).strftime("%Y-%m-%d"),
+            (anchor + timedelta(days=7)).strftime("%Y-%m-%d"))
 
 
 def _plan_breadcrumb(level: str, anchor: date):

@@ -1586,7 +1586,23 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     --lead-w: 190px;
     min-width: calc(var(--lead-w) + var(--cols) * 92px);
     display: flex; flex-direction: column; gap: 2px;
+    position: relative;
 }
+/* 해·분기·달이 바뀌는 자리의 세로선. 열 경계에 맞춰 격자 전체 높이로 하나만 긋는다. */
+.gt-brkline {
+    position: absolute; top: 0; bottom: 0; width: 0; z-index: 2;
+    left: calc(var(--lead-w) + (100% - var(--lead-w)) * var(--i) / var(--cols));
+    border-left: 2px solid var(--border-strong); pointer-events: none;
+}
+.gt-brkline[data-lv="year"] { border-left-color: var(--accent); }
+/* 머리글에도 같은 자리에 선과 바뀐 단위 이름을 작게 */
+.gt-col.is-brk { border-left: 2px solid var(--border-strong); }
+.gt-col.is-brk[data-lv="year"] { border-left-color: var(--accent); }
+.gt-brk {
+    font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+    color: var(--text-subtle); line-height: 1;
+}
+.gt-col.is-brk[data-lv="year"] .gt-brk { color: var(--accent); }
 .gt-row { display: flex; align-items: stretch; min-height: 30px; }
 .gt-lead {
     flex: 0 0 var(--lead-w); width: var(--lead-w);

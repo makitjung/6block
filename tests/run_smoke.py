@@ -254,6 +254,39 @@ def run_checks(db_path):
 
     code, html = get("/plan?level=month&anchor=2026-08-01")
     check("계획 막대가 그려짐", 'class="gt-bar' in html and "노동법 1회독" in html)
+    # 열은 연 5칸·나머지 4칸이고, 보고 있는 기간이 두 번째 칸에 온다.
+    def cols(lv, anchor):
+        """열 머리글 이름만 뽑는다(앞뒤 기간 이동 화살표·주간 링크는 뺀다)."""
+        _c, h = get(f"/plan?level={lv}&anchor={anchor}")
+        out = []
+        for blk in re.findall(r'class="gt-col-label">(.*?)</span>', h, re.S):
+            words = [w for w in re.sub(r"<[^>]+>", " ", blk).split()
+                     if w not in ("‹", "›", "↗")]
+            out.append(words[0] if words else "")
+        return h, out
+    _h, ys = cols("year", "2026-07-27")
+    check("연은 5칸이고 그 해가 두 번째", ys == ["2025", "2026", "2027", "2028", "2029"], ys)
+    _h, ms = cols("month", "2026-11-15")
+    check("월은 4칸이고 그 달이 두 번째", ms == ["10월", "11월", "12월", "1월"], ms)
+    _h, qs = cols("quarter", "2026-11-15")
+    check("분기는 4칸이고 그 분기가 두 번째",
+          qs == ["3분기", "4분기", "1분기", "2분기"], qs)
+    # 다음/이전은 그 단위 하나만큼만 옮긴다.
+    _c, h = get("/plan?level=month&anchor=2026-11-15")
+    check("월 이동은 한 달씩",
+          "/plan?level=month&anchor=2026-10-15" in h
+          and "/plan?level=month&anchor=2026-12-15" in h)
+    _c, h = get("/plan?level=week&anchor=2026-11-15")
+    check("주 이동은 한 주씩",
+          "/plan?level=week&anchor=2026-11-08" in h
+          and "/plan?level=week&anchor=2026-11-22" in h)
+    # 해·분기·달이 바뀌는 자리에 표시가 붙는다.
+    _c, h = get("/plan?level=month&anchor=2026-11-15")
+    check("해가 바뀌는 열에 표시",
+          'class="gt-brk">2027년' in h and 'data-lv="year"' in h)
+    _c, h = get("/plan?level=week&anchor=2026-07-27")
+    check("달이 바뀌는 열에 표시",
+          'class="gt-brk">8월' in h and 'data-lv="month"' in h)
     # 기간 길이로 나눈 4구분(장기 6개월↑ · 중기 1~6개월 · 단기 1개월↓ · 초단기 1주↓)
     spans = {}
     for title, s, e in (("초단기막대", "2026-08-01", "2026-08-07"),

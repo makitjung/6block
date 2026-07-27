@@ -74,11 +74,16 @@
 {% else %}
 <div class="plan-scroll">
     <div class="gantt" data-level="{{ level }}" style="--cols: {{ columns | length }}">
+        {# 해·분기·달이 바뀌는 자리에 세로선 하나. 격자 위에 겹쳐 그려 줄이 늘지 않는다. #}
+        {% for col in columns %}{% if col.brk %}
+        <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
+        {% endif %}{% endfor %}
         <div class="gt-row gt-headrow">
             <div class="gt-lead gt-headlead">영역 · 항목</div>
             <div class="gt-track gt-headtrack">
                 {% for col in columns %}
-                <div class="gt-col {% if col.current %}is-now{% endif %}">
+                <div class="gt-col {% if col.current %}is-now{% endif %}{% if col.brk %} is-brk{% endif %}" data-lv="{{ col.brk_level }}">
+                    {% if col.brk %}<span class="gt-brk">{{ col.brk }}</span>{% endif %}
                     <span class="gt-col-label">
                         {% if loop.first %}<a class="gt-nav" href="/plan?level={{ level }}&anchor={{ prev_anchor }}" title="이전 기간 보기" aria-label="이전 기간 보기">‹</a>{% endif %}
                         {% if col.drill_level %}<a class="gt-drill" href="/plan?level={{ col.drill_level }}&anchor={{ col.drill_anchor }}" title="{{ col.label }} 펼치기">{{ col.label }}</a>{% else %}{{ col.label }}{% endif %}
