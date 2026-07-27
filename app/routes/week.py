@@ -167,12 +167,12 @@ def _week_view(request: Request, monday: date):
         week_allday[ds] = allday
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
-    # 상위 바로 뒤에 그 하위가 오도록 줄 세우고 겹 단계(depth)를 붙인다.
+    # 최하위 항목만 내려오고, 어느 상위에서 나온 것인지 제목을 함께 붙인다.
     week_items = [
         {
             "id": r["id"], "title": r["title"], "area_name": r["area_name"],
-            "progress": r["progress"], "has_children": bool(r["has_children"]),
-            "depth": r["depth"], "goal": lt_goal_by_item.get(r["id"], ""),
+            "progress": r["progress"], "parent_title": r["parent_title"],
+            "goal": lt_goal_by_item.get(r["id"], ""),
             "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
         }
         for r in wk_items
@@ -356,46 +356,6 @@ async def week_apply_template(request: Request):
                 )
                 applied += 1
     return JSONResponse({"ok": True, "applied": applied})
-
-
-@router.post("/week/item-to-goal")
-async def week_item_to_goal(request: Request):
-    """이번 주 장기 항목 제목을 목표 열에 있는 그 항목의 란에 넣는다(장기 → 주간).
-
-    이미 적어 둔 내용이 있으면 덮지 않는다.
-    """
-    form = await request.form()
-    ws = (form.get("week_start") or "").strip()
-    try:
-        item_id = int(form.get("item_id"))
-        datetime.strptime(ws, "%Y-%m-%d")
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
-    now = datetime.now(KST).isoformat(timespec="seconds")
-    with get_conn() as conn:
-        it = conn.execute(
-            "SELECT title FROM lt_item WHERE id = ?", (item_id,)
-        ).fetchone()
-        if not it:
-            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        row = conn.execute(
-            "SELECT goal_text FROM weekly_lt_goal WHERE week_start = ? AND item_id = ?",
-            (ws, item_id),
-        ).fetchone()
-        cur = ((row["goal_text"] if row else "") or "").strip()
-        if cur:
-            return JSONResponse({"ok": True, "id": item_id, "text": cur, "skipped": True})
-        conn.execute(
-            """
-            INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(week_start, item_id) DO UPDATE SET
-                goal_text = excluded.goal_text,
-                updated_at = excluded.updated_at
-            """,
-            (ws, item_id, it["title"], now),
-        )
-    return JSONResponse({"ok": True, "id": item_id, "text": it["title"]})
 
 
 @router.post("/week/item-to-theme")

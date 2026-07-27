@@ -37,47 +37,25 @@
         </div>
     </section>
 
-    <section class="card wk-lt" data-week="{{ week_start }}">
-        <h2 class="card-title">이번 주 장기 항목
-            <span class="card-sub">이 주에 걸친 장기 계획 · 진척률을 고치면 장기 탭 막대에 바로 반영됩니다 ·
-                <a href="/plan?level=week&amp;anchor={{ week_start }}">장기 탭</a></span>
-        </h2>
-        {% if week_items %}
-        <div class="wk-lt-list">
-            {% for it in week_items %}
-            <div class="wk-lt-row" data-id="{{ it.id }}" style="--d: {{ it.depth }}">
-                {% if it.depth %}<span class="wk-lt-sub" title="{{ it.area_name }} · 하위 항목">└</span>
-                {% else %}<span class="wk-lt-area">{{ it.area_name }}</span>{% endif %}
-                <span class="wk-lt-title">{{ it.title }}</span>
-                <span class="wk-lt-range mono">{{ it.range }}</span>
-                <label class="wk-lt-prog">
-                    <input type="number" class="wk-lt-prog-input" min="0" max="100" step="5"
-                           value="{{ it.progress }}" {% if it.has_children %}disabled title="하위 항목에서 자동 계산됩니다"{% endif %}
-                           aria-label="{{ it.title }} 진척률">%
-                </label>
-                <div class="wk-lt-send">
-                    <button type="button" class="ghost-btn wk-lt-goal" title="목표 열에 있는 이 항목의 란에 제목을 넣기(이미 적었으면 그대로 둠)">목표 란으로</button>
-                    <select class="wk-lt-label" aria-label="블록 고르기">
-                        {% for lbl in core_labels %}<option value="{{ lbl }}">{{ lbl }}</option>{% endfor %}
-                    </select>
-                    <button type="button" class="ghost-btn wk-lt-theme" title="고른 블록의 이번 주 이름으로 넣기">블록으로</button>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="ctx-empty">이 주에 걸친 장기 항목이 없습니다. 장기 탭에서 계획 막대를 만들면 여기에 나옵니다.</div>
-        {% endif %}
-    </section>
-
     <section class="meta-card">
         <div class="meta-2col">
             <!-- 왼쪽: 목표. 장기 항목마다 한 란 + 장기와 무관한 자유 란 3개 -->
-            <div class="meta-goal">
-                <span class="field-label">목표</span>
+            <div class="meta-goal" data-week="{{ week_start }}">
+                <span class="field-label">목표 <span class="card-sub">이 주에 걸친 장기 최하위 항목 · 진척률을 고치면 장기 탭 막대에 바로 반영됩니다 ·
+                    <a href="/plan?level=week&amp;anchor={{ week_start }}">장기 탭</a></span></span>
                 {% for it in week_items %}
-                <div class="wg-row" style="--d: {{ it.depth }}">
-                    <span class="wg-lt" title="장기 항목 · {{ it.area_name }} · {{ it.range }}">{% if it.depth %}└ {% endif %}{{ it.title }}</span>
+                <div class="wg-item" data-id="{{ it.id }}">
+                    <div class="wg-head">
+                        <span class="wg-lt" title="{{ it.area_name }} · {{ it.range }}">{% if it.parent_title %}<span class="wg-up">{{ it.parent_title }} ›</span>{% endif %}{{ it.title }}</span>
+                        <label class="wk-lt-prog">
+                            <input type="number" class="wk-lt-prog-input" min="0" max="100" step="5"
+                                   value="{{ it.progress }}" aria-label="{{ it.title }} 진척률">%
+                        </label>
+                        <select class="wk-lt-label" aria-label="블록 고르기">
+                            {% for lbl in core_labels %}<option value="{{ lbl }}">{{ lbl }}</option>{% endfor %}
+                        </select>
+                        <button type="button" class="ghost-btn wk-lt-theme" title="고른 블록의 이번 주 이름으로 넣기">블록으로</button>
+                    </div>
                     <input type="text" name="ltgoal_{{ it.id }}" value="{{ it.goal }}" placeholder="이 항목의 이번 주 계획" autocomplete="off" aria-label="{{ it.title }} 이번 주 계획">
                 </div>
                 {% endfor %}

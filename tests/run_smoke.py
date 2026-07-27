@@ -255,23 +255,21 @@ def run_checks(db_path):
     check("상위 막대 안에 하위 막대가 겹쳐 그려짐",
           'data-depth="0"' in seg and 'data-depth="1"' in seg, seg[:120])
 
-    # 주간 탭 '이번 주 장기 항목' → 진척률 편집·주간 목표로 옮기기
+    # 주간 '목표' 열 = 장기 최하위 항목 + 자유 란 3개(카드 하나로 합쳐져 있다)
     code, html = get("/week/2026-08-03")
-    check("주간 탭에 이 주 장기 항목 노출",
-          "노동법 1회독" in html and 'class="wk-lt-prog-input"' in html)
-    # 목표 열은 장기 항목마다 자기 란을 가진다(weekly_lt_goal). 제목은 그 란으로 들어간다.
+    check("주간 목표 열에 최하위 항목만 란이 생김",
+          f'name="ltgoal_{child}"' in html and f'name="ltgoal_{parent}"' not in html)
+    check("최하위 항목에 상위 이름이 함께 보임",
+          '<span class="wg-up">노무사 1차 합격 ›</span>' in html)
+    check("진척률·블록 보내기가 목표 열 안에 있음",
+          'class="wk-lt-prog-input"' in html and 'wk-lt-theme' in html
+          and 'class="card wk-lt"' not in html)
     ltg = f"SELECT goal_text FROM weekly_lt_goal WHERE week_start='2026-08-03' AND item_id={child}"
-    check("주간 목표 열에 장기 항목마다 란이 있음", f'name="ltgoal_{child}"' in html)
-    code, out = post("/week/item-to-goal", {"week_start": "2026-08-03", "item_id": child})
-    goal = db_query(db_path, ltg)
-    check("장기 항목을 그 항목의 목표 란으로 옮김",
-          code == 200 and goal and goal[0]["goal_text"] == "노동법 1회독", out)
     post("/save/field", {"entity": "ltgoal", "id": child, "field": "ltgoal",
                          "value": "직접 적은 계획", "week_start": "2026-08-03"})
-    code, out = post("/week/item-to-goal", {"week_start": "2026-08-03", "item_id": child})
     goal = db_query(db_path, ltg)
-    check("이미 적어 둔 목표 란은 덮어쓰지 않음",
-          out.get("skipped") and goal[0]["goal_text"] == "직접 적은 계획", goal[0]["goal_text"])
+    check("장기 항목의 이번 주 계획 저장",
+          goal and goal[0]["goal_text"] == "직접 적은 계획", goal)
     # 목표 열 자유 란 3개는 weekly_meta.weekly_goal 에 줄바꿈으로 합쳐 저장된다.
     post("/save/field", {"entity": "wmeta", "id": "2026-08-03", "field": "wgoal2",
                          "value": "자유2", "wgoal1": "자유1", "wgoal2": "자유2",

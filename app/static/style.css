@@ -270,15 +270,25 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .meta-2col { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
 .meta-goal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .meta-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.wg-row {
-    display: grid; grid-template-columns: minmax(72px, 30%) minmax(0, 1fr);
-    align-items: center; gap: 8px; margin-left: calc(var(--d, 0) * 14px);
+/* 장기 최하위 항목 한 덩어리: 윗줄에 이름·진척·블록 보내기, 아랫줄에 이번 주 계획 */
+.wg-item {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 8px 10px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--r-sm);
 }
+.wg-item:hover { border-color: var(--border-strong); }
+.wg-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .wg-lt {
-    font-size: 12px; font-weight: 700; color: var(--accent-soft-text);
+    flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; color: var(--text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.wg-free { grid-template-columns: 22px minmax(0, 1fr); }
+.wg-up { font-weight: 600; color: var(--text-subtle); }
+.wg-head .wk-lt-prog-input { width: 50px; }
+.wg-head .ghost-btn { font-size: 12px; padding: 3px 9px; white-space: nowrap; }
+.wg-row {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr);
+    align-items: center; gap: 8px;
+}
 .wg-no {
     display: inline-flex; align-items: center; justify-content: center;
     width: 22px; height: 22px; border-radius: 50%; background: var(--surface-3);
@@ -286,8 +296,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 @media (max-width: 820px) {
     .meta-2col { grid-template-columns: minmax(0, 1fr); }
-    .wg-row { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
-    .wg-free { grid-template-columns: 22px minmax(0, 1fr); }
+    .wg-head { flex-wrap: wrap; }
+    .wg-lt { flex: 1 1 100%; }
 }
 
 /* === Today context card === */
@@ -1687,40 +1697,11 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     .gt-form, .gt-edit { margin-left: 0; }
 }
 
-/* 주간 탭: 이번 주 장기 항목(장기 탭 계획 막대 연동) */
-.wk-lt-list { display: flex; flex-direction: column; gap: 6px; }
-.wk-lt-row {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto;
-    align-items: center; gap: 10px;
-    padding: 7px 10px; background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-}
-.wk-lt-row:hover { border-color: var(--border-strong); }
-/* 하위 항목은 한 겹씩 들여쓰고 영역 이름 자리에 └ 를 넣어 상하관계를 드러낸다 */
-.wk-lt-row { margin-left: calc(var(--d, 0) * 20px); }
-.wk-lt-sub {
-    font-size: 13px; font-weight: 700; color: var(--text-subtle);
-    text-align: center; white-space: nowrap; padding: 2px 8px;
-}
-.wk-lt-area {
-    font-size: 11px; font-weight: 700; color: var(--accent-soft-text);
-    background: var(--accent-soft); border: 1px solid var(--border-focus);
-    padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap;
-}
-.wk-lt-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wk-lt-range { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+/* 주간 목표 열의 장기 항목 줄에서 쓰는 진척률·블록 보내기 */
 .wk-lt-prog { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--text-muted); }
 .wk-lt-prog-input { width: 58px; text-align: right; }
-.wk-lt-prog-input:disabled { opacity: .5; }
-.wk-lt-send { display: inline-flex; align-items: center; gap: 5px; }
-.wk-lt-send .ghost-btn { font-size: 12px; padding: 4px 10px; white-space: nowrap; }
 .wk-lt-label { padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px;
     background: var(--surface); color: var(--text); font-size: 12px; width: auto; }
-@media (max-width: 820px) {
-    .wk-lt-row { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; }
-    .wk-lt-prog { grid-column: 2; justify-self: start; }
-    .wk-lt-send { grid-column: 1 / -1; flex-wrap: wrap; }
-}
 
 /* 오늘 탭: 블록 이름·DO 옆의 '이번 주 할 일' 연결 고르기(연결만 저장, 글은 직접 입력) */
 .wk-link {
@@ -1735,8 +1716,7 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 @media (max-width: 720px) { .wk-link { max-width: 82px; } }
 
-/* 오늘 탭: 그 날짜에 걸친 장기 항목 띠(읽기 전용 · 누르면 장기 탭).
-   상위 항목 하나가 열 하나다. 상위끼리는 나란히 서고 하위는 그 열 아래로 쌓인다. */
+/* 오늘 탭: 그 날짜에 걸친 장기 최하위 항목 띠(읽기 전용 · 누르면 장기 탭) */
 .lt-strip {
     max-width: 1180px; margin: 0 auto 8px; padding: 0 18px;
     display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
@@ -1745,17 +1725,15 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     font-size: 11px; font-weight: 800; color: var(--text-subtle);
     letter-spacing: .04em; white-space: nowrap; padding-top: 7px;
 }
-.lt-strip-list { display: flex; align-items: flex-start; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
-.lt-group { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; }
+.lt-strip-list { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .lt-chip {
     display: flex; align-items: center; gap: 6px; max-width: 100%;
     padding: 4px 10px; font-size: 12px; text-decoration: none; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill);
 }
 .lt-chip:hover { border-color: var(--border-strong); }
-/* 하위는 상위 아래에 한 겹씩 안으로 들여써 상하관계를 드러낸다 */
-.lt-chip { margin-left: calc(var(--d, 0) * 14px); }
-.lt-chip-sub { font-size: 11px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
+/* 어느 상위 계획에서 내려온 것인지 앞에 작게 붙인다 */
+.lt-chip-up { font-size: 11px; font-weight: 600; color: var(--text-subtle); white-space: nowrap; }
 .lt-chip-area { font-size: 11px; font-weight: 700; color: var(--accent-soft-text); white-space: nowrap; }
 .lt-chip-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt-chip-dday { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }

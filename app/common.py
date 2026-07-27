@@ -235,8 +235,24 @@ def lt_tree_order(rows) -> list[dict]:
     return out
 
 
-def week_lt_items(conn, week_start_str: str):
-    """그 주에 걸친 장기 항목(활성 영역만). 상위 바로 뒤에 하위가 오도록 줄 세운다."""
+def lt_leaves(rows) -> list[dict]:
+    """장기 항목 줄에서 실제로 손에 잡히는 최하위(하위가 없는) 것만 남긴다.
+
+    상위는 하위의 기간·진척률을 따라가는 묶음일 뿐이라 주간·오늘에는 내려보내지 않는다.
+    대신 어느 상위에서 내려온 것인지 알 수 있게 그 상위 제목(parent_title)을 붙인다.
+    """
+    title_by_id = {r["id"]: r["title"] for r in rows}
+    out = []
+    for r in lt_tree_order(rows):
+        if r["has_children"]:
+            continue
+        r["parent_title"] = title_by_id.get(r["parent_id"], "")
+        out.append(r)
+    return out
+
+
+def week_lt_items(conn, week_start_str: str) -> list[dict]:
+    """그 주에 걸친 장기 항목(활성 영역만) 중 최하위 것만. 상위 제목을 함께 준다."""
     d0 = datetime.strptime(week_start_str, "%Y-%m-%d").date()
     sunday = (d0 + timedelta(days=6)).strftime("%Y-%m-%d")
     rows = conn.execute(
@@ -248,7 +264,7 @@ def week_lt_items(conn, week_start_str: str):
         "ORDER BY a.display_order, i.start_date, i.id",
         (sunday, week_start_str),
     ).fetchall()
-    return lt_tree_order(rows)
+    return lt_leaves(rows)
 
 
 def week_todos(conn, week_start_str: str) -> list[dict]:
@@ -264,14 +280,11 @@ def week_todos(conn, week_start_str: str) -> list[dict]:
             (week_start_str,),
         )
     }
-    out = [
-        {
-            "key": f"lt:{it['id']}",
-            "label": f"{it['title']} · {goals[it['id']]}"
-            if goals.get(it["id"]) else it["title"],
-        }
-        for it in week_lt_items(conn, week_start_str)
-    ]
+    out = []
+    for it in week_lt_items(conn, week_start_str):
+        name = f"{it['parent_title']} › {it['title']}" if it["parent_title"] else it["title"]
+        g = goals.get(it["id"])
+        out.append({"key": f"lt:{it['id']}", "label": f"{name} · {g}" if g else name})
     row = conn.execute(
         "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (week_start_str,)
     ).fetchone()
