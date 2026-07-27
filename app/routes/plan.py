@@ -613,9 +613,10 @@ async def plan_item_delete(request: Request):
 
 
 @router.get("/plan")
-def plan_view(request: Request, level: str = "year", anchor: str = ""):
+def plan_view(request: Request, level: str = "month", anchor: str = ""):
+    # 기본은 월 단위(오늘이 든 분기의 3개월). 연·분기는 축소로, 주는 확대로 간다.
     if level not in PLAN_LEVELS:
-        level = "year"
+        level = "month"
     a = _parse_anchor(anchor)
     cols, header = _plan_columns(level, a)
     span_start, span_end = cols[0]["start"], cols[-1]["end"]
