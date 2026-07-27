@@ -49,12 +49,6 @@
     --cal-yellow: #f9ab00;
     --cal-red: #d93025;
 
-    /* 장기 계획 막대 - 기간 길이로 나눈 4구분(장기·중기·단기·초단기) */
-    --sp-l-bg: #d2e3fc;  --sp-l-bd: #1a73e8;  --sp-l-tx: #174ea6;
-    --sp-m-bg: #cfece9;  --sp-m-bd: #12a4af;  --sp-m-tx: #0b6b73;
-    --sp-s-bg: #fde3cf;  --sp-s-bd: #e8710a;  --sp-s-tx: #8f4700;
-    --sp-xs-bg: #ead6fb; --sp-xs-bd: #9334e6; --sp-xs-tx: #6a1eb0;
-
     /* 장기 간트 막대: 색은 영역(--gt-tone), 진하기는 계층 단계. 최상위가 가장 진하다.
        글자는 톤을 거의 검정에 섞어 네 단계 어디에서든 읽히게 한다. */
     --gt-mix-0: 64%;  --gt-mix-1: 44%;  --gt-mix-2: 26%;  --gt-mix-3: 12%;
@@ -114,11 +108,6 @@
     --tone-teal: #5bd1d7;
     --cal-yellow: #fdd663;
     --cal-red: #f28b82;
-    --sp-l-bg: #24354f;  --sp-l-bd: #8ab4f8;  --sp-l-tx: #d2e3fc;
-    --sp-m-bg: #14383a;  --sp-m-bd: #5bd1d7;  --sp-m-tx: #a7ecef;
-    --sp-s-bg: #43301c;  --sp-s-bd: #fcad70;  --sp-s-tx: #ffd9b8;
-    --sp-xs-bg: #38254a; --sp-xs-bd: #d7aefb; --sp-xs-tx: #ecd7ff;
-
     /* 다크에서는 톤 자체가 밝은 파스텔이라 덜 섞고, 글자는 흰색 쪽으로 밝힌다. */
     --gt-mix-0: 44%;  --gt-mix-1: 30%;  --gt-mix-2: 18%;  --gt-mix-3: 9%;
     --gt-tx-mix: 30%;  --gt-tx-base: #ffffff;

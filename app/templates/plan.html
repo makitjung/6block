@@ -34,7 +34,7 @@
     <span class="plan-legend">
         <span class="pl-cap">영역 색</span>
         {% for ar in areas %}
-        <span class="pl-key" data-span="l" style="--gt-tone: var(--tone-{{ ar.tone }})"></span>{{ ar.name }}
+        <span class="pl-key" data-level="0" style="--gt-tone: var(--tone-{{ ar.tone }})"></span>{{ ar.name }}
         {% endfor %}
     </span>
     <span class="plan-legend">
@@ -47,7 +47,7 @@
     {% if past_count %}
     <button type="button" id="pg-past-toggle" class="ghost-btn" data-count="{{ past_count }}">지난 항목 {{ past_count }}개 보기</button>
     {% endif %}
-    <span class="plan-hint">막대 가운데를 좌우로 끌면 끈 만큼 기간 이동 · 양 끝을 끌면 기간 조절 · 위아래 다른 블록 줄에 놓으면 그 블록으로 이동 · 다른 막대 위에 놓으면 하위계획</span>
+    <span class="plan-hint">좌우로 끌면 끈 만큼 기간 이동 · 양 끝을 끌면 기간 조절 · <b>위아래로</b> 끌어 다른 막대에 놓으면 하위계획, 빈 블록 줄에 놓으면 그 블록으로 이동</span>
 </div>
 
 <details class="card theme-fold">
@@ -57,7 +57,7 @@
         <div class="set-cat-row {% if not ar.is_active %}is-hidden{% endif %}" data-id="{{ ar.id }}">
             {% if ar.is_active %}
             <input type="text" class="set-cat-name pg-area-name" data-id="{{ ar.id }}" value="{{ ar.name }}" autocomplete="off" aria-label="영역 이름">
-            <span class="pl-key" data-span="l" style="--gt-tone: var(--tone-{{ ar.tone }})" aria-hidden="true"></span>
+            <span class="pl-key" data-level="0" style="--gt-tone: var(--tone-{{ ar.tone }})" aria-hidden="true"></span>
             <select class="pg-area-tone" data-id="{{ ar.id }}" aria-label="{{ ar.name }} 막대 색">
                 {% for key, tname in tones %}
                 <option value="{{ key }}" {% if key == ar.tone %}selected{% endif %}>{{ tname }}</option>

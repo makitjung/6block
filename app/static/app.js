@@ -1837,15 +1837,19 @@
             clearMarks();
             drag = null;
         };
+        // 가로로만 끄는 것은 기간 이동, 위아래로 뚜렷하게 끄는 것만 붙이기·블록 이동으로 본다.
+        // 이렇게 갈라 놓아야 옆으로 미는 도중 밑에 깔린 막대의 하위로 빨려 들어가지 않는다.
+        const VERT = 12;
+        const wantsDrop = (dx, dy) => Math.abs(dy) > VERT && Math.abs(dy) * 2 > Math.abs(dx);
         // 포인터 아래에 있는 드롭 대상(끌고 있는 막대는 잠시 통과시켜 밑을 본다)
-        const dropTargetAt = (x, y) => {
+        const dropTargetAt = (x, y, dx, dy) => {
+            if (!wantsDrop(dx, dy)) return null;
             drag.bar.style.pointerEvents = 'none';
             const under = document.elementFromPoint(x, y);
             drag.bar.style.pointerEvents = '';
             if (!under) return null;
             const bar = under.closest('.gt-bar');
             if (bar && bar !== drag.bar) return { kind: 'bar', el: bar };
-            // 자기 줄에 그대로 놓은 것은 좌우 기간 이동이므로 드롭 대상으로 치지 않는다.
             const row = under.closest('.gt-blockrow');
             if (row && row !== drag.row) return { kind: 'block', el: row, block: row.dataset.block };
             return null;
@@ -1894,7 +1898,7 @@
                 bar.classList.add('is-dragging');
                 bar.style.transform = `translate(${dx}px, ${dy}px)`;
                 clearMarks();
-                const t = dropTargetAt(e.clientX, e.clientY);
+                const t = dropTargetAt(e.clientX, e.clientY, dx, dy);
                 if (t) t.el.classList.add('is-drop-target');
             });
             bar.addEventListener('pointerup', (e) => {
@@ -1918,7 +1922,8 @@
                     });
                     return;
                 }
-                const target = dropTargetAt(e.clientX, e.clientY);
+                const target = dropTargetAt(e.clientX, e.clientY,
+                                            dx, e.clientY - drag.y0);
                 reset();
                 if (target && target.kind === 'bar') {
                     postForm('/plan/item/reparent',

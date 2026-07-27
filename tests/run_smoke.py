@@ -298,22 +298,22 @@ def run_checks(db_path):
     _c, h = get("/week/2026-07-27")
     check("주간 제목 아래 기간 옆에 몇 주차 표시",
           '<span class="hero-wk">31주차</span>' in h)
-    # 기간 길이로 나눈 4구분(장기 6개월↑ · 중기 1~6개월 · 단기 1개월↓ · 초단기 1주↓)
-    spans = {}
-    for title, s, e in (("초단기막대", "2026-08-01", "2026-08-07"),
-                        ("단기막대", "2026-08-01", "2026-08-31"),
-                        ("중기막대", "2026-08-01", "2027-01-30"),
-                        ("장기막대", "2026-08-01", "2027-01-31")):
-        _c, o = post("/plan/item/add",
-                     {"area_id": areas[0], "title": title, "start": s, "end": e})
-        spans[title] = o.get("id")
+    # 막대 진하기는 기간이 아니라 계층 단계로 갈린다(최상위 0 → 하위로 갈수록 커진다)
     code, html = get("/plan?level=year&anchor=2026-01-01")
-    found = dict(re.findall(r'class="gt-e-lv" data-span="(\w+)"[^>]*>(\S+) \d+일', html))
-    check("기간 길이로 장기·중기·단기·초단기를 나눔",
-          found.get("xs") == "초단기" and found.get("s") == "단기"
-          and found.get("m") == "중기" and found.get("l") == "장기", found)
-    for i in spans.values():
-        post("/plan/item/delete", {"id": i})
+    check("기간 구분(장기·중기·단기)은 색에 쓰지 않음",
+          'data-span=' not in html and "초단기" not in html)
+    levels = dict(re.findall(r'class="gt-e-lv" data-level="(\d)"[^>]*>([^<·]+)·', html))
+    check("계층 단계로 진하기를 나눔",
+          levels.get("0", "").strip() == "최상위" and levels.get("1", "").strip() == "하위 1단계",
+          levels)
+    # 같은 영역에서 뿌리가 여럿이면 색조를 조금씩 돌려 서로 구분한다
+    _c, o = post("/plan/item/add", {"area_id": areas[0], "title": "같은영역 두번째",
+                                    "start": "2026-08-01", "end": "2026-09-30"})
+    second = o.get("id")
+    _c, h = get("/plan?level=year&anchor=2026-01-01")
+    hues = set(re.findall(r'--gt-hue: (-?\d+)deg', h))
+    check("같은 영역의 다른 뿌리는 색조가 다름", len(hues) >= 2, sorted(hues))
+    post("/plan/item/delete", {"id": second})
     def block_seg(page, key):
         """그 블록 줄 하나만 잘라낸다(막대 + 그 줄의 추가폼·편집칸까지)."""
         for s in re.split(r'(?=<div class="gt-row gt-blockrow)', page):
@@ -340,6 +340,18 @@ def run_checks(db_path):
     check("하위에 블록을 따로 주면 그 줄로 빠짐",
           "노동법 1회독" in block_seg(h, "B5")
           and "노동법 1회독" not in block_seg(h, "B3"))
+    # 한 항목을 여러 블록에서 동시에 진행하면 같은 막대가 그 줄마다 나온다
+    code, out = post("/plan/item/update", {"id": child, "block": "B5,B2"})
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
+    check("블록 여러 개가 B1~B6 순으로 저장됨", v["block_label"] == "B2,B5", dict(v))
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("같은 막대가 고른 블록 줄마다 나옴",
+          "노동법 1회독" in block_seg(h, "B2")
+          and "노동법 1회독" in block_seg(h, "B5")
+          and "노동법 1회독" not in block_seg(h, "B3"))
+    code, out = post("/plan/item/update", {"id": child, "block": "B5,없는블록,B5"})
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
+    check("모르는 값·중복은 버린다", v["block_label"] == "B5", dict(v))
     code, out = post("/plan/item/update", {"id": child, "block": "없는블록"})
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
     check("모르는 블록 값은 미지정으로", v["block_label"] is None, dict(v))
@@ -386,14 +398,29 @@ def run_checks(db_path):
                      {"week_start": "2026-08-03", "item_id": child, "label": "없는블록"})
     check("없는 블록으로는 옮기지 않음", code == 400, code)
 
-    # 막대 끌어 옮기기 · 기간 이동(열 단위) / 다른 막대의 하위로 / 영역으로 빼기
-    code, out = post("/plan/item/shift", {"id": child, "steps": "1", "level": "month"})
+    # 막대 끌어 옮기기 · 끈 만큼(일 단위) 기간 이동 / 다른 막대의 하위로 / 영역으로 빼기
+    code, out = post("/plan/item/shift", {"id": child, "days": "31"})
     row = db_query(db_path,
                    "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
-    check("막대를 열 단위로 옮김(월 +1, 길이 유지)",
+    check("막대를 끈 만큼 옮김(+31일, 길이 유지)",
           row["start_date"] == "2026-08-20" and row["end_date"] == "2026-11-15", dict(row))
-    code, out = post("/plan/item/shift", {"id": parent, "steps": "1", "level": "month"})
-    check("하위가 있는 막대는 기간을 옮기지 않음", code == 400, out)
+    code, out = post("/plan/item/shift", {"id": child, "days": "3"})
+    row = db_query(db_path,
+                   "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    check("한 달보다 짧게도 옮겨진다(+3일)",
+          row["start_date"] == "2026-08-23" and row["end_date"] == "2026-11-18", dict(row))
+    post("/plan/item/shift", {"id": child, "days": "-3"})
+    # 하위가 있는 상위를 끌면 하위 사슬도 같은 날수만큼 함께 밀린다
+    before = db_query(db_path,
+                      "SELECT start_date FROM lt_item WHERE id=?", (parent,))[0]["start_date"]
+    code, out = post("/plan/item/shift", {"id": parent, "days": "7"})
+    p = db_query(db_path, "SELECT start_date FROM lt_item WHERE id=?", (parent,))[0]
+    c = db_query(db_path, "SELECT start_date FROM lt_item WHERE id=?", (child,))[0]
+    check("상위를 끌면 하위까지 통짜로 옮겨짐",
+          code == 200 and out.get("with_children") == 1
+          and p["start_date"] == "2026-07-27" and c["start_date"] == "2026-08-27",
+          {"before": before, "parent": p["start_date"], "child": c["start_date"]})
+    post("/plan/item/shift", {"id": parent, "days": "-7"})
 
     code, out = post("/plan/item/add", {"area_id": areas[1], "title": "체력 만들기",
                                         "start": "2026-08-01", "end": "2026-12-31"})
@@ -425,14 +452,12 @@ def run_checks(db_path):
     check("없는 영역으로는 옮기지 않음", code == 404, code)
 
     # 기간 조절(한쪽 끝만) · 하위가 있는 상위 기간 직접 수정
-    code, out = post("/plan/item/resize",
-                     {"id": other, "edge": "end", "steps": "1", "level": "month"})
+    code, out = post("/plan/item/resize", {"id": other, "edge": "end", "days": "31"})
     r = db_query(db_path,
                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (other,))[0]
     check("한쪽 끝만 늘려 기간을 바꿈",
           r["start_date"] == "2026-08-01" and r["end_date"] == "2027-01-31", dict(r))
-    code, out = post("/plan/item/resize",
-                     {"id": other, "edge": "start", "steps": "12", "level": "month"})
+    code, out = post("/plan/item/resize", {"id": other, "edge": "start", "days": "400"})
     check("기간이 뒤집히면 거부", code == 400, out)
     code, out = post("/plan/item/update", {"id": parent, "title": "노무사 1차 합격",
                                            "start": "2026-11-01", "end": "2026-11-30"})
