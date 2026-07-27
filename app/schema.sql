@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     name TEXT,
     category_id INTEGER REFERENCES categories(id),
     location TEXT,
-    wk_todo TEXT,
+    wk_todo TEXT,               -- 이 블록이 이은 그 주 할 일 키(쉼표로 여러 개)
     updated_at TEXT NOT NULL,
     UNIQUE(date, block_order)
 );
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS daily_meta (
     goal_tags TEXT,         -- 오늘 목표 3줄의 자유 태그(직접 입력)를 줄바꿈으로 저장
     plan_tags TEXT,         -- 오늘 달성 3줄의 자유 태그
     grat_tags TEXT,         -- 감사·반성 3줄의 자유 태그
+    goal_links TEXT,        -- 목표 3줄이 각각 이은 그 주 할 일 키(줄바꿈 3칸)
     achieve_event_id TEXT   -- 그날 성과 캘린더 종일 이벤트 id(재저장 갱신·중복 방지)
 );
 

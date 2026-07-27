@@ -599,15 +599,6 @@
                 let m;
                 if ((m = name.match(/^bcat_(\d+)$/))) el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
                 else if ((m = name.match(/^cat_(\d+)$/))) el.addEventListener('change', () => saveField('slot', m[1], 'cat', el.value));
-                // 그 주 할 일 연결(블록 wtb_ · 슬롯 wts_). 고른 표시는 색으로 남긴다.
-                else if ((m = name.match(/^wt([bs])_(\d+)$/))) {
-                    const kind = m[1] === 'b' ? 'block' : 'slot';
-                    const rid = m[2];
-                    el.addEventListener('change', () => {
-                        el.classList.toggle('is-linked', !!el.value);
-                        saveField(kind, rid, 'wk_todo', el.value);
-                    });
-                }
             });
         }
 
@@ -1552,6 +1543,100 @@
             const delta = nowCol.getBoundingClientRect().left
                         - scroller.getBoundingClientRect().left - 12;
             if (delta > 0) scroller.scrollLeft += delta;
+        }
+    }
+
+    // ---- 이번 주 계획 연결(🔗) ---------------------------------------------
+    // 블록 이름·DO·목표 앞의 작은 버튼. 누르면 그 주 할 일 목록이 열리고 고른 키만
+    // 숨은 칸에 담긴다(글은 각자 직접 쓴다). 블록은 여러 개를 쉼표로 잇는다.
+    function bindWkLinks() {
+        const todos = window.__wkTodos || [];
+        const boxes = document.querySelectorAll('.wl');
+        if (!boxes.length || !todos.length) return;
+        const labelOf = (key) => {
+            const hit = todos.find((t) => t.key === key);
+            return hit ? hit.label : key;
+        };
+        let openBox = null;
+        const closePop = () => {
+            if (!openBox) return;
+            openBox.querySelector('.wl-pop')?.remove();
+            openBox = null;
+        };
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.wl')) closePop();
+        });
+
+        boxes.forEach((box) => {
+            const hidden = box.querySelector('input[type="hidden"]');
+            const btn = box.querySelector('.wl-btn');
+            const multi = box.dataset.multi === '1';
+            const keys = () => (hidden.value || '').split(',').filter(Boolean);
+
+            const paint = () => {
+                const ks = keys();
+                box.classList.toggle('is-linked', ks.length > 0);
+                btn.textContent = ks.length > 1 ? '🔗' + ks.length : '🔗';
+                btn.title = ks.length ? ks.map(labelOf).join(' · ') : '이번 주 계획 연결';
+            };
+            paint();
+
+            const save = () => {
+                const m = /^wt([bs])_(\d+)$/.exec(hidden.name);
+                if (m) {
+                    saveField(m[1] === 'b' ? 'block' : 'slot', m[2], 'wk_todo', hidden.value);
+                    return;
+                }
+                const g = /^goallink([123])$/.exec(hidden.name);
+                if (!g) return;
+                const form = document.querySelector('form.day-form');
+                const extra = {};
+                document.querySelectorAll('input[name^="goallink"]').forEach((el) => {
+                    extra[el.name] = el.value;
+                });
+                saveField('meta', form.dataset.date, 'goallink' + g[1], hidden.value, extra);
+            };
+
+            btn.addEventListener('click', () => {
+                if (openBox === box) { closePop(); return; }
+                closePop();
+                const pop = document.createElement('div');
+                pop.className = 'wl-pop';
+                const cur = keys();
+                if (!multi) {
+                    pop.append(mkOpt('', '연결 안 함', !cur.length, false));
+                }
+                todos.forEach((t) => {
+                    pop.append(mkOpt(t.key, t.label, cur.indexOf(t.key) >= 0, multi));
+                });
+                pop.addEventListener('change', (e) => {
+                    const inp = e.target;
+                    if (multi) {
+                        const set = keys().filter((k) => k !== inp.value);
+                        if (inp.checked) set.push(inp.value);
+                        hidden.value = set.join(',');
+                    } else {
+                        hidden.value = inp.value;
+                        closePop();
+                    }
+                    paint();
+                    save();
+                });
+                box.append(pop);
+                openBox = box;
+            });
+        });
+
+        function mkOpt(value, label, checked, multi) {
+            const l = document.createElement('label');
+            l.className = 'wl-opt';
+            const i = document.createElement('input');
+            i.type = multi ? 'checkbox' : 'radio';
+            i.value = value;
+            i.checked = checked;
+            if (!multi) i.name = 'wl-pick';
+            l.append(i, document.createTextNode(label));
+            return l;
         }
     }
 
@@ -2765,6 +2850,7 @@
         });
 
         bindDateParts();
+        bindWkLinks();
         bindGantt();
         bindPlanAreas();
         bindReflect();

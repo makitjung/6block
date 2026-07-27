@@ -210,6 +210,8 @@ def _day_view(request: Request, date_str: str):
     # 그날 컨셉 3칸(빠른 수집함 자리의 1행 3열).
     concepts = _split3(meta["concept"] if meta else "")
     # 각 3줄에 직접 입력한 자유 태그도 같은 방식으로 3칸으로 분리.
+    # 목표 3줄이 각각 이은 그 주 할 일 키(빈 칸이면 연결 없음).
+    goal_links = _split3(meta["goal_links"] if meta else "")
     goal_tags = _split3(meta["goal_tags"] if meta else "")
     plan_tags = _split3(meta["plan_tags"] if meta else "")
     grat_tags = _split3(meta["grat_tags"] if meta else "")
@@ -233,6 +235,7 @@ def _day_view(request: Request, date_str: str):
             # 설정에서 정한 그 요일의 컨셉(날짜 옆 괄호). 비었으면 괄호도 안 나온다.
             "weekday_concept": get_weekday_concepts()[d.weekday()],
             "goal_tags": goal_tags,
+            "goal_links": goal_links,
             "plan_tags": plan_tags,
             "grat_tags": grat_tags,
             "lt_today": lt_today,
@@ -337,8 +340,8 @@ async def save_day(date_str: str, request: Request):
         conn.execute(
             """
             INSERT INTO daily_meta (date, today_goal, daily_plan, memo, vow, gratitude,
-                                    goal_tags, plan_tags, grat_tags, concept)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    goal_tags, plan_tags, grat_tags, concept, goal_links)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date) DO UPDATE SET
                 today_goal = excluded.today_goal,
                 daily_plan = excluded.daily_plan,
@@ -348,7 +351,8 @@ async def save_day(date_str: str, request: Request):
                 goal_tags = excluded.goal_tags,
                 plan_tags = excluded.plan_tags,
                 grat_tags = excluded.grat_tags,
-                concept = excluded.concept
+                concept = excluded.concept,
+                goal_links = excluded.goal_links
             """,
             (
                 date_str,
@@ -361,6 +365,7 @@ async def save_day(date_str: str, request: Request):
                 _join3(form, "plantag"),
                 _join3(form, "grattag"),
                 _join3(form, "concept"),
+                _join3(form, "goallink"),
             ),
         )
     # 저장 후: 오늘 달성 3줄을 '성과' 캘린더에 종일 이벤트로 자동 반영(설명란 1. 2. 3.).
@@ -474,13 +479,16 @@ async def save_field(request: Request):
                     % (field, field, field),
                     (date_str, value),
                 )
-            elif field.startswith("goaltag") or field.startswith("plantag") or field.startswith("grattag"):
-                # 목표/달성/감사 각 줄의 자유 태그 3칸(직접 입력). 바뀐 칸과 그룹 나머지 값을
-                # prefix+번호(goaltag1) 키로 함께 받아 줄바꿈으로 합친다.
+            elif (field.startswith("goaltag") or field.startswith("plantag")
+                  or field.startswith("grattag") or field.startswith("goallink")):
+                # 목표/달성/감사 각 줄의 자유 태그 3칸(직접 입력)과 목표 3줄의 계획 연결 3칸.
+                # 바뀐 칸과 그룹 나머지 값을 prefix+번호(goaltag1) 키로 함께 받아 줄바꿈으로 합친다.
                 if field.startswith("goaltag"):
                     prefix, col = "goaltag", "goal_tags"
                 elif field.startswith("plantag"):
                     prefix, col = "plantag", "plan_tags"
+                elif field.startswith("goallink"):
+                    prefix, col = "goallink", "goal_links"
                 else:
                     prefix, col = "grattag", "grat_tags"
                 existing = conn.execute(

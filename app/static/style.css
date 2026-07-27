@@ -1703,18 +1703,34 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .wk-lt-label { padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px;
     background: var(--surface); color: var(--text); font-size: 12px; width: auto; }
 
-/* 오늘 탭: 블록 이름·DO 옆의 '이번 주 할 일' 연결 고르기(연결만 저장, 글은 직접 입력) */
-.wk-link {
-    flex: 0 0 auto; width: auto; max-width: 116px;
-    padding: 3px 6px; font-size: 11px;
-    border: 1px dashed var(--border-strong); border-radius: var(--r-pill);
-    background: var(--surface); color: var(--text-subtle);
+/* 블록 이름·DO·목표 앞의 '이번 주 계획 연결' 버튼(연결만 저장, 글은 직접 입력) */
+.wl { position: relative; flex: 0 0 auto; display: inline-flex; }
+.wl-btn {
+    padding: 2px 5px; font-size: 11px; line-height: 1.5; cursor: pointer;
+    background: var(--surface-3); color: var(--text-subtle);
+    border: 1px solid transparent; border-radius: var(--r-pill);
+    filter: grayscale(1); opacity: .55;
 }
-.wk-link.is-linked {
-    border-style: solid; border-color: var(--border-focus);
-    background: var(--accent-soft); color: var(--accent-soft-text); font-weight: 700;
+.wl-btn:hover { filter: none; opacity: 1; }
+.wl.is-linked .wl-btn {
+    filter: none; opacity: 1; font-weight: 700;
+    background: var(--accent-soft); color: var(--accent-soft-text);
+    border-color: var(--border-focus);
 }
-@media (max-width: 720px) { .wk-link { max-width: 82px; } }
+.wl-pop {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 40;
+    min-width: 210px; max-width: 320px; max-height: 260px; overflow-y: auto;
+    padding: 6px; background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+    box-shadow: var(--sh-3);
+}
+.wl-opt {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 6px; font-size: 12px; color: var(--text);
+    border-radius: var(--r-sm); cursor: pointer;
+}
+.wl-opt:hover { background: var(--surface-2); }
+.wl-opt input { flex: 0 0 auto; width: auto; margin: 0; }
 
 /* 오늘 탭: 그 날짜에 걸친 장기 최하위 항목 띠(읽기 전용 · 누르면 장기 탭) */
 .lt-strip {

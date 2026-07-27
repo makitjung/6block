@@ -188,10 +188,14 @@ def _migrate(conn: sqlite3.Connection):
         "CREATE INDEX IF NOT EXISTS idx_weekly_lt_goal_week ON weekly_lt_goal(week_start)"
     )
     # 오늘 탭에서 블록·슬롯을 그 주 할 일 중 어느 것에 잇는지(키만 저장, 글은 직접 입력).
+    # 블록은 두 시간짜리라 여러 계획을 담을 수 있어 쉼표로 여러 개를 넣는다.
     if "wk_todo" not in block_cols:
         conn.execute("ALTER TABLE blocks ADD COLUMN wk_todo TEXT")
     if "wk_todo" not in slot_cols:
         conn.execute("ALTER TABLE slots ADD COLUMN wk_todo TEXT")
+    # 오늘 '목표' 3줄이 각각 이어진 그 주 할 일(줄바꿈 3칸, 비면 연결 없음).
+    if "goal_links" not in meta_cols:
+        conn.execute("ALTER TABLE daily_meta ADD COLUMN goal_links TEXT")
     # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
     conn.execute("DROP TABLE IF EXISTS weekday_concept")
     # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.
