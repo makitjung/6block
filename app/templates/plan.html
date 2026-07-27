@@ -45,7 +45,7 @@
         <span class="pl-key" data-level="3"></span>하위3
     </span>
     {% if past_count %}
-    <button type="button" id="pg-past-toggle" class="ghost-btn" data-count="{{ past_count }}">지난 항목 {{ past_count }}개 보기</button>
+    <label class="plan-pastbox"><input type="checkbox" id="pg-past-hide"> 지난 항목 {{ past_count }}개 숨기기</label>
     {% endif %}
     <span class="plan-hint">좌우로 끌면 끈 만큼 기간 이동 · 양 끝을 끌면 기간 조절 · <b>다른 막대 위에서 잠깐 멈추면</b> 그 막대의 하위계획으로 · 다른 블록 줄 빈 자리에 놓으면 그 블록으로 이동</span>
 </div>
@@ -86,7 +86,7 @@
 
 {% else %}
 <div class="plan-scroll">
-    <div class="gantt{% if focus_past %} show-past{% endif %}" data-level="{{ level }}" data-days="{{ span_days }}" style="--cols: {{ columns | length }}">
+    <div class="gantt" data-level="{{ level }}" data-days="{{ span_days }}" style="--cols: {{ columns | length }}">
         {# 해·분기·달이 바뀌는 자리에 세로선 하나. 격자 위에 겹쳐 그려 줄이 늘지 않는다. #}
         {% for col in columns %}{% if col.brk %}
         <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
@@ -124,7 +124,8 @@
                 <button type="button"
                         class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}{% if b.id == focus_id %} is-focus{% endif %}"
                         data-level="{{ b.level }}" data-lane="{{ b.lane }}"
-                        data-id="{{ b.id }}" data-blocks="{{ b.blocks }}"
+                        data-id="{{ b.id }}" data-parent="{{ b.parent_id or '' }}"
+                        data-blocks="{{ b.blocks }}"
                         style="left: {{ b.left }}%; width: {{ b.width }}%; --lane: {{ b.lane }}; --gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg"
                         title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.days }}일 · {{ b.level_label }} · {{ b.progress }}%{% if b.blocks %} · {{ b.blocks }}{% endif %}">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>

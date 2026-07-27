@@ -1110,8 +1110,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .pl-key + .pl-key { margin-left: 8px; }
 .plan-hint { font-size: 12px; color: var(--text-subtle); }
 @media (max-width: 900px) { .plan-hint { display: none; } }
-#pg-past-toggle { font-size: 12px; padding: 4px 12px; white-space: nowrap; }
-#pg-past-toggle.is-on { color: var(--accent); border-color: var(--accent); }
 
 .plan-scroll {
     max-width: 1180px; margin: 0 auto; padding: 4px 18px 28px;
@@ -1718,14 +1716,22 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     35%      { box-shadow: 0 0 0 3px var(--accent); }
 }
 .gt-bar.is-focus { animation: gt-found 1.1s ease-in-out 2; }
-/* 한 항목이 여러 블록에 걸려 있을 때 그 막대들을 잇는 옅은 실선 */
-.gt-tie {
-    position: absolute; width: 0; z-index: 0; pointer-events: none;
-    border-left: 1px solid color-mix(in srgb, var(--gt-tone) 60%, transparent);
-    filter: hue-rotate(var(--gt-hue, 0deg));
+/* 막대 사이 연결선. 격자 위에 겹쳐 깔되 막대(z-index 1↑)보다는 아래에 둔다. */
+.gt-links {
+    position: absolute; left: 0; top: 0; z-index: 0;
+    pointer-events: none; overflow: visible;
 }
-/* 이어진 막대는 왼쪽 끝을 살짝 두껍게 해 선이 어디서 나오는지 보이게 한다 */
-.gt-bar.is-tied { border-left-width: 3px; }
+.gt-link, .gt-span-link {
+    fill: none; stroke-linecap: round; stroke-linejoin: round;
+    stroke-width: 1.5; filter: hue-rotate(var(--gt-hue, 0deg));
+}
+/* 상위–하위: 옅은 실선 갈고리 */
+.gt-link { stroke: color-mix(in srgb, var(--gt-tone) 50%, transparent); }
+/* 같은 항목이 여러 블록에 걸린 것: 더 희미한 점선 곡선 */
+.gt-span-link {
+    stroke: color-mix(in srgb, var(--gt-tone) 32%, transparent);
+    stroke-dasharray: 3 4;
+}
 /* 다른 블록 줄 위에 놓으면 그 블록으로 옮겨진다 */
 .gt-blockrow.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
 /* 막대 위 삭제(✕): 마우스를 올렸을 때만 오른쪽 끝에 나타난다 */
@@ -1782,9 +1788,13 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-e-hint, .gt-f-parent-label { font-size: 11px; color: var(--text-subtle); }
 .gt-f-area, .gt-e-area { flex: 0 0 auto; width: auto; }
 .gt-e-parent { flex: 0 1 auto; width: auto; max-width: 190px; }
-/* 지난 항목(종료일이 오늘 이전)은 기본으로 접는다. '지난 항목 보기'를 누르면 흐리게 함께 보인다 */
-.gantt:not(.show-past) .gt-bar.is-past { display: none; }
-.gantt.show-past .gt-bar.is-past { opacity: .55; border-style: dotted; }
+/* 지난 항목(종료일이 오늘 이전)은 흐리게 해서 기본으로 보여 주고, 체크할 때만 화면에서 뺀다 */
+.gt-bar.is-past { opacity: .55; border-style: dotted; }
+.gantt.hide-past .gt-bar.is-past { display: none; }
+.plan-pastbox {
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    font-size: 12px; color: var(--text-muted); white-space: nowrap;
+}
 @media (max-width: 720px) {
     .gantt { --lead-w: 120px; }
     .gt-form, .gt-edit { margin-left: 0; }

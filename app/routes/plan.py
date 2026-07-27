@@ -651,8 +651,7 @@ def plan_view(request: Request, level: str = "month", anchor: str = "", focus: s
         level = "month"
     a = _parse_anchor(anchor)
     # focus = 방금 끌어 옮긴 항목. 그 항목이 보이는 기간 밖으로 나갔으면 화면을 그쪽으로
-    # 옮겨 준다. 안 그러면 끌던 막대가 그냥 사라진 것처럼 보인다(지난 항목도 마찬가지라
-    # 아래에서 focus_past 로 '지난 항목 보기'를 자동으로 켠다).
+    # 옮겨 준다. 안 그러면 끌던 막대가 그냥 사라진 것처럼 보인다.
     focus_id = int(focus) if focus.isdigit() else 0
     if focus_id:
         with get_conn() as conn:
@@ -686,11 +685,9 @@ def plan_view(request: Request, level: str = "month", anchor: str = "", focus: s
         all_items = [dict(r) for r in conn.execute(
             "SELECT id, title, area_id FROM lt_item ORDER BY title"
         ) if r["area_id"] in ids]
-    # 기본으로 접히는 지난 항목 수(0이면 '지난 항목 보기' 버튼도 내보내지 않는다)
+    # 지난 항목(종료일이 오늘 이전)은 기본으로 보여 주고, 체크박스를 켤 때만 숨긴다.
+    # 0이면 체크박스도 내보내지 않는다.
     past_count = sum(1 for row in gantt for b in row["bars"] if b["past"])
-    # 방금 옮긴 항목이 지난 항목이 됐으면 접힌 채로 두지 않고 펼쳐서 보여 준다
-    focus_past = any(b["past"] for row in gantt for b in row["bars"]
-                     if b["id"] == focus_id)
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -717,7 +714,6 @@ def plan_view(request: Request, level: str = "month", anchor: str = "", focus: s
             "level_labels": PLAN_LEVEL_LABELS,
             "gantt": gantt,
             "focus_id": focus_id,
-            "focus_past": focus_past,
             "all_items": all_items,
             "core_blocks": CORE_BLOCKS,
             "tones": TONES,

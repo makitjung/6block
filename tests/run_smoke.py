@@ -436,8 +436,8 @@ def run_checks(db_path):
                                     "start": "2020-01-01", "end": "2020-01-31"})
     gone = o.get("id")
     _c, h = get(f"/plan?level=month&anchor=2026-08-01&focus={gone}")
-    check("지난 항목으로 나가도 접히지 않고 보인다",
-          'class="gantt show-past"' in h and "지나간 막대" in h)
+    check("지난 항목은 기본으로 보이고 체크박스로만 숨긴다",
+          "지나간 막대" in h and 'id="pg-past-hide"' in h and "show-past" not in h)
     post("/plan/item/delete", {"id": gone})
 
     code, out = post("/plan/item/add", {"area_id": areas[1], "title": "체력 만들기",

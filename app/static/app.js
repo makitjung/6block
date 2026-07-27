@@ -1523,8 +1523,8 @@
         });
 
         bindGanttDrag(gantt);
-        tieMultiBlockBars(gantt);
-        window.addEventListener('resize', () => tieMultiBlockBars(gantt));
+        drawGanttLinks(gantt);
+        window.addEventListener('resize', () => drawGanttLinks(gantt));
 
         gantt.querySelectorAll('.gt-edit').forEach((box) => {
             const id = box.dataset.id;
@@ -1578,13 +1578,11 @@
         });
 
         // 지난 항목(종료일이 오늘 이전) 접기·펴기. 새로고침하면 다시 접힌 상태로 돌아간다.
-        const pastBtn = document.getElementById('pg-past-toggle');
-        pastBtn?.addEventListener('click', () => {
-            const on = gantt.classList.toggle('show-past');
-            pastBtn.textContent = '지난 항목 ' + pastBtn.dataset.count
-                                + (on ? '개 숨기기' : '개 보기');
-            pastBtn.classList.toggle('is-on', on);
-            tieMultiBlockBars(gantt);      // 막대가 나타나거나 사라지면 연결선을 다시 긋는다
+        // 지난 항목은 기본으로 보이고, 체크할 때만 화면에서 뺀다.
+        const pastBox = document.getElementById('pg-past-hide');
+        pastBox?.addEventListener('change', () => {
+            gantt.classList.toggle('hide-past', pastBox.checked);
+            drawGanttLinks(gantt);         // 막대가 사라지면 연결선도 다시 긋는다
         });
 
         // 방금 옮긴 막대가 있으면 그 자리로 스크롤해 놓친 것처럼 보이지 않게 한다
@@ -1839,36 +1837,70 @@
         location.href = u.toString();
     }
 
-    // 한 항목을 여러 블록에 걸어 두면 같은 막대가 줄마다 나온다. 그 막대들을 옅은 세로선으로
-    // 이어 "하나가 여러 군데에 나뉘어 있다"는 게 보이게 한다. 막대는 날짜가 같아 가로 위치도
-    // 같으므로 왼쪽 끝 근처에 선 하나만 그으면 된다. 폭이 바뀌면 다시 긋는다.
-    function tieMultiBlockBars(gantt) {
-        gantt.querySelectorAll('.gt-tie').forEach((el) => el.remove());
+    // 막대끼리의 관계를 격자 위에 겹친 SVG 한 장에 그린다. 두 가지다.
+    //  1) 상위–하위: 옅은 실선 갈고리(상위 왼쪽에서 내려와 하위 왼쪽으로 붙는다)
+    //  2) 한 항목이 여러 블록에 걸린 것: 최상위 항목만 옅은 점선 곡선으로 잇는다
+    // 자리 계산이 필요해 그린 뒤에 재며, 폭이 바뀌거나 막대가 나타나고 사라지면 다시 그린다.
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    function drawGanttLinks(gantt) {
+        gantt.querySelector('.gt-links')?.remove();
+        const vis = [...gantt.querySelectorAll('.gt-bar')].filter((b) => b.offsetParent);
+        if (!vis.length) return;
+        const base = gantt.getBoundingClientRect();
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('class', 'gt-links');
+        svg.setAttribute('width', gantt.scrollWidth);
+        svg.setAttribute('height', gantt.scrollHeight);
+        const box = (el) => {
+            const r = el.getBoundingClientRect();
+            return { l: r.left - base.left, w: r.width,
+                     t: r.top - base.top, b: r.bottom - base.top,
+                     cy: r.top - base.top + r.height / 2 };
+        };
+        const draw = (d, cls, from) => {
+            const st = getComputedStyle(from);
+            const p = document.createElementNS(SVG_NS, 'path');
+            p.setAttribute('d', d);
+            p.setAttribute('class', cls);
+            p.style.setProperty('--gt-tone', st.getPropertyValue('--gt-tone'));
+            p.style.setProperty('--gt-hue', st.getPropertyValue('--gt-hue'));
+            svg.appendChild(p);
+        };
+
         const byId = new Map();
-        gantt.querySelectorAll('.gt-bar').forEach((b) => {
-            if (!b.offsetParent) return;             // 접힌 지난 항목은 뺀다
+        vis.forEach((b) => {
             if (!byId.has(b.dataset.id)) byId.set(b.dataset.id, []);
             byId.get(b.dataset.id).push(b);
         });
-        const base = gantt.getBoundingClientRect();
-        byId.forEach((bars) => {
-            if (bars.length < 2) return;
-            const rects = bars.map((b) => b.getBoundingClientRect());
-            const top = Math.min(...rects.map((r) => r.bottom));
-            const bottom = Math.max(...rects.map((r) => r.top));
-            if (bottom <= top) return;
-            const style = getComputedStyle(bars[0]);
-            const tie = document.createElement('span');
-            tie.className = 'gt-tie';
-            tie.style.left = (rects[0].left - base.left
-                              + Math.min(14, rects[0].width / 2)) + 'px';
-            tie.style.top = (top - base.top) + 'px';
-            tie.style.height = (bottom - top) + 'px';
-            tie.style.setProperty('--gt-tone', style.getPropertyValue('--gt-tone'));
-            tie.style.setProperty('--gt-hue', style.getPropertyValue('--gt-hue'));
-            gantt.appendChild(tie);
-            bars.forEach((b) => b.classList.add('is-tied'));
+
+        // 1) 상위 → 하위. 같은 줄에 있는 상위를 먼저 짝지어 선이 멀리 돌지 않게 한다.
+        vis.forEach((b) => {
+            const kin = byId.get(b.dataset.parent);
+            if (!kin) return;
+            const row = b.closest('.gt-blockrow');
+            const up = kin.find((p) => p.closest('.gt-blockrow') === row) || kin[0];
+            const pb = box(up);
+            const cb = box(b);
+            const x = pb.l + Math.min(10, pb.w / 2);
+            draw(`M ${x} ${pb.cy} V ${cb.cy} H ${cb.l}`, 'gt-link', b);
         });
+
+        // 2) 같은 항목이 여러 블록에 걸린 것. 최상위만 이어 화면이 복잡해지지 않게 한다.
+        byId.forEach((bars) => {
+            if (bars.length < 2 || bars[0].dataset.level !== '0') return;
+            const sorted = bars.slice().sort((a, c) => box(a).t - box(c).t);
+            for (let i = 0; i + 1 < sorted.length; i++) {
+                const a = box(sorted[i]);
+                const c = box(sorted[i + 1]);
+                const x = a.l + Math.min(14, a.w / 2);
+                // 멀수록 더 부풀려 언제나 곡선으로 보이게 한다(실선 갈고리와 헷갈리지 않게)
+                const bow = Math.max(18, Math.min(46, (c.t - a.b) * 0.32));
+                draw(`M ${x} ${a.b} C ${x - bow} ${a.b + 8}, ${x - bow} ${c.t - 8}, ${x} ${c.t}`,
+                     'gt-span-link', sorted[i]);
+            }
+        });
+        gantt.appendChild(svg);
     }
 
     // 좌우로 끌면 끈 픽셀을 그대로 날짜로 바꿔 그만큼 기간이 옮겨지고(열 단위로 튀지 않는다),
