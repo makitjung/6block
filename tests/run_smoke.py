@@ -1,5 +1,6 @@
 # 6block 전체 스모크 테스트. 임시 서버를 직접 띄우고 실제 HTTP 요청으로 확인한 뒤 정리한다.
 # 실행 · .venv/bin/python tests/run_smoke.py   (외부 라이브러리 없이 표준 라이브러리만 사용)
+import datetime
 import json
 import os
 import pathlib
@@ -338,9 +339,10 @@ def run_checks(db_path):
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (parent,))[0]
     check("블록이 저장됨", v["block_label"] == "B3", dict(v))
     _c, h = get("/plan?level=month&anchor=2026-08-01")
-    seg = block_seg(h, "B3")
-    check("상위·하위가 함께 B3 줄에 그려짐(하위는 상위 블록을 따름)",
-          "노무사 1차 합격" in seg and "노동법 1회독" in seg, seg[:160])
+    check("블록은 항목마다 제 것만 본다(하위는 상위를 따라가지 않는다)",
+          "노무사 1차 합격" in block_seg(h, "B3")
+          and "노동법 1회독" not in block_seg(h, "B3")
+          and "노동법 1회독" in block_seg(h, ""), block_seg(h, "B3")[:160])
     code, out = post("/plan/item/update", {"id": child, "block": "B5"})
     _c, h = get("/plan?level=month&anchor=2026-08-01")
     check("하위에 블록을 따로 주면 그 줄로 빠짐",
@@ -358,9 +360,33 @@ def run_checks(db_path):
     code, out = post("/plan/item/update", {"id": child, "block": "B5,없는블록,B5"})
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
     check("모르는 값·중복은 버린다", v["block_label"] == "B5", dict(v))
+    # 여러 블록에 걸린 항목은 어느 줄에서 고쳐도 한 곳에 저장돼 모든 줄에 함께 반영된다
+    post("/plan/item/update", {"id": child, "block": "B2,B5"})
+    post("/plan/item/update", {"id": child, "title": "노동법 2회독"})
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("한 줄에서 고치면 다른 블록 줄에도 함께 반영",
+          "노동법 2회독" in block_seg(h, "B2") and "노동법 2회독" in block_seg(h, "B5")
+          and "노동법 1회독" not in h)
+    post("/plan/item/update", {"id": child, "title": "노동법 1회독"})
+    code, out = post("/plan/item/update", {"id": child, "block": ""})
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("블록을 하나도 안 고르면 미지정 줄로 간다",
+          v["block_label"] is None and "노동법 1회독" in block_seg(h, ""), dict(v))
+    post("/plan/item/update", {"id": child, "block": "B5"})
     code, out = post("/plan/item/update", {"id": child, "block": "없는블록"})
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
     check("모르는 블록 값은 미지정으로", v["block_label"] is None, dict(v))
+    # 상위가 하위보다 위 칸에 온다(상위 lane < 하위 lane)
+    post("/plan/item/update", {"id": parent, "block": "B3"})
+    post("/plan/item/update", {"id": child, "block": "B3"})
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    seg = block_seg(h, "B3")
+    lane_of = dict((m[1], m[0]) for m in
+                   re.findall(r'data-lane="(\d+)"[^>]*data-id="(\d+)"', seg))
+    check("상위가 하위보다 위 칸에 놓인다",
+          lane_of.get(str(parent)) < lane_of.get(str(child)), lane_of)
+    post("/plan/item/update", {"id": child, "block": ""})
     # 막대 색 = 영역 톤, 진하기 = 기간 구분(--gt-tone 과 data-span 이 함께 실린다)
     check("막대에 영역 색이 실림", "--gt-tone: var(--tone-" in h)
     code, out = post("/plan/area/update", {"id": areas[0], "tone": "purple"})
@@ -427,6 +453,29 @@ def run_checks(db_path):
           and p["start_date"] == "2026-07-27" and c["start_date"] == "2026-08-27",
           {"before": before, "parent": p["start_date"], "child": c["start_date"]})
     post("/plan/item/shift", {"id": parent, "days": "-7"})
+    # 상위 기간을 고치면 하위 기간도 그만큼 따라 움직인다(시작·종료 각각)
+    ps = db_query(db_path,
+                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
+    cs = db_query(db_path,
+                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    post("/plan/item/update", {"id": parent, "start": "2026-07-25", "end": ps["end_date"]})
+    c2 = db_query(db_path,
+                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    moved = (datetime.date.fromisoformat("2026-07-25")
+             - datetime.date.fromisoformat(ps["start_date"])).days
+    want = (datetime.date.fromisoformat(cs["start_date"])
+            + datetime.timedelta(days=moved)).isoformat()
+    check("상위 시작을 옮기면 하위 시작도 같이 움직임",
+          c2["start_date"] == want and c2["end_date"] == cs["end_date"],
+          {"moved": moved, "child": dict(c2), "want": want})
+    code, out = post("/plan/item/resize", {"id": parent, "edge": "end", "days": "14"})
+    c3 = db_query(db_path,
+                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    want_e = (datetime.date.fromisoformat(c2["end_date"])
+              + datetime.timedelta(days=14)).isoformat()
+    check("상위 종료를 늘리면 하위 종료도 같이 늘어남",
+          c3["end_date"] == want_e and c3["start_date"] == c2["start_date"],
+          {"child": dict(c3), "want": want_e})
     # 끌어서 보이는 기간 밖으로 보내도 사라지지 않는다. focus 를 주면 그 항목이 보이는
     # 자리로 화면이 옮겨 가고, 지난 항목이 됐으면 접힘도 풀린다.
     _c, h = get(f"/plan?level=month&anchor=2026-08-01&focus={child}")
@@ -443,6 +492,8 @@ def run_checks(db_path):
     code, out = post("/plan/item/add", {"area_id": areas[1], "title": "체력 만들기",
                                         "start": "2026-08-01", "end": "2026-12-31"})
     other = out.get("id")
+    p0 = db_query(db_path,
+                  "SELECT start_date FROM lt_item WHERE id=?", (parent,))[0]["start_date"]
     code, out = post("/plan/item/reparent", {"id": other, "parent_id": parent})
     r = db_query(db_path,
                  "SELECT parent_id, area_id FROM lt_item WHERE id=?", (other,))[0]
@@ -450,8 +501,9 @@ def run_checks(db_path):
           code == 200 and r["parent_id"] == parent and r["area_id"] == int(areas[0]), dict(r))
     p = db_query(db_path,
                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
+    # 새 하위가 상위보다 늦게 끝나면 상위 종료가 그만큼 늘어난다(시작은 이미 더 이르다)
     check("하위가 늘면 상위 막대가 그만큼 넓어짐",
-          p["start_date"] == "2026-07-20" and p["end_date"] == "2026-12-31", dict(p))
+          p["start_date"] == p0 and p["end_date"] == "2026-12-31", dict(p))
     code, out = post("/plan/item/reparent", {"id": parent, "parent_id": other})
     check("자기 하위로는 넣지 못함", code == 400, out)
 

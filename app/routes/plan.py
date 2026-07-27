@@ -206,20 +206,48 @@ MIN_LANES = 2
 def _assign_lanes(bars: list[dict]) -> int:
     """한 줄 안에서 막대를 위아래 칸에 나눠 담는다. 쓴 칸 수(최소 MIN_LANES)를 돌려준다.
 
-    시작이 이른 것부터 훑으며 아직 안 겹치는 첫 칸에 넣는다. 날짜는 'YYYY-MM-DD'라
-    문자열 비교가 곧 날짜 비교다. 화면에 보이는 구간(vs~ve)으로 재야 눈에 겹치지 않는다.
+    상위 항목이 하위 항목보다 위 칸에 오도록 계층 단계가 얕은 것부터 자리를 잡고,
+    같은 줄에 상위가 있으면 그 바로 아래 칸부터 빈자리를 찾는다. 기간이 안 겹치는
+    것끼리는 같은 칸을 나눠 쓴다. 날짜는 'YYYY-MM-DD'라 문자열 비교가 곧 날짜 비교이며,
+    화면에 보이는 구간(vs~ve)으로 재야 눈에 겹치지 않는다.
     """
-    ends: list[str] = []
-    for b in sorted(bars, key=lambda x: (x["vs"], x["ve"], x["id"])):
-        for i, end in enumerate(ends):
-            if b["vs"] > end:
-                ends[i] = b["ve"]
-                b["lane"] = i
+    lanes: list[list[tuple[str, str]]] = []   # 칸마다 이미 놓인 (시작, 끝) 목록
+    placed: dict[int, int] = {}               # 항목 id → 이 줄에서 쓴 칸
+    for b in sorted(bars, key=lambda x: (x["level"], x["vs"], x["ve"], x["id"])):
+        i = placed.get(b["parent_id"], -1) + 1
+        while True:
+            if i >= len(lanes):
+                lanes.append([])
+            if all(b["ve"] < s or b["vs"] > e for s, e in lanes[i]):
                 break
-        else:
-            b["lane"] = len(ends)
-            ends.append(b["ve"])
-    return max(len(ends), MIN_LANES)
+            i += 1
+        lanes[i].append((b["vs"], b["ve"]))
+        b["lane"] = i
+        placed[b["id"]] = i
+    return max(len(lanes), MIN_LANES)
+
+
+def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):
+    """상위 기간이 움직인 만큼 하위 사슬의 시작·종료도 같이 민다.
+
+    시작을 ds일, 종료를 de일 옮긴다(각각 0이면 그쪽은 그대로). 상위 시작이 뒤로 가면
+    하위 시작도 그만큼 뒤로 간다. 하위가 뒤집히면 시작에 붙여 0일짜리로 둔다.
+    """
+    if not ds and not de:
+        return
+    for kid in _lt_descendants(conn, item_id):
+        row = conn.execute(
+            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (kid,)
+        ).fetchone()
+        s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
+        if not s or not e:
+            continue
+        s2 = s + timedelta(days=ds)
+        e2 = max(e + timedelta(days=de), s2)
+        conn.execute(
+            "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
+            (s2.isoformat(), e2.isoformat(), now, kid),
+        )
 
 # 막대 색 진하기는 기간 길이가 아니라 계층 단계로 정한다. 최상위가 가장 진하고 하위로 갈수록 연하다.
 MAX_LEVEL = 3
@@ -341,15 +369,16 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
 
     bars_by_block: dict[str, list] = {r["key"]: [] for r in rows}
 
-    def walk(it, parent_blocks: list[str], level: int, hue: int):
-        blocks = _split_blocks(it["block_label"]) or parent_blocks or [""]
+    def walk(it, level: int, hue: int):
+        # 블록은 항목마다 제 것만 본다. 안 고르면 미지정 줄로 간다(상위를 따라가지 않는다).
+        blocks = _split_blocks(it["block_label"]) or [""]
         b = bar(it, blocks, level, hue)
         if b["visible"]:
             for k in blocks:
                 bars_by_block[k].append({**b})   # 줄마다 칸(lane)이 달라 사본으로 담는다
         for c in children.get(it["id"], []):
             if overlaps(c):
-                walk(c, blocks, level + 1, hue)
+                walk(c, level + 1, hue)
 
     seen: dict[int, int] = {}       # 영역마다 뿌리를 몇 개 봤는지(색조를 돌려 쓰려고)
     for it in children.get(None, []):
@@ -357,7 +386,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
             continue
         n = seen.get(it["area_id"], 0)
         seen[it["area_id"]] = n + 1
-        walk(it, [], 0, HUE_STEPS[n % len(HUE_STEPS)])
+        walk(it, 0, HUE_STEPS[n % len(HUE_STEPS)])
 
     # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
     return [{**row,
@@ -467,6 +496,11 @@ async def plan_item_update(request: Request):
         )
         # 적어 넣은 기간은 하위가 있어도 그대로 둔다. 예전에는 하위를 모두 품도록
         # 되돌려 놔서 상위 항목은 날짜를 고쳐도 안 바뀌는 것처럼 보였다.
+        # 대신 상위가 움직인 만큼 하위 사슬도 같이 민다.
+        old_s, old_e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
+        new_s, new_e = _parse_date(s), _parse_date(e)
+        if old_s and old_e and new_s and new_e:
+            _lt_apply_delta(conn, item_id, (new_s - old_s).days, (new_e - old_e).days, now)
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True})
 
@@ -513,7 +547,7 @@ async def plan_item_shift(request: Request):
 async def plan_item_resize(request: Request):
     """막대의 한쪽 끝(edge=start|end)만 끈 만큼(일 단위) 늘리거나 줄인다.
 
-    하위가 있어도 끈 대로 줄어든다(하위가 상위 밖으로 삐져나오면 그대로 보인다).
+    하위가 있으면 움직인 그 끝에 맞춰 하위 사슬의 같은 쪽 끝도 함께 민다.
     """
     form = await request.form()
     try:
@@ -546,6 +580,9 @@ async def plan_item_resize(request: Request):
             "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
             (s.isoformat(), e.isoformat(), now, item_id),
         )
+        _lt_apply_delta(conn, item_id,
+                        days if edge == "start" else 0,
+                        days if edge == "end" else 0, now)
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True})
 

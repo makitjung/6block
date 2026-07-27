@@ -1924,7 +1924,8 @@
         const reset = () => {
             if (drag) {
                 clearTimeout(drag.holdT);
-                drag.bar.classList.remove('is-dragging', 'is-resizing', 'is-nesting');
+                drag.bar.classList.remove('is-dragging', 'is-resizing',
+                                          'is-nesting', 'is-detaching');
                 drag.bar.style.transform = '';
                 drag.bar.style.left = drag.css.left;
                 drag.bar.style.width = drag.css.width;
@@ -1934,6 +1935,12 @@
         };
         const HOLD = 350;   // 다른 막대 위에서 이만큼 멈춰 있으면 '하위로 넣기'로 잡는다
         const REARM = 25;   // 그만큼 움직이면 멈춤 판정을 처음부터 다시 센다
+        const SNAP = 7;     // 끌 때는 주 단위로 붙는다(정확한 날짜는 편집칸에 적는다)
+        const DETACH = 20;  // 하위 막대를 이만큼 곧장 아래로 끌면 상위에서 뗀다
+        // 끈 픽셀을 주 단위 날수로. 하루 단위로 떨리지 않게 7일씩 끊어 붙인다.
+        const dragDays = (dx) => Math.round(dx * daysPerPx(drag.track) / SNAP) * SNAP;
+        // 아래로 곧장 끌어 빈 자리에 놓았는가(상위에서 떼는 몸짓)
+        const wantsDetach = (dx, dy) => !!drag.parent && dy > DETACH && dy > Math.abs(dx);
         // 포인터 아래에 무엇이 있는지(끌고 있는 막대는 잠시 통과시켜 밑을 본다)
         const under = (x, y) => {
             drag.bar.style.pointerEvents = 'none';
@@ -1987,6 +1994,7 @@
                     bar, id: bar.dataset.id, x0: e.clientX, y0: e.clientY, moved: false,
                     edge, nest: null, hover: null, holdT: 0,
                     armX: e.clientX, armY: e.clientY,
+                    parent: bar.dataset.parent || '',
                     track: bar.closest('.gt-track'), row: bar.closest('.gt-blockrow'),
                     css: { left: bar.style.left, width: bar.style.width },
                     px: { left: r.left, width: r.width },
@@ -2027,6 +2035,7 @@
                     const t = dropTargetAt(e.clientX, e.clientY);
                     if (t) t.el.classList.add('is-drop-target');
                     bar.classList.toggle('is-nesting', !!(t && t.kind === 'bar'));
+                    bar.classList.toggle('is-detaching', !t && wantsDetach(dx, dy));
                 }
             });
             bar.addEventListener('pointerup', (e) => {
@@ -2034,7 +2043,9 @@
                 if (!drag.moved) { reset(); return; }
                 bar.dataset.dragged = '1';           // 이어서 오는 click(편집창 열기)은 무시
                 const dx = e.clientX - drag.x0;
-                const days = Math.round(dx * daysPerPx(drag.track));   // 끈 만큼을 날짜로
+                const dy = e.clientY - drag.y0;
+                const days = dragDays(dx);           // 끈 만큼을 주 단위 날수로
+                const detach = wantsDetach(dx, dy);
                 const id = drag.id;
                 const from = drag.row ? (drag.row.dataset.block || '') : '';
                 const blocks = (bar.dataset.blocks || '').split(',').filter(Boolean);
@@ -2065,6 +2076,13 @@
                              { id: id, block: next.join(',') }).then((d) => {
                         if (d && d.ok) reloadOn(id);
                         else toast((d && d.error) || '옮기지 못했습니다');
+                    });
+                } else if (detach) {
+                    // 하위 막대를 곧장 아래로 끌면 상위에서 떼어 그 영역의 최상위로 뺀다
+                    postForm('/plan/item/reparent',
+                             { id: id, area_id: bar.dataset.area }).then((d) => {
+                        if (d && d.ok) reloadOn(id);
+                        else toast((d && d.error) || '떼어내지 못했습니다');
                     });
                 } else if (days !== 0) {
                     // 하위가 있으면 서버가 하위 사슬까지 같은 날수만큼 함께 민다

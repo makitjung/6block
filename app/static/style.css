@@ -1710,6 +1710,8 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* 하위로 들어갈 자리에 왔을 때 끌고 있는 막대도 함께 표시한다 */
 .gt-bar.is-nesting { outline: 2px dashed var(--accent); outline-offset: 2px; }
+/* 곧장 아래로 끌어 상위에서 뗄 참이라는 표시 */
+.gt-bar.is-detaching { outline: 2px dotted var(--danger); outline-offset: 2px; }
 /* 방금 끌어 옮긴 막대. 화면 밖·지난 항목으로 나가도 찾을 수 있게 잠깐 깜빡인다 */
 @keyframes gt-found {
     0%, 100% { box-shadow: none; }
