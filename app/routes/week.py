@@ -142,6 +142,16 @@ def _week_view(request: Request, monday: date):
     for r in rows:
         blocks_by_date[r["date"]].append(r)
 
+    # 블록 이름 카드에서 '요일별'을 펼쳤을 때 쓸 칸. 라벨(B1~B6)마다 그 주 7일치 블록을 모은다.
+    # name 은 그 날만의 덮어쓰기값이라 비어 있으면 주간 이름을 따른다.
+    name_cells: dict[str, list] = {}
+    for ds in dates:
+        for b in blocks_by_date[ds]:
+            if b["is_core"]:
+                name_cells.setdefault(b["block_label"], []).append(
+                    {"id": b["id"], "date": ds, "name": (b["name"] or "").strip()}
+                )
+
     # 주간 캘린더: 각 날짜 일정을 블록(block_order)에 매핑, 종일 일정은 따로.
     cal_by_date = gcal.events_for_range(monday, monday + timedelta(days=6))
     week_block_events: dict[str, dict[int, list]] = {}
@@ -214,6 +224,7 @@ def _week_view(request: Request, monday: date):
             # 목표 열의 자유 란 3개(장기와 무관한 그 주만의 목표)
             "weekly_goals": _split3(wmeta["weekly_goal"] if wmeta else ""),
             "themes_by_label": themes_by_label,
+            "name_cells": name_cells,
             "cat_templates": [dict(t) for t in wk_templates],
             "week_items": week_items,
             "core_labels": CORE_LABELS,

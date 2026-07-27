@@ -737,21 +737,32 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .theme-fold > summary::after { content: "▸"; margin-left: 8px; color: var(--text-subtle); }
 .theme-fold[open] > summary::after { content: "▾"; }
 .theme-fold[open] > summary { margin-bottom: 12px; }
-.theme-fold:not([open]) > .theme-grid { display: none; }
+.theme-fold:not([open]) > .theme-list { display: none; }
 
-/* === Theme grid (week) === */
-.theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.theme-card {
-    display: flex; flex-direction: column; gap: 6px;
+/* === 주간 블록 이름: 한 줄에 B1~B6, 필요한 줄만 요일별 7칸을 펼친다 === */
+.theme-list { display: flex; flex-direction: column; gap: 6px; }
+.theme-item {
     background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: var(--r-md); padding: 12px; position: relative;
+    border-radius: var(--r-sm); padding: 7px 10px;
 }
-.theme-card::before {
-    content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
-    background: var(--accent); border-radius: 2px;
+.theme-row { display: flex; align-items: center; gap: 8px; }
+.theme-label { flex: 0 0 auto; width: 26px; font-weight: 800; font-size: 13px; color: var(--accent); }
+.theme-row input { flex: 1 1 auto; min-width: 0; }
+.theme-wd-btn { flex: 0 0 auto; font-size: 12px; padding: 4px 10px; white-space: nowrap; }
+.theme-wd-btn.has-over { color: var(--accent); border-color: var(--border-focus); }
+.theme-wd-btn.is-open { background: var(--accent-soft); }
+.theme-wd {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px; margin-top: 8px; padding-left: 34px;
 }
-.theme-label { font-weight: 700; font-size: 15px; color: var(--accent); padding-left: 8px; }
-.theme-card textarea { background: var(--surface); }
+.theme-wd[hidden] { display: none; }
+.theme-wd-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.theme-wd-day { font-size: 11px; font-weight: 700; color: var(--text-subtle); text-align: center; }
+.theme-wd-cell.is-today .theme-wd-day { color: var(--accent); }
+.theme-wd-cell input { width: 100%; min-width: 0; padding: 4px 6px; font-size: 12px; }
+@media (max-width: 820px) {
+    .theme-wd { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-left: 0; }
+}
 
 /* === Category bars === */
 .cat-bars { display: flex; flex-direction: column; gap: 10px; }
@@ -806,16 +817,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .mini-ev .t { font-variant-numeric: tabular-nums; font-weight: 700; }
 
-/* 주간 7일보기 미니블록 편집(이름·구분) */
+/* 주간 7일보기 미니블록(구분만 편집 · 이름은 위 카드에서 고친다) */
 .mini-go { display: inline-flex; align-items: center; gap: 2px; }
-.mini-name-input {
-    width: 100%; margin-top: 4px; font-size: 11px; font-weight: 600;
-    color: var(--accent-soft-text); background: transparent;
-    border: 1px solid transparent; border-radius: var(--r-sm); padding: 2px 5px;
+.mini-name {
+    margin-top: 4px; font-size: 11px; font-weight: 700; color: var(--accent-soft-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mini-name-input:hover { border-color: var(--border); }
-.mini-name-input:focus { background: var(--surface); border-color: var(--border-focus); }
-.mini-name-input::placeholder { color: var(--text-subtle); font-weight: 400; }
 /* 주간 미니블록: 구분을 머리말 왼쪽에 작은 색 칩으로 */
 .mini-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .mini-cat {
@@ -1721,6 +1728,21 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .wk-lt-prog-input { width: 58px; text-align: right; }
 .wk-lt-label { padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px;
     background: var(--surface); color: var(--text); font-size: 12px; width: auto; }
+
+/* 제목 옆 물음표 도움말. 설명 글은 눌렀을 때만 보인다. */
+.hint {
+    flex: 0 0 auto; width: 16px; height: 16px; padding: 0; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800; line-height: 1;
+    color: var(--text-subtle); background: var(--surface-3);
+    border: none; border-radius: 50%; vertical-align: middle;
+}
+.hint:hover { color: var(--accent); background: var(--accent-soft); }
+.hint-pop {
+    display: inline-block; margin-left: 6px; padding: 3px 8px;
+    font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-muted);
+    background: var(--surface-3); border-radius: var(--r-sm);
+}
 
 /* 블록 이름·DO·목표 앞의 '이번 주 계획 연결' 버튼(연결만 저장, 글은 직접 입력) */
 .wl { position: relative; flex: 0 0 auto; display: inline-flex; }

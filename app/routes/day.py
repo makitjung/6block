@@ -194,7 +194,7 @@ def _day_view(request: Request, date_str: str):
                    for s in slots_by_block.get(b["id"], [])):
                 core_achieved += 1
     day_stats = {
-        "done": done_slots, "recorded": recorded_slots,
+        "done": done_slots, "recorded": recorded_slots, "total": len(slots),
         "core_planned": core_planned, "core_achieved": core_achieved,
     }
 

@@ -1566,6 +1566,55 @@
         }
     }
 
+    // ---- 주간 블록 이름: 요일별 펼치기 -------------------------------------
+    // 평소엔 B1~B6 여섯 칸만 보이고, '요일별'을 누른 줄만 월~일 7칸이 열린다.
+    // 요일 칸이 비면 주간 이름을 따르므로, 다르게 갈 날만 채우면 된다.
+    function bindThemeWeekdays() {
+        document.querySelectorAll('.theme-item').forEach((item) => {
+            const btn = item.querySelector('.theme-wd-btn');
+            const box = item.querySelector('.theme-wd');
+            if (!btn || !box) return;
+            btn.addEventListener('click', () => {
+                const open = box.hidden;
+                box.hidden = !open;
+                btn.setAttribute('aria-expanded', String(open));
+                btn.classList.toggle('is-open', open);
+            });
+            // 주간 이름을 고치면 아직 안 채운 요일 칸의 안내글도 따라 바뀐다.
+            const weekly = item.querySelector('input[name^="theme_"]');
+            weekly?.addEventListener('input', () => {
+                const ph = weekly.value.trim() || item.dataset.label;
+                box.querySelectorAll('input').forEach((el) => { el.placeholder = ph; });
+            });
+            // 채워진 요일 수를 버튼에 남겨 접어 둬도 덮어쓴 날이 있는지 보인다.
+            box.addEventListener('input', () => {
+                const n = [...box.querySelectorAll('input')].filter((el) => el.value.trim()).length;
+                btn.textContent = n ? '요일별 ' + n : '요일별';
+                btn.classList.toggle('has-over', n > 0);
+            });
+        });
+    }
+
+    // ---- 물음표 도움말 -----------------------------------------------------
+    // 제목 옆 작은 ? 를 누르면 그 자리에서 설명이 뜬다. 설명 글은 data-hint 에만 두어
+    // 평소 화면에는 글자가 늘지 않는다.
+    function bindHints() {
+        let pop = null;
+        const close = () => { if (pop) { pop.remove(); pop = null; } };
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.hint');
+            if (!btn) { close(); return; }
+            const was = pop && pop.dataset.for === btn.dataset.hint;
+            close();
+            if (was) return;
+            pop = document.createElement('span');
+            pop.className = 'hint-pop';
+            pop.dataset.for = btn.dataset.hint;
+            pop.textContent = btn.dataset.hint;
+            btn.parentNode.insertBefore(pop, btn.nextSibling);
+        });
+    }
+
     // ---- 이번 주 계획 연결(🔗) ---------------------------------------------
     // 블록 이름·DO·목표 앞의 작은 버튼. 누르면 그 주 할 일 목록이 열리고 고른 키만
     // 숨은 칸에 담긴다(글은 각자 직접 쓴다). 블록은 여러 개를 쉼표로 잇는다.
@@ -2870,6 +2919,8 @@
             });
         });
 
+        bindHints();
+        bindThemeWeekdays();
         bindDateParts();
         bindWkLinks();
         bindGantt();
