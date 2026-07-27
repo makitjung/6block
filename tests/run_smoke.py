@@ -429,6 +429,16 @@ def run_checks(db_path):
     code, wk = get("/week/2026-07-27")
     check("설정을 켜면 수집함이 다시 보임",
           'id="inbox-input"' in html and 'id="wk-inbox-input"' in wk)
+
+    # 16-2. 슬롯 '고민'·'▶' 버튼은 기본으로 감춘다(설정에서 각각 켤 수 있다)
+    code, html = get("/day/2026-07-31")
+    check("기본은 슬롯 고민·▶ 버튼 숨김",
+          'class="slot-reflect"' not in html and 'class="slot-play"' not in html)
+    post("/settings/save", {"show_reflect": "1", "show_slot_play": "1"})
+    code, html = get("/day/2026-07-31")
+    check("설정을 켜면 슬롯 고민·▶ 버튼이 보임",
+          'class="slot-reflect"' in html and 'class="slot-play"' in html)
+    post("/settings/save", {"show_reflect": "0", "show_slot_play": "0"})
     post("/settings/save", {"show_inbox": "0"})
 
     # 17. 요일 컨셉(설정 7칸 → 오늘 탭 날짜 옆 괄호)
