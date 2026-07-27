@@ -315,10 +315,13 @@ def run_checks(db_path):
     check("같은 영역의 다른 뿌리는 색조가 다름", len(hues) >= 2, sorted(hues))
     post("/plan/item/delete", {"id": second})
     def block_seg(page, key):
-        """그 블록 줄 하나만 잘라낸다(막대 + 그 줄의 추가폼·편집칸까지)."""
+        """그 블록 줄의 막대 부분만 잘라낸다(추가폼·편집칸은 뺀다).
+
+        편집칸의 '상위 항목' 목록에 모든 항목 이름이 들어 있어 그것까지 세면 안 된다.
+        """
         for s in re.split(r'(?=<div class="gt-row gt-blockrow)', page):
             if f'data-block="{key}"' in s.split(">", 1)[0] + ">":
-                return s
+                return s.split('<div class="gt-form"')[0]
         return ""
     # 같은 블록 줄 안에서 상위(depth 0)와 하위(depth 1) 막대가 겹쳐 그려진다.
     # 아직 블록을 안 준 항목이라 미지정(data-block="") 줄에 함께 들어 있다.
