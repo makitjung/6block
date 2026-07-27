@@ -1699,14 +1699,22 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-bar { touch-action: none; cursor: grab; }
 .gt-bar.is-dragging { cursor: grabbing; opacity: .9; z-index: 9; box-shadow: var(--sh-3); }
 .gt-bar.is-resizing { z-index: 9; box-shadow: var(--sh-3); }
-/* 양 끝은 기간 조절 손잡이. 좁은 막대에서도 잡히도록 폭의 1/3까지 줄여 쓴다. */
+/* 양 끝은 기간 조절 손잡이. 좁은 막대에서도 잡히도록 폭의 1/3까지 줄여 쓴다.
+   마우스를 올리면 잡을 자리에 세로 손잡이가 보여 이동과 헷갈리지 않게 한다. */
 .gt-handle {
     position: absolute; top: 0; bottom: 0; z-index: 3; cursor: ew-resize;
-    width: min(10px, 33%);
+    width: min(16px, 33%);
 }
 .gt-handle.l { left: 0; }
 .gt-handle.r { right: 0; }
-.gt-bar.clip-l .gt-handle.l, .gt-bar.clip-r .gt-handle.r { cursor: grab; }
+.gt-handle::before {
+    content: ''; position: absolute; top: 25%; bottom: 25%; width: 2px;
+    border-radius: 2px; background: currentColor; opacity: 0;
+}
+.gt-handle.l::before { left: 3px; }
+.gt-handle.r::before { right: 3px; }
+.gt-bar:hover .gt-handle::before { opacity: .6; }
+@media (hover: none) { .gt-handle::before { opacity: .45; } }
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* 하위로 들어갈 자리에 왔을 때 끌고 있는 막대도 함께 표시한다 */
 .gt-bar.is-nesting { outline: 2px dashed var(--accent); outline-offset: 2px; }

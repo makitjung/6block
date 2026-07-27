@@ -1874,7 +1874,8 @@
             byId.get(b.dataset.id).push(b);
         });
 
-        // 1) 상위 → 하위. 같은 줄에 있는 상위를 먼저 짝지어 선이 멀리 돌지 않게 한다.
+        // 1) 상위 → 하위. 하위 막대 한가운데에서 위로 올라가 상위에 붙는다.
+        // 상위가 그 가로 위치를 안 덮으면 상위 쪽 끝까지만 꺾어 붙인다.
         vis.forEach((b) => {
             const kin = byId.get(b.dataset.parent);
             if (!kin) return;
@@ -1882,21 +1883,24 @@
             const up = kin.find((p) => p.closest('.gt-blockrow') === row) || kin[0];
             const pb = box(up);
             const cb = box(b);
-            const x = pb.l + Math.min(10, pb.w / 2);
-            draw(`M ${x} ${pb.cy} V ${cb.cy} H ${cb.l}`, 'gt-link', b);
+            const cx = cb.l + cb.w / 2;
+            const px = Math.max(pb.l, Math.min(cx, pb.l + pb.w));
+            draw(`M ${cx} ${cb.cy} V ${pb.cy} H ${px}`, 'gt-link', b);
         });
 
         // 2) 같은 항목이 여러 블록에 걸린 것. 최상위만 이어 화면이 복잡해지지 않게 한다.
+        // 막대 앞이 아니라 뒤(오른쪽 끝)에서 바깥으로 부풀려 글자를 가리지 않는다.
         byId.forEach((bars) => {
             if (bars.length < 2 || bars[0].dataset.level !== '0') return;
             const sorted = bars.slice().sort((a, c) => box(a).t - box(c).t);
             for (let i = 0; i + 1 < sorted.length; i++) {
                 const a = box(sorted[i]);
                 const c = box(sorted[i + 1]);
-                const x = a.l + Math.min(14, a.w / 2);
-                // 멀수록 더 부풀려 언제나 곡선으로 보이게 한다(실선 갈고리와 헷갈리지 않게)
-                const bow = Math.max(18, Math.min(46, (c.t - a.b) * 0.32));
-                draw(`M ${x} ${a.b} C ${x - bow} ${a.b + 8}, ${x - bow} ${c.t - 8}, ${x} ${c.t}`,
+                const x = a.l + a.w - Math.min(14, a.w / 2);
+                // 멀수록 더 부풀려 언제나 곡선으로 보이게 하되, 오른쪽 끝을 넘지 않게 줄인다
+                const bow = Math.min(Math.max(18, Math.min(46, (c.t - a.b) * 0.32)),
+                                     Math.max(8, gantt.scrollWidth - x - 4));
+                draw(`M ${x} ${a.b} C ${x + bow} ${a.b + 8}, ${x + bow} ${c.t - 8}, ${x} ${c.t}`,
                      'gt-span-link', sorted[i]);
             }
         });
@@ -1919,7 +1923,7 @@
             gantt.querySelectorAll('.is-drop-target').forEach(
                 (el) => el.classList.remove('is-drop-target'));
         };
-        const EDGE = 10;        // 양 끝에서 이 폭 안을 잡으면 기간 조절
+        const EDGE = 16;        // 양 끝에서 이 폭 안을 잡으면 기간 조절(좁으면 자꾸 이동이 된다)
         const MIN_RESIZABLE = 14;   // 이보다 좁은 막대는 통째 이동만(끝을 잡을 자리가 없다)
         const reset = () => {
             if (drag) {
