@@ -1555,12 +1555,21 @@
         }
     }
 
-    // ---- 날짜 입력: 연 4자리 · 월 2자리 · 일 2자리 3칸 -------------------
-    // 브라우저 기본 date 입력은 연도 칸이 4자리를 넘겨도 월로 넘어가지 않고, 칸 이동을
-    // 자바스크립트로 제어할 수도 없다. 그래서 화면에는 3칸을 그리고 원래 date 입력은
-    // 값 보관·달력 버튼 용도로 옆에 남긴다(id·name·class 는 그대로라 기존 코드가 안 깨진다).
+    // ---- 날짜 입력: 한 칸에 연월일을 이어서 --------------------------------
+    // 브라우저 기본 date 입력은 연도가 4자리를 넘겨도 월로 넘어가지 않고 칸도 넓다.
+    // 그래서 화면에는 칸 하나만 두고 숫자를 치는 대로 20260727 → 2026-07-27 로 끊어 준다.
+    // 원래 date 입력은 값 보관·달력 버튼 용도로 옆에 남긴다(id·name·class 가 그대로라
+    // 기존 코드가 안 깨진다).
     function bindDateParts() {
         document.querySelectorAll('input[type="date"]').forEach(wrapDateInput);
+    }
+
+    // 숫자만 남겨 8자리까지 받고 YYYY-MM-DD 모양으로 끊는다.
+    function dateMask(s) {
+        const n = (s || '').replace(/\D/g, '').slice(0, 8);
+        if (n.length <= 4) return n;
+        if (n.length <= 6) return n.slice(0, 4) + '-' + n.slice(4);
+        return n.slice(0, 4) + '-' + n.slice(4, 6) + '-' + n.slice(6);
     }
 
     function wrapDateInput(native) {
@@ -1568,73 +1577,43 @@
         native.dataset.dp = '1';
         const box = document.createElement('span');
         box.className = 'dp';
-        const mk = (cls, len, ph, label) => {
-            const i = document.createElement('input');
-            i.type = 'text';
-            i.className = 'dp-part ' + cls;
-            i.inputMode = 'numeric';
-            i.autocomplete = 'off';
-            i.maxLength = len;
-            i.placeholder = ph;
-            i.setAttribute('aria-label', label);
-            if (native.disabled) i.disabled = true;
-            return i;
-        };
-        const y = mk('dp-y', 4, 'YYYY', '연');
-        const m = mk('dp-m', 2, 'MM', '월');
-        const d = mk('dp-d', 2, 'DD', '일');
+        const text = document.createElement('input');
+        text.type = 'text';
+        text.className = 'dp-text';
+        text.inputMode = 'numeric';
+        text.autocomplete = 'off';
+        text.maxLength = 10;
+        text.placeholder = 'YYYY-MM-DD';
+        text.setAttribute('aria-label', native.getAttribute('aria-label') || '날짜');
+        if (native.disabled) text.disabled = true;
         native.parentNode.insertBefore(box, native);
-        box.append(y, sep(), m, sep(), d, native);
+        box.append(text, native);
 
-        // 3칸 -> date 입력. 셋이 다 차야 값이 선다(하나라도 비면 빈 값).
+        // 한 칸 -> date 입력. 8자리를 다 쳐야 값이 선다(덜 쳤으면 빈 값).
         const push = () => {
-            const v = (y.value.length === 4 && m.value.length === 2 && d.value.length === 2)
-                ? `${y.value}-${m.value}-${d.value}` : '';
+            const v = text.value.length === 10 ? text.value : '';
             if (native.value === v) return;
             native.value = v;
             native.dispatchEvent(new Event('input', { bubbles: true }));
             native.dispatchEvent(new Event('change', { bubbles: true }));
         };
-        // date 입력 -> 3칸. 달력으로 고르거나 코드가 값을 넣었을 때 되돌려 받는다.
-        const pull = () => {
-            const p = (native.value || '').split('-');
-            y.value = p[0] || '';
-            m.value = p[1] || '';
-            d.value = p[2] || '';
-        };
+        // date 입력 -> 한 칸. 달력으로 고르거나 코드가 값을 넣었을 때 되돌려 받는다.
+        const pull = () => { text.value = native.value || ''; };
         pull();
         native.addEventListener('change', pull);
         native.dpSync = pull;
 
-        [[y, m, 4], [m, d, 2], [d, null, 2]].forEach(([el, next, len]) => {
-            el.addEventListener('input', () => {
-                // 숫자만 남기고 정해진 자릿수까지만 받는다(넘치는 글자는 버린다).
-                const only = el.value.replace(/\D/g, '').slice(0, len);
-                if (el.value !== only) el.value = only;
-                if (only.length === len && next) next.focus(), next.select();
-                push();
-            });
-            el.addEventListener('blur', () => {
-                // 월·일을 한 자리만 쳤으면 앞에 0을 채운다(7 -> 07).
-                if (el !== y && el.value.length === 1) { el.value = '0' + el.value; push(); }
-            });
-            el.addEventListener('keydown', (e) => {
-                if (e.key === 'Backspace' && !el.value && el !== y) {
-                    const prev = el === d ? m : y;
-                    prev.focus();
-                    prev.setSelectionRange(prev.value.length, prev.value.length);
-                }
-            });
-            el.addEventListener('focus', () => el.select());
+        text.addEventListener('input', () => {
+            const masked = dateMask(text.value);
+            if (text.value !== masked) text.value = masked;
+            push();
+        });
+        text.addEventListener('blur', () => {
+            // 다 못 채웠으면 지운다(반쪽 날짜를 남겨 두지 않는다).
+            if (text.value.length !== 10) { text.value = native.value || ''; }
         });
     }
-    function sep() {
-        const s = document.createElement('span');
-        s.className = 'dp-sep';
-        s.textContent = '-';
-        return s;
-    }
-    // 코드가 date 입력 값을 직접 바꾼 뒤 3칸을 맞춘다(장기 탭 기간 길이 버튼 등).
+    // 코드가 date 입력 값을 직접 바꾼 뒤 화면 칸을 맞춘다(장기 탭 기간 길이 버튼 등).
     function syncDateParts(el) {
         if (el && el.dpSync) el.dpSync();
     }
