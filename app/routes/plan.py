@@ -224,7 +224,9 @@ def _assign_lanes(bars: list[dict]) -> int:
         lanes[i].append((b["vs"], b["ve"]))
         b["lane"] = i
         placed[b["id"]] = i
-    return max(len(lanes), MIN_LANES)
+    # 맨 아래 한 칸은 늘 비워 둔다. 하위 막대를 그리로 끌어내려 상위에서 떼고,
+    # 다른 줄에서 끌어온 막대를 놓는 자리로도 쓴다.
+    return max(len(lanes) + 1, MIN_LANES)
 
 
 def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):
