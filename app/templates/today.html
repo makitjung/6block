@@ -57,8 +57,9 @@
         <div class="lt-strip-list">
             {% for it in lt_today %}
             <a class="lt-chip" href="/plan?level=month&amp;anchor={{ date_str }}"
-               title="{{ it.area_name }} · {% if it.parent_title %}{{ it.parent_title }} › {% endif %}{{ it.title }} · 진척 {{ it.progress }}% · {{ it.dday }}">
+               title="{{ it.area_name }}{% if it.blocks %} · {{ it.blocks }}{% endif %} · {% if it.parent_title %}{{ it.parent_title }} › {% endif %}{{ it.title }} · 진척 {{ it.progress }}% · {{ it.dday }}">
                 <span class="lt-chip-area">{{ it.area_name }}</span>
+                {% if it.blocks %}<span class="lt-chip-blk">{{ it.blocks }}</span>{% endif %}
                 {% if it.parent_title %}<span class="lt-chip-up">{{ it.parent_title }} ›</span>{% endif %}
                 <span class="lt-chip-title">{{ it.title }}</span>
                 <span class="lt-chip-dday mono">{{ it.dday }}</span>

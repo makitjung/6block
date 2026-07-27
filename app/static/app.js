@@ -1552,25 +1552,7 @@
                         else toast((d && d.error) || '영역을 바꾸지 못했습니다');
                     });
             });
-            // 상위 항목 고르기(끌어 붙이기가 어려운 같은 줄 안에서도 확실하게 넣는 길)
-            box.querySelector('.gt-e-parent')?.addEventListener('change', (ev) => {
-                const sel = ev.target;
-                const data = sel.value
-                    ? { id: id, parent_id: sel.value }
-                    : { id: id, area_id: sel.dataset.area };
-                postForm('/plan/item/reparent', data).then((d) => {
-                    if (d && d.ok) { location.reload(); return; }
-                    toast((d && d.error) || '상위를 바꾸지 못했습니다');
-                    sel.value = sel.dataset.cur || '';
-                });
-            });
-            box.querySelector('.gt-e-del')?.addEventListener('click', () => {
-                if (!window.confirm('이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.')) return;
-                postForm('/plan/item/delete', { id: id }).then((d) => {
-                    if (d && d.ok) location.reload();
-                    else toast('삭제 실패');
-                });
-            });
+            // 상위로 넣기는 막대를 끌어다 붙이고, 삭제는 막대 위 ✕로 한다(편집칸에서는 뺐다)
             box.querySelector('.gt-e-child')?.addEventListener('click', (ev) => {
                 const b = ev.currentTarget;
                 openForm(b.dataset.block, b.dataset.area, b.dataset.parent, b.dataset.title);

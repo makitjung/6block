@@ -779,12 +779,6 @@ def plan_view(request: Request, level: str = "month", anchor: str = "", focus: s
             "ORDER BY is_active DESC, display_order"
         ).fetchall()
         gantt = _gantt_blocks(conn, areas, span_start, span_end)
-        # 편집창 '상위 항목' 목록. 줄 높이가 낮아 같은 줄 안에서는 끌어 붙이기가 어려워
-        # 드래그 말고도 확실하게 고를 길을 둔다(자기 하위를 고르면 서버가 막는다).
-        ids = {a["id"] for a in areas}
-        all_items = [dict(r) for r in conn.execute(
-            "SELECT id, title, area_id FROM lt_item ORDER BY title"
-        ) if r["area_id"] in ids]
     # 지난 항목(종료일이 오늘 이전)은 기본으로 보여 주고, 체크박스를 켤 때만 숨긴다.
     # 0이면 체크박스도 내보내지 않는다.
     past_count = sum(1 for row in gantt for b in row["bars"] if b["past"])
@@ -814,7 +808,6 @@ def plan_view(request: Request, level: str = "month", anchor: str = "", focus: s
             "level_labels": PLAN_LEVEL_LABELS,
             "gantt": gantt,
             "focus_id": focus_id,
-            "all_items": all_items,
             "core_blocks": CORE_BLOCKS,
             "tones": TONES,
             "past_count": past_count,

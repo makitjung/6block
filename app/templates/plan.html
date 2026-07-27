@@ -153,35 +153,35 @@
         </div>
         {% for b in row.bars %}
         <div class="gt-edit" data-id="{{ b.id }}" data-block="{{ row.key }}" data-area="{{ b.area_id }}" hidden>
-            <span class="gt-e-lv" data-level="{{ b.level }}" style="--gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg">{{ b.level_label }} · {{ b.days }}일</span>
-            <input type="text" class="gt-e-title" value="{{ b.title }}" aria-label="항목 이름">
-            <span class="gt-e-blocks" role="group" aria-label="블록(여러 개 고를 수 있음)">
-                {% for bl in core_blocks %}
-                <label class="gt-e-blk"><input type="checkbox" value="{{ bl }}" {% if bl in b.own_blocks %}checked{% endif %}>{{ bl }}</label>
-                {% endfor %}
-            </span>
-            <select class="gt-e-area" aria-label="영역">
-                {% for ar in areas %}
-                <option value="{{ ar.id }}" {% if ar.id == b.area_id %}selected{% endif %}>{{ ar.name }}</option>
-                {% endfor %}
-            </select>
-            <select class="gt-e-parent" data-area="{{ b.area_id }}" data-cur="{{ b.parent_id or '' }}" aria-label="상위 항목">
-                <option value="">상위 없음(최상위)</option>
-                {% for it in all_items if it.id != b.id %}
-                <option value="{{ it.id }}" {% if it.id == b.parent_id %}selected{% endif %}>↳ {{ it.title }}</option>
-                {% endfor %}
-            </select>
-            <input type="date" class="gt-e-start" value="{{ b.start_date }}" aria-label="시작일">
-            <input type="date" class="gt-e-end" value="{{ b.end_date }}" aria-label="종료일">
-            <label class="gt-e-proglabel">진척
-                <input type="number" class="gt-e-progress" min="0" max="100" step="5" value="{{ b.progress }}" {% if b.has_children %}disabled{% endif %}>%
-            </label>
-            <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
-            <button type="button" class="primary-btn gt-e-save">저장</button>
-            <button type="button" class="ghost-btn gt-e-del">삭제</button>
-            {% if not b.own_blocks %}<span class="gt-e-hint">블록을 하나도 안 고르면 미지정 줄로 갑니다</span>{% endif %}
-            {% if b.parent_id %}<span class="gt-e-hint">영역을 바꾸면 상위에서 빠져 그 영역의 최상위 항목이 됩니다</span>{% endif %}
-            {% if b.has_children %}<span class="gt-e-hint">진척률은 하위 평균 · 기간을 끌면 하위도 같이 움직입니다</span>{% endif %}
+            <div class="gt-e-row">
+                <span class="gt-e-lv" data-level="{{ b.level }}" style="--gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg">{{ b.level_label }}</span>
+                <input type="text" class="gt-e-title" value="{{ b.title }}" aria-label="항목 이름">
+                <label class="gt-e-proglabel">진척
+                    <input type="number" class="gt-e-progress" min="0" max="100" step="5" value="{{ b.progress }}" {% if b.has_children %}disabled{% endif %}>%
+                </label>
+            </div>
+            <div class="gt-e-row">
+                <span class="gt-e-dates">
+                    <input type="date" class="gt-e-start" value="{{ b.start_date }}" aria-label="시작일">
+                    <span class="gt-e-tilde">~</span>
+                    <input type="date" class="gt-e-end" value="{{ b.end_date }}" aria-label="종료일">
+                    <span class="gt-e-days">{{ b.days }}일</span>
+                </span>
+                <span class="gt-e-blocks" role="group" aria-label="블록(여러 개 고를 수 있음)">
+                    {% for bl in core_blocks %}
+                    <label class="gt-e-blk"><input type="checkbox" value="{{ bl }}" {% if bl in b.own_blocks %}checked{% endif %}>{{ bl }}</label>
+                    {% endfor %}
+                </span>
+                <select class="gt-e-area" aria-label="영역">
+                    {% for ar in areas %}
+                    <option value="{{ ar.id }}" {% if ar.id == b.area_id %}selected{% endif %}>{{ ar.name }}</option>
+                    {% endfor %}
+                </select>
+                <span class="gt-e-act">
+                    <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
+                    <button type="button" class="primary-btn gt-e-save">저장</button>
+                </span>
+            </div>
         </div>
         {% endfor %}
         </div>

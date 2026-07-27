@@ -102,7 +102,8 @@ def _lt_items_on(conn, d) -> list[dict]:
     """
     date_str = d.strftime("%Y-%m-%d")
     rows = conn.execute(
-        "SELECT i.id, i.parent_id, i.title, i.end_date, i.progress, a.name AS area_name, "
+        "SELECT i.id, i.parent_id, i.title, i.end_date, i.progress, i.block_label, "
+        "       a.name AS area_name, "
         "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
         "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
         "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
@@ -116,6 +117,8 @@ def _lt_items_on(conn, d) -> list[dict]:
         out.append({
             "id": r["id"], "title": r["title"], "area_name": r["area_name"],
             "progress": r["progress"], "parent_title": r["parent_title"],
+            # 장기 탭에서 정한 코어블록(B1~B6). 어느 블록에서 할 일인지 오늘 띠에 같이 보인다.
+            "blocks": (r["block_label"] or "").strip(),
             "dday": "D-day" if left <= 0 else f"D-{left}",
         })
     return out

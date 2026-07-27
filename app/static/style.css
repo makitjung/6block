@@ -1633,8 +1633,13 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 4px 2px; border-left: 1px solid var(--border);
 }
-.gt-col.is-now { background: var(--accent-soft); }
+.gt-col.is-now {
+    background: var(--accent-soft);
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
 .gt-col-label { font-size: 12px; font-weight: 700; color: var(--text); }
+.gt-col.is-now .gt-col-label { color: var(--accent); }
 .gt-col-sub { font-size: 10px; color: var(--text-subtle); }
 .gt-drill { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--border-strong); }
 .gt-drill:hover { color: var(--accent); border-bottom-color: var(--accent); }
@@ -1646,10 +1651,15 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 .gt-nav:hover { color: var(--accent); background: var(--accent-soft); }
 /* 왼쪽 줄 이름 = 코어블록 B1~B6(+ 블록을 안 정한 항목이 모이는 미지정 줄) */
-.gt-blockrow { border-top: 1px solid var(--border); }
+.gt-blockrow { border-top: 1px solid var(--border); border-radius: var(--r-sm); }
+.gt-blockrow:nth-of-type(odd) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.gt-blockrow:hover { background: var(--surface-2); }
 .gt-blockrow.is-none { margin-top: 10px; }
 .gt-blocklead { gap: 6px; }
-.gt-blockname { font-size: 13px; font-weight: 800; color: var(--text); }
+.gt-blockname {
+    font-size: 12px; font-weight: 800; color: var(--text-soft);
+    background: var(--surface-3); border-radius: var(--r-pill); padding: 2px 9px;
+}
 .gt-blockrow.is-none .gt-blockname { color: var(--text-subtle); }
 .gt-blocktime { font-size: 11px; color: var(--text-subtle); }
 .gt-add {
@@ -1680,10 +1690,14 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-bar[data-level="2"], .gt-e-lv[data-level="2"], .pl-key[data-level="2"] { --gt-mix: var(--gt-mix-2); }
 .gt-bar {
     background: color-mix(in srgb, var(--gt-tone) var(--gt-mix), var(--surface));
-    border-color: var(--gt-tone);
+    border-color: color-mix(in srgb, var(--gt-tone) 65%, transparent);
     color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
     filter: hue-rotate(var(--gt-hue));
+    border-radius: 999px;              /* 알약 모양이 요즘 간트차트의 기본 인상이다 */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .07);
+    transition: box-shadow .12s, transform .12s;
 }
+.gt-bar:hover { transform: translateY(-1px); }
 /* 하위를 품은 막대는 테두리를 점선으로 해 잎 항목과 구분한다(자리는 안 겹친다) */
 .gt-bar.is-parent { border-style: dashed; }
 .gt-bar:hover { box-shadow: var(--sh-2); }
@@ -1696,6 +1710,8 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 /* 끌어 옮기기: 끄는 막대는 살짝 들어 올리고, 놓을 자리는 테두리로 알린다 */
 .gt-bar { touch-action: none; cursor: grab; }
+/* 끄는 동안에는 애니메이션을 꺼야 손끝을 바로 따라온다 */
+.gt-bar.is-dragging, .gt-bar.is-resizing { transition: none; }
 .gt-bar.is-dragging { cursor: grabbing; opacity: .9; z-index: 9; box-shadow: var(--sh-3); }
 .gt-bar.is-resizing { z-index: 9; box-shadow: var(--sh-3); }
 /* 양 끝은 기간 조절 손잡이. 좁은 막대에서도 잡히도록 폭의 1/3까지 줄여 쓴다.
@@ -1774,10 +1790,11 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 /* 블록 여러 개 고르기(한 계획을 여러 블록에서 동시에 진행) */
 .gt-e-blocks { display: inline-flex; gap: 2px; flex: 0 0 auto; }
 .gt-e-blk {
-    display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
-    font-size: 12px; font-weight: 600; color: var(--text-muted);
-    border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px 7px;
+    display: inline-flex; align-items: center; gap: 2px; cursor: pointer;
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px 6px;
 }
+.gt-e-blk input { width: 12px; height: 12px; }
 .gt-e-blk:has(input:checked) {
     color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
 }
@@ -1793,9 +1810,22 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-form, .gt-edit {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
     margin: 4px 0 6px 10px;
-    padding: 8px 10px; background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 10px 12px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--r-md, 12px);
+    box-shadow: var(--sh-2);
 }
+/* 편집칸은 두 줄로만 나눈다. 날짜는 한 덩이라 절대 갈라지지 않는다. */
+.gt-edit { flex-direction: column; align-items: stretch; gap: 8px; }
+.gt-e-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gt-e-row .gt-e-title { flex: 1 1 200px; min-width: 160px; }
+.gt-e-dates {
+    display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+    padding: 2px 8px 2px 4px; border-radius: var(--r-pill);
+    background: var(--surface-2); border: 1px solid var(--border);
+}
+.gt-e-tilde { color: var(--text-subtle); }
+.gt-e-days { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.gt-e-act { display: inline-flex; gap: 6px; margin-left: auto; flex: 0 0 auto; }
 /* display:flex 가 브라우저 기본 [hidden]{display:none} 을 덮으므로 명시적으로 숨긴다 */
 .gt-form[hidden], .gt-edit[hidden] { display: none; }
 .gt-form input[type=text], .gt-edit input[type=text] { flex: 1 1 180px; min-width: 140px; }
@@ -1886,6 +1916,12 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 /* 어느 상위 계획에서 내려온 것인지 앞에 작게 붙인다 */
 .lt-chip-up { font-size: 11px; font-weight: 600; color: var(--text-subtle); white-space: nowrap; }
 .lt-chip-area { font-size: 11px; font-weight: 700; color: var(--accent-soft-text); white-space: nowrap; }
+/* 장기 탭에서 정한 코어블록(B1~B6). 어느 블록에서 할 일인지 오늘 띠에 같이 보인다. */
+.lt-chip-blk {
+    font-size: 10px; font-weight: 800; white-space: nowrap;
+    padding: 1px 6px; border-radius: var(--r-pill);
+    background: var(--surface-3); color: var(--text-muted);
+}
 .lt-chip-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt-chip-dday { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .lt-chip-prog { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }

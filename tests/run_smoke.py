@@ -303,7 +303,7 @@ def run_checks(db_path):
     code, html = get("/plan?level=year&anchor=2026-01-01")
     check("기간 구분(장기·중기·단기)은 색에 쓰지 않음",
           'data-span=' not in html and "초단기" not in html)
-    levels = dict(re.findall(r'class="gt-e-lv" data-level="(\d)"[^>]*>([^<·]+)·', html))
+    levels = dict(re.findall(r'class="gt-e-lv" data-level="(\d)"[^>]*>([^<]+)<', html))
     check("계층 단계로 진하기를 나눔(3단계)",
           levels.get("0", "").strip() == "최상위" and levels.get("1", "").strip() == "하위"
           and "3" not in levels, levels)
