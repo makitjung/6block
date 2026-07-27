@@ -235,6 +235,52 @@ def lt_tree_order(rows) -> list[dict]:
     return out
 
 
+def week_lt_items(conn, week_start_str: str):
+    """그 주에 걸친 장기 항목(활성 영역만). 상위 바로 뒤에 하위가 오도록 줄 세운다."""
+    d0 = datetime.strptime(week_start_str, "%Y-%m-%d").date()
+    sunday = (d0 + timedelta(days=6)).strftime("%Y-%m-%d")
+    rows = conn.execute(
+        "SELECT i.id, i.parent_id, i.title, i.start_date, i.end_date, i.progress, "
+        "       a.name AS area_name, "
+        "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
+        "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
+        "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
+        "ORDER BY a.display_order, i.start_date, i.id",
+        (sunday, week_start_str),
+    ).fetchall()
+    return lt_tree_order(rows)
+
+
+def week_todos(conn, week_start_str: str) -> list[dict]:
+    """그 주 '목표' 열에 적힌 할 일 목록. 오늘 탭 블록·슬롯을 여기에 잇는다.
+
+    장기 항목마다의 란(key 'lt:<항목id>')과 자유 란 3개(key 'wk:1~3')를 한 줄로 세운다.
+    장기 란은 내용이 비어도 항목 자체를 고를 수 있어야 하므로 남기고, 자유 란은 비면 뺀다.
+    """
+    goals = {
+        r["item_id"]: (r["goal_text"] or "").strip()
+        for r in conn.execute(
+            "SELECT item_id, goal_text FROM weekly_lt_goal WHERE week_start = ?",
+            (week_start_str,),
+        )
+    }
+    out = [
+        {
+            "key": f"lt:{it['id']}",
+            "label": f"{it['title']} · {goals[it['id']]}"
+            if goals.get(it["id"]) else it["title"],
+        }
+        for it in week_lt_items(conn, week_start_str)
+    ]
+    row = conn.execute(
+        "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (week_start_str,)
+    ).fetchone()
+    for i, txt in enumerate(_split3(row["weekly_goal"] if row else ""), start=1):
+        if txt.strip():
+            out.append({"key": f"wk:{i}", "label": txt.strip()})
+    return out
+
+
 # -- 검색어 처리 (분석·고결감 공용) ------------------------------------------
 
 

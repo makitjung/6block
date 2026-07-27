@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     name TEXT,
     category_id INTEGER REFERENCES categories(id),
     location TEXT,
+    wk_todo TEXT,
     updated_at TEXT NOT NULL,
     UNIQUE(date, block_order)
 );
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS slots (
     did_text TEXT,
     category_id INTEGER REFERENCES categories(id),
     done INTEGER NOT NULL DEFAULT 0,
+    wk_todo TEXT,
     updated_at TEXT NOT NULL,
     UNIQUE(date, slot_index)
 );
@@ -76,6 +78,19 @@ CREATE TABLE IF NOT EXISTS weekly_block_themes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_weekly_themes_week ON weekly_block_themes(week_start);
+
+-- 주간 '목표' 열에서 장기 항목마다 따로 적는 그 주의 계획.
+-- 장기 항목 id로 묶으므로 항목이 늘거나 줄어도 남은 항목의 내용은 그대로다.
+CREATE TABLE IF NOT EXISTS weekly_lt_goal (
+    id INTEGER PRIMARY KEY,
+    week_start TEXT NOT NULL,
+    item_id INTEGER NOT NULL REFERENCES lt_item(id) ON DELETE CASCADE,
+    goal_text TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(week_start, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_lt_goal_week ON weekly_lt_goal(week_start);
 
 -- GTD 빠른 수집함. 폰(안드로이드/아이폰)에서 떠오르는 생각을 즉시 적어둔다.
 CREATE TABLE IF NOT EXISTS inbox (

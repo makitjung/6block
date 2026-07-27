@@ -16,6 +16,7 @@ from app.common import (
     templates,
     today_str,
     week_start,
+    week_todos,
 )
 from app.config import hhmm_to_min
 from app.db import get_conn, get_weekday_concepts
@@ -163,6 +164,8 @@ def _day_view(request: Request, date_str: str):
         # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
         # 그날에 걸친 장기 계획(장기 탭 막대)을 오늘 화면 위에 띠로 노출
         lt_today = _lt_items_on(conn, d)
+        # 그 주 '목표' 열에 적은 할 일 목록. 블록·슬롯을 여기에 이어 둔다(글은 직접 입력).
+        wk_todos = week_todos(conn, wk_start)
         due_reflections = conn.execute(
             "SELECT id, kind, title, text, tags, event_date, review_note FROM reflection "
             "WHERE (review_date = ? AND source_id IS NULL) "
@@ -238,6 +241,7 @@ def _day_view(request: Request, date_str: str):
             "plan_tags": plan_tags,
             "grat_tags": grat_tags,
             "lt_today": lt_today,
+            "wk_todos": wk_todos,
             "themes_by_label": themes_by_label,
             "block_name_by_id": block_name_by_id,
             "block_events": block_events,
@@ -300,6 +304,16 @@ async def save_day(date_str: str, request: Request):
                 conn.execute(
                     "UPDATE slots SET did_text = ?, updated_at = ? WHERE id = ?",
                     (val, now, sid),
+                )
+            elif prefix == "wtb":       # 블록 ↔ 그 주 할 일 연결(키만 저장)
+                conn.execute(
+                    "UPDATE blocks SET wk_todo = ?, updated_at = ? WHERE id = ?",
+                    (val or None, now, sid),
+                )
+            elif prefix == "wts":       # 슬롯 ↔ 그 주 할 일 연결(키만 저장)
+                conn.execute(
+                    "UPDATE slots SET wk_todo = ?, updated_at = ? WHERE id = ?",
+                    (val or None, now, sid),
                 )
             elif prefix == "cat":
                 cid = int(val) if val else None
@@ -380,8 +394,8 @@ async def save_day(date_str: str, request: Request):
 # 장기플랜 /plan/cell/save 와 같은 단일 필드 저장 패턴. 전체 폼 저장(저장 버튼)과
 # 병행해 쓴다. 클라이언트는 한 필드가 바뀌면 곧장 이 엔드포인트로 보낸다.
 
-_VALID_BLOCK_FIELDS = {"plan_text", "see_text", "bcat", "bname", "bloc"}
-_VALID_SLOT_FIELDS = {"do_text", "did_text", "cat"}
+_VALID_BLOCK_FIELDS = {"plan_text", "see_text", "bcat", "bname", "bloc", "wk_todo"}
+_VALID_SLOT_FIELDS = {"do_text", "did_text", "cat", "wk_todo"}
 
 
 @router.post("/save/field")
@@ -433,11 +447,11 @@ async def save_field(request: Request):
                     "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, rid),
                 )
-            else:  # plan_text | see_text | bloc
+            else:  # plan_text | see_text | bloc | wk_todo
                 col = "location" if field == "bloc" else field
                 conn.execute(
                     f"UPDATE blocks SET {col} = ?, updated_at = ? WHERE id = ?",
-                    ((value or None) if field == "bloc" else value, now, rid),
+                    ((value or None) if field in ("bloc", "wk_todo") else value, now, rid),
                 )
         elif entity == "slot":
             if field not in _VALID_SLOT_FIELDS:
@@ -448,10 +462,10 @@ async def save_field(request: Request):
                     "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, rid),
                 )
-            else:  # do_text | did_text
+            else:  # do_text | did_text | wk_todo
                 conn.execute(
                     f"UPDATE slots SET {field} = ?, updated_at = ? WHERE id = ?",
-                    (value, now, rid),
+                    ((value or None) if field == "wk_todo" else value, now, rid),
                 )
         elif entity == "meta":
             # id 자리에 날짜(문자열)가 온다. field: goal1~3|dplan1~3|memo|vow
@@ -527,17 +541,34 @@ async def save_field(request: Request):
             else:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
         elif entity == "wmeta":
-            # id 자리에 주 시작일(week_start). field: weekly_goal|appointments|vow|memo
+            # id 자리에 주 시작일(week_start).
+            # field: wgoal1~3(목표 열 자유 란, 3칸을 합쳐 weekly_goal로)|appointments|vow|memo
             ws = form.get("id") or ""
             if not _parse_date(ws):
                 return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
-            if field not in ("weekly_goal", "appointments", "vow", "memo"):
+            if field.startswith("wgoal"):
+                col, value = "weekly_goal", _join3(form, "wgoal")
+            elif field in ("appointments", "vow", "memo"):
+                col = field
+            else:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
             conn.execute(
                 "INSERT INTO weekly_meta (week_start, %s) VALUES (?, ?) "
                 "ON CONFLICT(week_start) DO UPDATE SET %s = excluded.%s"
-                % (field, field, field),
+                % (col, col, col),
                 (ws, value),
+            )
+        elif entity == "ltgoal":
+            # id=장기 항목 id, week_start=주 시작일. 목표 열에서 그 항목의 이번 주 계획.
+            ws = (form.get("week_start") or "").strip()
+            if not _parse_date(ws) or not (form.get("id") or "").isdigit():
+                return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+            conn.execute(
+                "INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(week_start, item_id) DO UPDATE SET "
+                "goal_text = excluded.goal_text, updated_at = excluded.updated_at",
+                (ws, int(form.get("id")), value.strip(), now),
             )
         elif entity == "theme":
             # id=week_start, label=블록 라벨(B1..B6), value=테마 텍스트

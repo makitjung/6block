@@ -56,7 +56,7 @@
                            aria-label="{{ it.title }} 진척률">%
                 </label>
                 <div class="wk-lt-send">
-                    <button type="button" class="ghost-btn wk-lt-goal" title="주간 목표 끝에 한 줄로 추가">주간 목표로</button>
+                    <button type="button" class="ghost-btn wk-lt-goal" title="목표 열에 있는 이 항목의 란에 제목을 넣기(이미 적었으면 그대로 둠)">목표 란으로</button>
                     <select class="wk-lt-label" aria-label="블록 고르기">
                         {% for lbl in core_labels %}<option value="{{ lbl }}">{{ lbl }}</option>{% endfor %}
                     </select>
@@ -71,23 +71,41 @@
     </section>
 
     <section class="meta-card">
-        <div class="meta-grid">
-            <label class="field">
-                <span class="field-label">주간 목표 / 계획</span>
-                <textarea name="weekly_goal" rows="3" placeholder="이번 주에 닿고 싶은 것">{{ (wmeta.weekly_goal if wmeta else '') or '' }}</textarea>
-            </label>
-            <label class="field">
-                <span class="field-label">약속 · 특이사항</span>
-                <textarea name="appointments" rows="3" placeholder="고정 일정, 미팅, 외출">{{ (wmeta.appointments if wmeta else '') or '' }}</textarea>
-            </label>
-            <label class="field">
-                <span class="field-label">각오</span>
-                <textarea name="vow" rows="3" placeholder="한 주를 끌어가는 한 문장">{{ (wmeta.vow if wmeta else '') or '' }}</textarea>
-            </label>
-            <label class="field">
-                <span class="field-label">메모</span>
-                <textarea name="memo" rows="3" placeholder="가벼운 단상, 후회, 결심">{{ (wmeta.memo if wmeta else '') or '' }}</textarea>
-            </label>
+        <div class="meta-2col">
+            <!-- 왼쪽: 목표. 장기 항목마다 한 란 + 장기와 무관한 자유 란 3개 -->
+            <div class="meta-goal">
+                <span class="field-label">목표</span>
+                {% for it in week_items %}
+                <div class="wg-row" style="--d: {{ it.depth }}">
+                    <span class="wg-lt" title="장기 항목 · {{ it.area_name }} · {{ it.range }}">{% if it.depth %}└ {% endif %}{{ it.title }}</span>
+                    <input type="text" name="ltgoal_{{ it.id }}" value="{{ it.goal }}" placeholder="이 항목의 이번 주 계획" autocomplete="off" aria-label="{{ it.title }} 이번 주 계획">
+                </div>
+                {% endfor %}
+                {% for i in range(3) %}
+                <div class="wg-row wg-free">
+                    <span class="wg-no">{{ i + 1 }}</span>
+                    <input type="text" name="wgoal{{ i + 1 }}" value="{{ weekly_goals[i] }}" placeholder="그 밖의 이번 주 목표 {{ i + 1 }}" autocomplete="off" aria-label="이번 주 목표 {{ i + 1 }}">
+                </div>
+                {% endfor %}
+                {% if not week_items %}
+                <div class="ctx-empty">이 주에 걸친 장기 항목이 없습니다. 장기 탭에서 계획 막대를 만들면 여기에 란이 생깁니다.</div>
+                {% endif %}
+            </div>
+            <!-- 오른쪽: 나머지 3가지 -->
+            <div class="meta-side">
+                <label class="field">
+                    <span class="field-label">약속 · 특이사항</span>
+                    <textarea name="appointments" rows="3" placeholder="고정 일정, 미팅, 외출">{{ (wmeta.appointments if wmeta else '') or '' }}</textarea>
+                </label>
+                <label class="field">
+                    <span class="field-label">각오</span>
+                    <textarea name="vow" rows="3" placeholder="한 주를 끌어가는 한 문장">{{ (wmeta.vow if wmeta else '') or '' }}</textarea>
+                </label>
+                <label class="field">
+                    <span class="field-label">메모</span>
+                    <textarea name="memo" rows="3" placeholder="가벼운 단상, 후회, 결심">{{ (wmeta.memo if wmeta else '') or '' }}</textarea>
+                </label>
+            </div>
         </div>
     </section>
 

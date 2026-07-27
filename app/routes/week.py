@@ -11,10 +11,12 @@ from app.common import (
     _name_override,
     _rule_distribute,
     _short_date,
+    _join3,
+    _split3,
     ensure_day_skeleton,
-    lt_tree_order,
     templates,
     today_str,
+    week_lt_items,
     week_start,
 )
 from app.config import WEEK_CORE_BLOCKS, hhmm_to_min, slots_for_day
@@ -102,15 +104,15 @@ def _week_view(request: Request, monday: date):
         ).fetchall()
         # 이번 주 장기 항목: 장기 탭 계획 막대 중 이 주에 걸친 것. 여기서 진척률을 고치고
         # 주간 목표·블록 테마로 바로 옮긴다(장기 ↔ 주간 연동 지점).
-        wk_items = conn.execute(
-            "SELECT i.id, i.parent_id, i.title, i.start_date, i.end_date, i.progress, "
-            "       a.name AS area_name, "
-            "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
-            "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
-            "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
-            "ORDER BY a.display_order, i.start_date, i.id",
-            (dates[6], dates[0]),
-        ).fetchall()
+        wk_items = week_lt_items(conn, week_start_str)
+        # 목표 열: 장기 항목마다 그 주 계획을 따로 적는다(항목 id로 묶어 저장).
+        lt_goal_by_item = {
+            r["item_id"]: (r["goal_text"] or "")
+            for r in conn.execute(
+                "SELECT item_id, goal_text FROM weekly_lt_goal WHERE week_start = ?",
+                (week_start_str,),
+            )
+        }
         # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
         review_inbox = conn.execute(
             "SELECT id, text, status FROM inbox WHERE done = 0 ORDER BY id DESC"
@@ -170,10 +172,10 @@ def _week_view(request: Request, monday: date):
         {
             "id": r["id"], "title": r["title"], "area_name": r["area_name"],
             "progress": r["progress"], "has_children": bool(r["has_children"]),
-            "depth": r["depth"],
+            "depth": r["depth"], "goal": lt_goal_by_item.get(r["id"], ""),
             "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
         }
-        for r in lt_tree_order(wk_items)
+        for r in wk_items
     ]
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = WEEK_CORE_BLOCKS
@@ -209,6 +211,8 @@ def _week_view(request: Request, monday: date):
                 len(slots_for_day(get_day_blocks(i))) for i in range(7)
             ) * 0.5,
             "wmeta": wmeta,
+            # 목표 열의 자유 란 3개(장기와 무관한 그 주만의 목표)
+            "weekly_goals": _split3(wmeta["weekly_goal"] if wmeta else ""),
             "themes_by_label": themes_by_label,
             "cat_templates": [dict(t) for t in wk_templates],
             "week_items": week_items,
@@ -241,12 +245,26 @@ async def save_week(week_start_str: str, request: Request):
             """,
             (
                 week_start_str,
-                form.get("weekly_goal", ""),
+                _join3(form, "wgoal"),      # 목표 열의 자유 란 3개
                 form.get("appointments", ""),
                 form.get("vow", ""),
                 form.get("memo", ""),
             ),
         )
+        # 목표 열에서 장기 항목마다 적은 그 주 계획(항목 id로 묶어 저장)
+        for key, val in form.multi_items():
+            if not key.startswith("ltgoal_") or not key[7:].isdigit():
+                continue
+            conn.execute(
+                """
+                INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(week_start, item_id) DO UPDATE SET
+                    goal_text = excluded.goal_text,
+                    updated_at = excluded.updated_at
+                """,
+                (week_start_str, int(key[7:]), (val or "").strip(), now),
+            )
         for label in CORE_LABELS:
             key = f"theme_{label}"
             txt = form.get(key, "")
@@ -342,7 +360,10 @@ async def week_apply_template(request: Request):
 
 @router.post("/week/item-to-goal")
 async def week_item_to_goal(request: Request):
-    """이번 주 장기 항목 제목을 그 주 '주간 목표' 끝에 한 줄로 붙인다(장기 → 주간)."""
+    """이번 주 장기 항목 제목을 목표 열에 있는 그 항목의 란에 넣는다(장기 → 주간).
+
+    이미 적어 둔 내용이 있으면 덮지 않는다.
+    """
     form = await request.form()
     ws = (form.get("week_start") or "").strip()
     try:
@@ -350,6 +371,7 @@ async def week_item_to_goal(request: Request):
         datetime.strptime(ws, "%Y-%m-%d")
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
         it = conn.execute(
             "SELECT title FROM lt_item WHERE id = ?", (item_id,)
@@ -357,18 +379,23 @@ async def week_item_to_goal(request: Request):
         if not it:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         row = conn.execute(
-            "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (ws,)
+            "SELECT goal_text FROM weekly_lt_goal WHERE week_start = ? AND item_id = ?",
+            (ws, item_id),
         ).fetchone()
-        cur = ((row["weekly_goal"] if row else "") or "").rstrip()
-        if it["title"] in cur.split("\n"):
-            return JSONResponse({"ok": True, "text": cur, "skipped": True})
-        text = f"{cur}\n{it['title']}" if cur else it["title"]
+        cur = ((row["goal_text"] if row else "") or "").strip()
+        if cur:
+            return JSONResponse({"ok": True, "id": item_id, "text": cur, "skipped": True})
         conn.execute(
-            "INSERT INTO weekly_meta (week_start, weekly_goal) VALUES (?, ?) "
-            "ON CONFLICT(week_start) DO UPDATE SET weekly_goal = excluded.weekly_goal",
-            (ws, text),
+            """
+            INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(week_start, item_id) DO UPDATE SET
+                goal_text = excluded.goal_text,
+                updated_at = excluded.updated_at
+            """,
+            (ws, item_id, it["title"], now),
         )
-    return JSONResponse({"ok": True, "text": text})
+    return JSONResponse({"ok": True, "id": item_id, "text": it["title"]})
 
 
 @router.post("/week/item-to-theme")
@@ -428,13 +455,17 @@ async def week_decompose_themes(request: Request):
             "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (ws,)
         ).fetchone()
         goal = ((wm["weekly_goal"] if wm else "") or "").strip()
+        # 장기 항목은 목표 열에 적어 둔 그 주 계획이 있으면 그것까지 함께 넘긴다.
         wk_plans = [
-            r["title"]
+            f"{r['title']} · {r['goal_text']}" if (r["goal_text"] or "").strip()
+            else r["title"]
             for r in conn.execute(
-                "SELECT i.title FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
+                "SELECT i.title, g.goal_text FROM lt_item i "
+                "JOIN lt_area a ON a.id = i.area_id "
+                "LEFT JOIN weekly_lt_goal g ON g.item_id = i.id AND g.week_start = ? "
                 "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
                 "ORDER BY a.display_order, i.start_date, i.id",
-                (sunday, ws),
+                (ws, sunday, ws),
             )
         ]
         context = "\n".join([goal] + wk_plans).strip()

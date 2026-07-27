@@ -239,6 +239,15 @@
                     </select>
                     <span class="block-label">{{ b.block_label }}</span>
                     <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
+                    {% if wk_todos %}
+                    <!-- 이 블록을 그 주 할 일 중 어느 것에 잇는지(연결만 저장 · 이름은 위 칸에 직접) -->
+                    <select name="wtb_{{ b.id }}" class="wk-link{% if b.wk_todo %} is-linked{% endif %}" aria-label="이번 주 할 일 연결" title="이번 주 할 일과 연결">
+                        <option value="">연결 안 함</option>
+                        {% for t in wk_todos %}
+                        <option value="{{ t.key }}" {% if b.wk_todo == t.key %}selected{% endif %}>{{ t.label }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
                     {% else %}
                     <span class="block-label">{{ b.block_label }}</span>
                     {% endif %}
@@ -330,6 +339,15 @@
                         </select>
                     </div>
                     <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    {% if wk_todos %}
+                    <!-- 이 슬롯을 그 주 할 일 중 어느 것에 잇는지(연결만 저장 · DO 글은 직접) -->
+                    <select name="wts_{{ s.id }}" class="wk-link{% if s.wk_todo %} is-linked{% endif %}" aria-label="이번 주 할 일 연결" title="이번 주 할 일과 연결">
+                        <option value="">연결 안 함</option>
+                        {% for t in wk_todos %}
+                        <option value="{{ t.key }}" {% if s.wk_todo == t.key %}selected{% endif %}>{{ t.label }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
                     <div class="slot-actions">
                     {% if st.show_did != '0' %}
                     <div class="hover-wrap slot-did">

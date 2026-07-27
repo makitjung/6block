@@ -174,6 +174,18 @@ def run_checks(db_path):
                                      "field": "nope", "value": "x"})
     check("허용되지 않은 필드는 거부", code == 400, code)
 
+    # 6-2. 오늘 탭 블록·슬롯을 그 주 할 일에 잇기(연결 키만 저장, 글은 직접 입력)
+    slt = db_query(db_path,
+                   "SELECT id FROM slots WHERE date='2026-07-31' ORDER BY slot_index")[0]["id"]
+    post("/save/field", {"entity": "block", "id": blk, "field": "wk_todo", "value": "wk:1"})
+    post("/save/field", {"entity": "slot", "id": slt, "field": "wk_todo", "value": "lt:9"})
+    bw = db_query(db_path, "SELECT wk_todo FROM blocks WHERE id=?", (blk,))[0]["wk_todo"]
+    sw = db_query(db_path, "SELECT wk_todo FROM slots WHERE id=?", (slt,))[0]["wk_todo"]
+    check("블록·슬롯의 주간 할 일 연결 저장", bw == "wk:1" and sw == "lt:9", (bw, sw))
+    post("/save/field", {"entity": "slot", "id": slt, "field": "wk_todo", "value": ""})
+    sw = db_query(db_path, "SELECT wk_todo FROM slots WHERE id=?", (slt,))[0]["wk_todo"]
+    check("연결 안 함을 고르면 비워짐", sw is None, sw)
+
     # 7. 블록 시간이 바뀌어도 장소만 적은 날의 입력이 사라지지 않는지(회귀)
     post("/save/field", {"entity": "block", "id": blk, "field": "bloc", "value": "카페"})
     data = {"scope": ""}
@@ -247,16 +259,27 @@ def run_checks(db_path):
     code, html = get("/week/2026-08-03")
     check("주간 탭에 이 주 장기 항목 노출",
           "노동법 1회독" in html and 'class="wk-lt-prog-input"' in html)
+    # 목표 열은 장기 항목마다 자기 란을 가진다(weekly_lt_goal). 제목은 그 란으로 들어간다.
+    ltg = f"SELECT goal_text FROM weekly_lt_goal WHERE week_start='2026-08-03' AND item_id={child}"
+    check("주간 목표 열에 장기 항목마다 란이 있음", f'name="ltgoal_{child}"' in html)
     code, out = post("/week/item-to-goal", {"week_start": "2026-08-03", "item_id": child})
-    goal = db_query(db_path,
-                    "SELECT weekly_goal FROM weekly_meta WHERE week_start='2026-08-03'")
-    check("장기 항목을 주간 목표로 옮김",
-          code == 200 and goal and goal[0]["weekly_goal"] == "노동법 1회독", out)
+    goal = db_query(db_path, ltg)
+    check("장기 항목을 그 항목의 목표 란으로 옮김",
+          code == 200 and goal and goal[0]["goal_text"] == "노동법 1회독", out)
+    post("/save/field", {"entity": "ltgoal", "id": child, "field": "ltgoal",
+                         "value": "직접 적은 계획", "week_start": "2026-08-03"})
     code, out = post("/week/item-to-goal", {"week_start": "2026-08-03", "item_id": child})
-    goal = db_query(db_path,
-                    "SELECT weekly_goal FROM weekly_meta WHERE week_start='2026-08-03'")
-    check("같은 항목을 두 번 옮겨도 중복되지 않음",
-          goal[0]["weekly_goal"] == "노동법 1회독", goal[0]["weekly_goal"])
+    goal = db_query(db_path, ltg)
+    check("이미 적어 둔 목표 란은 덮어쓰지 않음",
+          out.get("skipped") and goal[0]["goal_text"] == "직접 적은 계획", goal[0]["goal_text"])
+    # 목표 열 자유 란 3개는 weekly_meta.weekly_goal 에 줄바꿈으로 합쳐 저장된다.
+    post("/save/field", {"entity": "wmeta", "id": "2026-08-03", "field": "wgoal2",
+                         "value": "자유2", "wgoal1": "자유1", "wgoal2": "자유2",
+                         "wgoal3": ""})
+    wg = db_query(db_path,
+                  "SELECT weekly_goal FROM weekly_meta WHERE week_start='2026-08-03'")
+    check("목표 열 자유 란 3개가 한 칸에 합쳐 저장됨",
+          wg and wg[0]["weekly_goal"] == "자유1\n자유2\n", wg and wg[0]["weekly_goal"])
     code, out = post("/week/item-to-theme",
                      {"week_start": "2026-08-03", "item_id": child, "label": "B3"})
     th = db_query(db_path, "SELECT theme_text FROM weekly_block_themes "

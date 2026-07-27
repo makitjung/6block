@@ -599,6 +599,15 @@
                 let m;
                 if ((m = name.match(/^bcat_(\d+)$/))) el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
                 else if ((m = name.match(/^cat_(\d+)$/))) el.addEventListener('change', () => saveField('slot', m[1], 'cat', el.value));
+                // 그 주 할 일 연결(블록 wtb_ · 슬롯 wts_). 고른 표시는 색으로 남긴다.
+                else if ((m = name.match(/^wt([bs])_(\d+)$/))) {
+                    const kind = m[1] === 'b' ? 'block' : 'slot';
+                    const rid = m[2];
+                    el.addEventListener('change', () => {
+                        el.classList.toggle('is-linked', !!el.value);
+                        saveField(kind, rid, 'wk_todo', el.value);
+                    });
+                }
             });
         }
 
@@ -606,8 +615,14 @@
             const ws = weekStart;
             each('textarea[name], input[name]', (el, name) => {
                 let m;
-                if (['weekly_goal', 'appointments', 'vow', 'memo'].indexOf(name) >= 0)
+                if (['appointments', 'vow', 'memo'].indexOf(name) >= 0)
                     bindAutoSave(el, 'wmeta', ws, name);
+                else if ((m = name.match(/^wgoal([123])$/))) {
+                    el.dataset.asPrefix = 'wgoal';
+                    el.dataset.asIdx = m[1];
+                    bindAutoSave(el, 'wmeta', ws, 'wgoal' + m[1], { groupPrefix: 'wgoal' });
+                } else if ((m = name.match(/^ltgoal_(\d+)$/)))
+                    bindAutoSave(el, 'ltgoal', m[1], 'ltgoal', { extra: { week_start: ws } });
                 else if ((m = name.match(/^theme_(.+)$/)))
                     bindAutoSave(el, 'theme', ws, 'theme', { extra: { label: m[1] } });
                 else if ((m = name.match(/^bname_(\d+)$/)))
@@ -1454,6 +1469,8 @@
                     const start = si.value ? new Date(si.value + 'T00:00:00') : new Date();
                     if (!si.value) si.value = ymd(start);
                     ei.value = ymd(addSpan(start, b.dataset.len));
+                    syncDateParts(si);      // 코드가 넣은 값을 연·월·일 3칸에도 반영
+                    syncDateParts(ei);
                 });
             });
         });
@@ -1536,6 +1553,90 @@
                         - scroller.getBoundingClientRect().left - 12;
             if (delta > 0) scroller.scrollLeft += delta;
         }
+    }
+
+    // ---- 날짜 입력: 연 4자리 · 월 2자리 · 일 2자리 3칸 -------------------
+    // 브라우저 기본 date 입력은 연도 칸이 4자리를 넘겨도 월로 넘어가지 않고, 칸 이동을
+    // 자바스크립트로 제어할 수도 없다. 그래서 화면에는 3칸을 그리고 원래 date 입력은
+    // 값 보관·달력 버튼 용도로 옆에 남긴다(id·name·class 는 그대로라 기존 코드가 안 깨진다).
+    function bindDateParts() {
+        document.querySelectorAll('input[type="date"]').forEach(wrapDateInput);
+    }
+
+    function wrapDateInput(native) {
+        if (native.dataset.dp) return;
+        native.dataset.dp = '1';
+        const box = document.createElement('span');
+        box.className = 'dp';
+        const mk = (cls, len, ph, label) => {
+            const i = document.createElement('input');
+            i.type = 'text';
+            i.className = 'dp-part ' + cls;
+            i.inputMode = 'numeric';
+            i.autocomplete = 'off';
+            i.maxLength = len;
+            i.placeholder = ph;
+            i.setAttribute('aria-label', label);
+            if (native.disabled) i.disabled = true;
+            return i;
+        };
+        const y = mk('dp-y', 4, 'YYYY', '연');
+        const m = mk('dp-m', 2, 'MM', '월');
+        const d = mk('dp-d', 2, 'DD', '일');
+        native.parentNode.insertBefore(box, native);
+        box.append(y, sep(), m, sep(), d, native);
+
+        // 3칸 -> date 입력. 셋이 다 차야 값이 선다(하나라도 비면 빈 값).
+        const push = () => {
+            const v = (y.value.length === 4 && m.value.length === 2 && d.value.length === 2)
+                ? `${y.value}-${m.value}-${d.value}` : '';
+            if (native.value === v) return;
+            native.value = v;
+            native.dispatchEvent(new Event('input', { bubbles: true }));
+            native.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        // date 입력 -> 3칸. 달력으로 고르거나 코드가 값을 넣었을 때 되돌려 받는다.
+        const pull = () => {
+            const p = (native.value || '').split('-');
+            y.value = p[0] || '';
+            m.value = p[1] || '';
+            d.value = p[2] || '';
+        };
+        pull();
+        native.addEventListener('change', pull);
+        native.dpSync = pull;
+
+        [[y, m, 4], [m, d, 2], [d, null, 2]].forEach(([el, next, len]) => {
+            el.addEventListener('input', () => {
+                // 숫자만 남기고 정해진 자릿수까지만 받는다(넘치는 글자는 버린다).
+                const only = el.value.replace(/\D/g, '').slice(0, len);
+                if (el.value !== only) el.value = only;
+                if (only.length === len && next) next.focus(), next.select();
+                push();
+            });
+            el.addEventListener('blur', () => {
+                // 월·일을 한 자리만 쳤으면 앞에 0을 채운다(7 -> 07).
+                if (el !== y && el.value.length === 1) { el.value = '0' + el.value; push(); }
+            });
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !el.value && el !== y) {
+                    const prev = el === d ? m : y;
+                    prev.focus();
+                    prev.setSelectionRange(prev.value.length, prev.value.length);
+                }
+            });
+            el.addEventListener('focus', () => el.select());
+        });
+    }
+    function sep() {
+        const s = document.createElement('span');
+        s.className = 'dp-sep';
+        s.textContent = '-';
+        return s;
+    }
+    // 코드가 date 입력 값을 직접 바꾼 뒤 3칸을 맞춘다(장기 탭 기간 길이 버튼 등).
+    function syncDateParts(el) {
+        if (el && el.dpSync) el.dpSync();
     }
 
     // 'YYYY-MM-DD' 문자열(로컬 기준)
@@ -1711,9 +1812,9 @@
             row.querySelector('.wk-lt-goal')?.addEventListener('click', () => {
                 postForm('/week/item-to-goal', { week_start: week, item_id: id }).then((d) => {
                     if (!d || !d.ok) { toast((d && d.error) || '옮기기 실패'); return; }
-                    const ta = document.querySelector('textarea[name="weekly_goal"]');
-                    if (ta) ta.value = d.text;
-                    toast(d.skipped ? '이미 주간 목표에 있습니다' : '주간 목표에 추가');
+                    const inp = document.querySelector('input[name="ltgoal_' + d.id + '"]');
+                    if (inp) inp.value = d.text;
+                    toast(d.skipped ? '이미 이 항목의 목표 란에 적혀 있습니다' : '목표 란에 넣음');
                 });
             });
             row.querySelector('.wk-lt-theme')?.addEventListener('click', () => {
@@ -2236,6 +2337,7 @@
                     titleEl.value = ''; ta.value = '';
                     document.getElementById('rf-tags').value = '';
                     document.getElementById('rf-review').value = '';
+                    syncDateParts(document.getElementById('rf-review'));
                     refreshReflect(true);
                 })
                 .catch(() => { enqueue(op); toast('저장 대기 · 연결되면 전송'); });
@@ -2691,6 +2793,7 @@
             });
         });
 
+        bindDateParts();
         bindGantt();
         bindPlanAreas();
         bindReflect();

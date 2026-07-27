@@ -171,6 +171,27 @@ def _migrate(conn: sqlite3.Connection):
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
     if inbox_cols and "status" not in inbox_cols:
         conn.execute("ALTER TABLE inbox ADD COLUMN status TEXT NOT NULL DEFAULT ''")
+    # 주간 '목표' 열에서 장기 항목마다 따로 적는 그 주 계획. 옛 덤프 복원용으로 남겨 둔다.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weekly_lt_goal (
+            id INTEGER PRIMARY KEY,
+            week_start TEXT NOT NULL,
+            item_id INTEGER NOT NULL REFERENCES lt_item(id) ON DELETE CASCADE,
+            goal_text TEXT,
+            updated_at TEXT NOT NULL,
+            UNIQUE(week_start, item_id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_weekly_lt_goal_week ON weekly_lt_goal(week_start)"
+    )
+    # 오늘 탭에서 블록·슬롯을 그 주 할 일 중 어느 것에 잇는지(키만 저장, 글은 직접 입력).
+    if "wk_todo" not in block_cols:
+        conn.execute("ALTER TABLE blocks ADD COLUMN wk_todo TEXT")
+    if "wk_todo" not in slot_cols:
+        conn.execute("ALTER TABLE slots ADD COLUMN wk_todo TEXT")
     # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
     conn.execute("DROP TABLE IF EXISTS weekday_concept")
     # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.
