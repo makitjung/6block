@@ -1493,7 +1493,9 @@
         gantt.querySelectorAll('.gt-bar').forEach((bar) => {
             bar.addEventListener('click', () => {
                 if (bar.dataset.dragged === '1') { delete bar.dataset.dragged; return; }
-                const box = gantt.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
+                // 한 항목이 블록 여러 줄에 나오므로 누른 줄 안의 편집칸만 연다
+                const box = bar.closest('.gt-group')
+                    ?.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
                 if (!box) return;
                 const wasOpen = !box.hidden;
                 closeAll();
@@ -1531,7 +1533,9 @@
                 const p = box.querySelector('.gt-e-progress');
                 data.start = s.value;
                 data.end = e.value;
-                data.block = box.querySelector('.gt-e-block').value;   // 빈 값이면 미지정 줄로
+                // 블록은 여러 개 고를 수 있다(여러 블록에서 동시 진행). 하나도 없으면 미지정.
+                data.block = [...box.querySelectorAll('.gt-e-blocks input:checked')]
+                    .map((c) => c.value).join(',');
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 postForm('/plan/item/update', data).then((d) => {
                     if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
@@ -1805,12 +1809,16 @@
     }
 
     // ---- 장기: 막대 끌어 옮기기 ------------------------------------------
-    // 같은 줄에서 좌우로 끌면 보고 있는 열 단위로 기간이 옮겨지고, 다른 막대 위에 놓으면
-    // 그 막대의 하위계획이 되어 상위 막대 안에 겹쳐 그려진다. 다른 블록(B1~B6·미지정) 줄에
-    // 놓으면 그 블록으로 옮겨진다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
+    // 좌우로 끌면 끈 픽셀을 그대로 날짜로 바꿔 그만큼 기간이 옮겨지고(열 단위로 튀지 않는다),
+    // 다른 막대 위에 놓으면 그 막대의 하위계획이 된다. 다른 블록(B1~B6·미지정) 줄에 놓으면
+    // 잡은 줄에서 빠져 놓은 줄로 옮겨간다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
     function bindGanttDrag(gantt) {
-        const level = gantt.dataset.level || 'year';
-        const cols = parseInt(getComputedStyle(gantt).getPropertyValue('--cols'), 10) || 1;
+        // 보이는 기간 전체 날수. 트랙 폭을 이걸로 나누면 1px이 며칠인지 나온다.
+        const spanDays = parseInt(gantt.dataset.days, 10) || 1;
+        const daysPerPx = (track) => {
+            const w = track ? track.getBoundingClientRect().width : 0;
+            return w ? spanDays / w : 0;
+        };
         let drag = null;
 
         const clearMarks = () => {
@@ -1818,7 +1826,7 @@
                 (el) => el.classList.remove('is-drop-target'));
         };
         const EDGE = 10;        // 양 끝에서 이 폭 안을 잡으면 기간 조절
-        const MIN_RESIZABLE = 30;   // 이보다 좁은 막대는 통째 이동만(끝을 잡을 자리가 없다)
+        const MIN_RESIZABLE = 14;   // 이보다 좁은 막대는 통째 이동만(끝을 잡을 자리가 없다)
         const reset = () => {
             if (drag) {
                 drag.bar.classList.remove('is-dragging', 'is-resizing');
@@ -1848,14 +1856,16 @@
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
                 const r = bar.getBoundingClientRect();
                 const off = e.clientX - r.left;
+                // 좁은 막대에서도 양 끝을 잡을 수 있게 손잡이 폭을 막대 폭의 1/3까지 줄인다
+                const edgeW = Math.max(4, Math.min(EDGE, r.width / 3));
                 let edge = '';
                 if (r.width >= MIN_RESIZABLE) {
-                    if (off <= EDGE) edge = 'start';
-                    else if (off >= r.width - EDGE) edge = 'end';
+                    if (off <= edgeW) edge = 'start';
+                    else if (off >= r.width - edgeW) edge = 'end';
                 }
                 drag = {
                     bar, id: bar.dataset.id, x0: e.clientX, y0: e.clientY, moved: false,
-                    edge, hasChildren: bar.classList.contains('is-parent'),
+                    edge,
                     track: bar.closest('.gt-track'), row: bar.closest('.gt-blockrow'),
                     css: { left: bar.style.left, width: bar.style.width },
                     px: { left: r.left, width: r.width },
@@ -1892,16 +1902,16 @@
                 if (!drag.moved) { reset(); return; }
                 bar.dataset.dragged = '1';           // 이어서 오는 click(편집창 열기)은 무시
                 const dx = e.clientX - drag.x0;
-                const colW = (drag.track ? drag.track.getBoundingClientRect().width : 0) / cols;
-                const steps = colW ? Math.round(dx / colW) : 0;
+                const days = Math.round(dx * daysPerPx(drag.track));   // 끈 만큼을 날짜로
                 const id = drag.id;
-                const hasChildren = drag.hasChildren;
+                const from = drag.row ? (drag.row.dataset.block || '') : '';
+                const blocks = (bar.dataset.blocks || '').split(',').filter(Boolean);
                 if (drag.edge) {
                     const edge = drag.edge;
                     reset();
-                    if (steps === 0) return;
+                    if (days === 0) return;
                     postForm('/plan/item/resize',
-                             { id: id, edge: edge, steps: steps, level: level }).then((d) => {
+                             { id: id, edge: edge, days: days }).then((d) => {
                         if (!d || !d.ok) { toast((d && d.error) || '기간을 바꾸지 못했습니다'); return; }
                         if (d.widened) toast('하위를 모두 품도록 기간을 넓혔습니다');
                         location.reload();
@@ -1917,18 +1927,17 @@
                         else toast((d && d.error) || '하위로 넣지 못했습니다');
                     });
                 } else if (target && target.kind === 'block') {
+                    // 잡은 줄만 놓은 줄로 바꾼다(다른 블록에 걸린 것은 그대로 남는다)
+                    const next = blocks.filter((b) => b !== from);
+                    if (target.block && !next.includes(target.block)) next.push(target.block);
                     postForm('/plan/item/update',
-                             { id: id, block: target.block }).then((d) => {
+                             { id: id, block: next.join(',') }).then((d) => {
                         if (d && d.ok) location.reload();
                         else toast((d && d.error) || '옮기지 못했습니다');
                     });
-                } else if (steps !== 0) {
-                    if (hasChildren) {
-                        toast('하위가 있는 항목의 기간은 하위에서 자동 계산됩니다');
-                        return;
-                    }
-                    postForm('/plan/item/shift',
-                             { id: id, steps: steps, level: level }).then((d) => {
+                } else if (days !== 0) {
+                    // 하위가 있으면 서버가 하위 사슬까지 같은 날수만큼 함께 민다
+                    postForm('/plan/item/shift', { id: id, days: days }).then((d) => {
                         if (d && d.ok) location.reload();
                         else toast((d && d.error) || '옮기지 못했습니다');
                     });

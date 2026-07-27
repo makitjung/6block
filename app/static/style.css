@@ -55,9 +55,9 @@
     --sp-s-bg: #fde3cf;  --sp-s-bd: #e8710a;  --sp-s-tx: #8f4700;
     --sp-xs-bg: #ead6fb; --sp-xs-bd: #9334e6; --sp-xs-tx: #6a1eb0;
 
-    /* 장기 간트 막대: 색은 영역(--gt-tone), 진하기는 기간 구분. 장기가 가장 진하다.
+    /* 장기 간트 막대: 색은 영역(--gt-tone), 진하기는 계층 단계. 최상위가 가장 진하다.
        글자는 톤을 거의 검정에 섞어 네 단계 어디에서든 읽히게 한다. */
-    --gt-mix-l: 64%;  --gt-mix-m: 44%;  --gt-mix-s: 26%;  --gt-mix-xs: 10%;
+    --gt-mix-0: 64%;  --gt-mix-1: 44%;  --gt-mix-2: 26%;  --gt-mix-3: 12%;
     --gt-tx-mix: 34%;  --gt-tx-base: #0b0d10;
 
     /* shape */
@@ -120,7 +120,7 @@
     --sp-xs-bg: #38254a; --sp-xs-bd: #d7aefb; --sp-xs-tx: #ecd7ff;
 
     /* 다크에서는 톤 자체가 밝은 파스텔이라 덜 섞고, 글자는 흰색 쪽으로 밝힌다. */
-    --gt-mix-l: 44%;  --gt-mix-m: 30%;  --gt-mix-s: 18%;  --gt-mix-xs: 8%;
+    --gt-mix-0: 44%;  --gt-mix-1: 30%;  --gt-mix-2: 18%;  --gt-mix-3: 9%;
     --gt-tx-mix: 30%;  --gt-tx-base: #ffffff;
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --sh-2: 0 2px 6px rgba(0, 0, 0, 0.5);
@@ -1622,6 +1622,8 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     color: var(--text-subtle); line-height: 1;
 }
 .gt-col.is-brk[data-lv="year"] .gt-brk { color: var(--accent); }
+/* 블록 줄 + 그 줄의 추가폼·편집칸 한 덩이 */
+.gt-group { display: flex; flex-direction: column; gap: 2px; }
 .gt-row { display: flex; align-items: stretch; min-height: 30px; }
 .gt-lead {
     flex: 0 0 var(--lead-w); width: var(--lead-w);
@@ -1677,19 +1679,22 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     padding: 0; border: 1px solid; border-radius: var(--r-sm); text-align: left;
     z-index: 1;
 }
-/* 색은 영역(--gt-tone), 진하기는 기간 길이. 같은 영역이면 같은 계열, 기간이 길수록 진하다. */
+/* 색은 영역(--gt-tone), 진하기는 계층 단계. 최상위가 가장 진하고 하위로 갈수록 연해진다.
+   같은 영역에서 계획을 여럿 돌릴 때는 뿌리마다 색조를 조금 비틀어(--gt-hue) 구분한다.
+   hue-rotate 는 배경·테두리·글자를 함께 돌리므로 대비는 그대로 유지된다. */
 .gt-bar, .gt-e-lv, .pl-key {
     --gt-tone: var(--tone-blue);
-    --gt-mix: var(--gt-mix-m);
+    --gt-hue: 0deg;
+    --gt-mix: var(--gt-mix-0);
 }
-.gt-bar[data-span="l"],  .gt-e-lv[data-span="l"],  .pl-key[data-span="l"]  { --gt-mix: var(--gt-mix-l); }
-.gt-bar[data-span="m"],  .gt-e-lv[data-span="m"],  .pl-key[data-span="m"]  { --gt-mix: var(--gt-mix-m); }
-.gt-bar[data-span="s"],  .gt-e-lv[data-span="s"],  .pl-key[data-span="s"]  { --gt-mix: var(--gt-mix-s); }
-.gt-bar[data-span="xs"], .gt-e-lv[data-span="xs"], .pl-key[data-span="xs"] { --gt-mix: var(--gt-mix-xs); }
+.gt-bar[data-level="1"], .gt-e-lv[data-level="1"], .pl-key[data-level="1"] { --gt-mix: var(--gt-mix-1); }
+.gt-bar[data-level="2"], .gt-e-lv[data-level="2"], .pl-key[data-level="2"] { --gt-mix: var(--gt-mix-2); }
+.gt-bar[data-level="3"], .gt-e-lv[data-level="3"], .pl-key[data-level="3"] { --gt-mix: var(--gt-mix-3); }
 .gt-bar {
     background: color-mix(in srgb, var(--gt-tone) var(--gt-mix), var(--surface));
     border-color: var(--gt-tone);
     color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
+    filter: hue-rotate(var(--gt-hue));
 }
 /* 자리는 상하위 관계로 정한다. 상위 막대 안쪽 아래에 하위 막대가 겹쳐 들어간다. */
 .gt-bar[data-depth="1"] { top: 44%; bottom: 4px; z-index: 2; }
@@ -1709,8 +1714,11 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-bar { touch-action: none; cursor: grab; }
 .gt-bar.is-dragging { cursor: grabbing; opacity: .9; z-index: 9; box-shadow: var(--sh-3); }
 .gt-bar.is-resizing { z-index: 9; box-shadow: var(--sh-3); }
-/* 양 끝 10px은 기간 조절 손잡이(막대가 좁으면 손잡이 없이 통째 이동만) */
-.gt-handle { position: absolute; top: 0; bottom: 0; width: 10px; cursor: ew-resize; z-index: 3; }
+/* 양 끝은 기간 조절 손잡이. 좁은 막대에서도 잡히도록 폭의 1/3까지 줄여 쓴다. */
+.gt-handle {
+    position: absolute; top: 0; bottom: 0; z-index: 3; cursor: ew-resize;
+    width: min(10px, 33%);
+}
 .gt-handle.l { left: 0; }
 .gt-handle.r { right: 0; }
 .gt-bar.clip-l .gt-handle.l, .gt-bar.clip-r .gt-handle.r { cursor: grab; }
@@ -1728,14 +1736,26 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-del:hover { color: var(--danger); }
 @media (hover: none) { .gt-del { display: block; opacity: .85; } }
 
-/* 기간 구분 배지(편집창). 막대와 같은 규칙으로 칠해 한눈에 짝이 맞는다. */
+/* 계층 단계 배지(편집창). 막대와 같은 규칙으로 칠해 한눈에 짝이 맞는다. */
 .gt-e-lv {
     font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--r-pill);
     white-space: nowrap; flex: 0 0 auto;
     border: 1px solid var(--gt-tone);
     background: color-mix(in srgb, var(--gt-tone) var(--gt-mix), var(--surface));
     color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
+    filter: hue-rotate(var(--gt-hue));
 }
+/* 블록 여러 개 고르기(한 계획을 여러 블록에서 동시에 진행) */
+.gt-e-blocks { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.gt-e-blk {
+    display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+    font-size: 12px; font-weight: 600; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px 7px;
+}
+.gt-e-blk:has(input:checked) {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+}
+.gt-e-blk input { margin: 0; }
 /* 추가 폼의 기간 길이 버튼 */
 .gt-f-len { display: inline-flex; gap: 4px; }
 .gt-f-len-btn {

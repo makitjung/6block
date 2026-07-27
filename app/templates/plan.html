@@ -38,16 +38,16 @@
         {% endfor %}
     </span>
     <span class="plan-legend">
-        <span class="pl-cap">기간 진하기</span>
-        <span class="pl-key" data-span="xs"></span>초단기 1주↓
-        <span class="pl-key" data-span="s"></span>단기 1개월↓
-        <span class="pl-key" data-span="m"></span>중기 1~6개월
-        <span class="pl-key" data-span="l"></span>장기 6개월↑
+        <span class="pl-cap">단계 진하기</span>
+        <span class="pl-key" data-level="0"></span>최상위
+        <span class="pl-key" data-level="1"></span>하위
+        <span class="pl-key" data-level="2"></span>하위2
+        <span class="pl-key" data-level="3"></span>하위3
     </span>
     {% if past_count %}
     <button type="button" id="pg-past-toggle" class="ghost-btn" data-count="{{ past_count }}">지난 항목 {{ past_count }}개 보기</button>
     {% endif %}
-    <span class="plan-hint">막대 가운데를 좌우로 끌면 기간 이동 · 양 끝을 끌면 기간 조절 · 위아래 다른 블록 줄에 놓으면 그 블록으로 이동 · 다른 막대 위에 놓으면 하위계획</span>
+    <span class="plan-hint">막대 가운데를 좌우로 끌면 끈 만큼 기간 이동 · 양 끝을 끌면 기간 조절 · 위아래 다른 블록 줄에 놓으면 그 블록으로 이동 · 다른 막대 위에 놓으면 하위계획</span>
 </div>
 
 <details class="card theme-fold">
@@ -86,7 +86,7 @@
 
 {% else %}
 <div class="plan-scroll">
-    <div class="gantt" data-level="{{ level }}" style="--cols: {{ columns | length }}">
+    <div class="gantt" data-level="{{ level }}" data-days="{{ span_days }}" style="--cols: {{ columns | length }}">
         {# 해·분기·달이 바뀌는 자리에 세로선 하나. 격자 위에 겹쳐 그려 줄이 늘지 않는다. #}
         {% for col in columns %}{% if col.brk %}
         <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
@@ -109,7 +109,10 @@
             </div>
         </div>
 
+        {# 한 블록 줄 + 그 줄의 추가폼·편집칸을 한 덩이로 묶는다(같은 항목이 여러 줄에 나오므로
+           막대를 눌렀을 때 그 줄 안의 편집칸만 열려야 한다). #}
         {% for row in gantt %}
+        <div class="gt-group" data-block="{{ row.key }}">
         <div class="gt-row gt-blockrow{% if not row.key %} is-none{% endif %}" data-lanes="{{ row.lanes }}" data-block="{{ row.key }}">
             <div class="gt-lead gt-blocklead">
                 <span class="gt-blockname">{{ row.label }}</span>
@@ -120,10 +123,10 @@
                 {% for b in row.bars %}
                 <button type="button"
                         class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}"
-                        data-depth="{{ b.depth }}" data-span="{{ b.span_class }}"
-                        style="left: {{ b.left }}%; width: {{ b.width }}%; --gt-tone: var(--tone-{{ b.tone }})"
-                        data-id="{{ b.id }}"
-                        title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.span_label }} {{ b.days }}일 · {{ b.progress }}%">
+                        data-depth="{{ b.depth }}" data-level="{{ b.level }}"
+                        data-id="{{ b.id }}" data-blocks="{{ b.blocks }}"
+                        style="left: {{ b.left }}%; width: {{ b.width }}%; --gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg"
+                        title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.days }}일 · {{ b.level_label }} · {{ b.progress }}%{% if b.blocks %} · {{ b.blocks }}{% endif %}">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>
                     <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>
                     <span class="gt-handle l" aria-hidden="true"></span>
@@ -155,14 +158,13 @@
         </div>
         {% for b in row.bars %}
         <div class="gt-edit" data-id="{{ b.id }}" data-block="{{ row.key }}" data-area="{{ b.area_id }}" hidden>
-            <span class="gt-e-lv" data-span="{{ b.span_class }}" style="--gt-tone: var(--tone-{{ b.tone }})">{{ b.span_label }} {{ b.days }}일</span>
+            <span class="gt-e-lv" data-level="{{ b.level }}" style="--gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg">{{ b.level_label }} · {{ b.days }}일</span>
             <input type="text" class="gt-e-title" value="{{ b.title }}" aria-label="항목 이름">
-            <select class="gt-e-block" aria-label="블록">
-                <option value="">블록 미지정</option>
+            <span class="gt-e-blocks" role="group" aria-label="블록(여러 개 고를 수 있음)">
                 {% for bl in core_blocks %}
-                <option value="{{ bl }}" {% if bl == b.block_label %}selected{% endif %}>{{ bl }}</option>
+                <label class="gt-e-blk"><input type="checkbox" value="{{ bl }}" {% if bl in b.own_blocks %}checked{% endif %}>{{ bl }}</label>
                 {% endfor %}
-            </select>
+            </span>
             <select class="gt-e-area" aria-label="영역">
                 {% for ar in areas %}
                 <option value="{{ ar.id }}" {% if ar.id == b.area_id %}selected{% endif %}>{{ ar.name }}</option>
@@ -176,10 +178,12 @@
             <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
             <button type="button" class="primary-btn gt-e-save">저장</button>
             <button type="button" class="ghost-btn gt-e-del">삭제</button>
+            {% if not b.own_blocks %}<span class="gt-e-hint">블록을 안 고르면 상위 항목의 블록을 따라갑니다</span>{% endif %}
             {% if b.parent_id %}<span class="gt-e-hint">영역을 바꾸면 상위에서 빠져 그 영역의 최상위 항목이 됩니다</span>{% endif %}
-            {% if b.has_children %}<span class="gt-e-hint">진척률은 하위 평균 · 기간은 하위를 모두 품도록 자동으로 넓어집니다</span>{% endif %}
+            {% if b.has_children %}<span class="gt-e-hint">진척률은 하위 평균 · 기간을 끌면 하위도 같이 움직입니다</span>{% endif %}
         </div>
         {% endfor %}
+        </div>
         {% endfor %}
     </div>
 </div>

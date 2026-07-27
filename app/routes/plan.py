@@ -223,18 +223,13 @@ def _lt_cover_children(conn, item_id: int) -> bool:
 
 MAX_LANE = 2      # 겹쳐 그릴 하위 단계(0=상위, 1·2=하위). 더 깊은 항목은 2단계로 눌러 그린다.
 
-# 막대 길이로 나누는 기간 구분. 짧은 쪽을 먼저 본다(1주 이하는 '단기'가 아니라 '초단기').
-SPAN_CLASSES = [(7, "xs", "초단기"), (31, "s", "단기"), (183, "m", "중기")]
-SPAN_LONG = ("l", "장기")
+# 막대 색 진하기는 기간 길이가 아니라 계층 단계로 정한다. 최상위가 가장 진하고 하위로 갈수록 연하다.
+MAX_LEVEL = 3
+LEVEL_LABELS = ["최상위", "하위 1단계", "하위 2단계", "하위 3단계"]
 
-
-def _span_class(s: date, e: date) -> tuple[str, str]:
-    """기간 길이(일)로 (분류 키, 이름). 7일 이하 초단기 · 31일 이하 단기 · 183일 이하 중기 · 그 위 장기."""
-    days = (e - s).days + 1
-    for limit, key, label in SPAN_CLASSES:
-        if days <= limit:
-            return key, label
-    return SPAN_LONG
+# 같은 영역에서 계획을 여럿 돌릴 때 서로 구분되도록 뿌리(최상위 항목)마다 색조를 조금씩 돌린다(도).
+# 영역 색 계열은 알아볼 만큼만 비틀고, 한 항목의 하위들은 뿌리와 같은 색조를 쓴다.
+HUE_STEPS = [0, -10, 10, -20, 20]
 
 
 def _lt_descendants(conn, item_id: int) -> list[int]:
@@ -267,10 +262,6 @@ def _add_months(d: date, n: int) -> date:
     return date(y, m, min(d.day, _month_last(y, m).day))
 
 
-# 열 한 칸을 옆으로 옮길 때 더할 개월 수(주 단위는 7일로 따로 계산한다).
-SHIFT_MONTHS = {"year": 12, "quarter": 3, "month": 1}
-
-
 def _block_rows() -> list[dict]:
     """간트 왼쪽에 세울 행. 코어블록 B1~B6 + 블록을 정하지 않은 항목이 모이는 '미지정' 한 줄."""
     times = {lbl: f"{s}~{e}" for lbl, is_core, s, e in get_day_blocks() if is_core}
@@ -279,12 +270,29 @@ def _block_rows() -> list[dict]:
     return rows
 
 
+def _split_blocks(raw) -> list[str]:
+    """저장된 블록 값('B1,B5')을 코어블록 목록으로. 모르는 값·중복은 버리고 B1→B6 순으로 맞춘다.
+
+    한 항목을 여러 블록에서 동시에 진행할 수 있어 값이 여러 개다. 비면 미지정이다.
+    """
+    got = {b.strip() for b in (raw or "").split(",")}
+    return [b for b in CORE_BLOCKS if b in got]
+
+
+def _clean_blocks(raw) -> str:
+    """폼에서 온 블록 값을 저장형('B1,B5')으로. 하나도 못 알아보면 ''(미지정)."""
+    return ",".join(_split_blocks(raw))
+
+
 def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
     """블록(B1~B6·미지정)별 간트 행 목록. 그 블록으로 배정된 막대가 한 줄에 모두 들어간다.
 
-    막대 색은 영역 톤(tone)이고 진하기는 기간 구분(span_class)이라 한 줄 안에서도
-    어느 영역·어느 기간인지 함께 읽힌다. 하위 항목은 자기 블록이 없으면 상위 블록을 따른다.
-    상위·하위는 지금처럼 한 줄에서 겹쳐 그리되, depth 는 같은 줄에 있는 조상 수로만 센다
+    한 항목이 블록을 여러 개 가질 수 있어(여러 블록에서 동시에 진행) 같은 막대가 여러 줄에
+    나온다. 하위 항목은 자기 블록이 없으면 상위 블록을 그대로 물려받는다.
+
+    색은 영역 톤(tone), 진하기는 계층 단계(level·최상위가 가장 진함), 색조 비틀기(hue)는
+    같은 영역 안에서 뿌리끼리 구분하려고 준다. 한 뿌리의 하위들은 뿌리와 같은 색조를 쓴다.
+    상위·하위는 한 줄에서 겹쳐 그리며, depth 는 그 줄에 함께 있는 조상 수로만 센다
     (하위가 다른 블록으로 빠지면 그 줄에서는 다시 맨 위 단계가 된다).
     left/width 는 보이는 기간 전체에 대한 퍼센트라 템플릿이 계산 없이 그린다.
     """
@@ -293,7 +301,6 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
     tones = {a["id"]: a["tone"] for a in areas}
     names = {a["id"]: a["name"] for a in areas}
     rows = _block_rows()
-    valid = {b["key"] for b in rows}
     children: dict[int | None, list] = {}
     for r in conn.execute(
         "SELECT id, area_id, parent_id, title, start_date, end_date, progress, "
@@ -310,14 +317,17 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
             return True
         return any(overlaps(c) for c in children.get(it["id"], []))
 
-    def bar(it, block: str, depth: int) -> dict:
+    def bar(it, blocks: list[str], level: int, hue: int) -> dict:
         s = _parse_date(it["start_date"]) or span_start
         e = _parse_date(it["end_date"]) or s
         vs, ve = max(s, span_start), min(e, span_end)
         visible = vs <= ve
         row = dict(it)
-        row["block"] = block
-        row["depth"] = min(depth, MAX_LANE)
+        row["own_blocks"] = _split_blocks(it["block_label"])
+        row["blocks"] = ",".join(blocks)
+        row["level"] = min(level, MAX_LEVEL)
+        row["level_label"] = LEVEL_LABELS[min(level, MAX_LEVEL)]
+        row["hue"] = hue
         row["visible"] = visible
         row["left"] = round((vs - span_start).days / total * 100, 3) if visible else 0
         row["width"] = round(((ve - vs).days + 1) / total * 100, 3) if visible else 0
@@ -325,41 +335,40 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["clip_right"] = e > span_end
         row["range_label"] = f"{s.month}/{s.day}~{e.month}/{e.day}"
         row["has_children"] = bool(children.get(it["id"]))
-        row["span_class"], row["span_label"] = _span_class(s, e)
         row["days"] = (e - s).days + 1
         row["past"] = e < today        # 종료일이 지난 항목은 화면에서 기본으로 접는다
         row["tone"] = tones.get(it["area_id"], "blue")
         row["area_name"] = names.get(it["area_id"], "")
         return row
 
-    bars_by_block: dict[str, list] = {k: [] for k in valid}
+    bars_by_block: dict[str, list] = {r["key"]: [] for r in rows}
 
-    def walk(it, parent_block: str, same_row_depth: int):
-        own = (it["block_label"] or "").strip()
-        block = own if (own and own in valid) else parent_block
-        depth = same_row_depth if block == parent_block else 0
-        b = bar(it, block, depth)
+    def walk(it, parent_blocks: list[str], parent_depth: dict, level: int, hue: int):
+        blocks = _split_blocks(it["block_label"]) or parent_blocks or [""]
+        # 상위가 없는 줄에 새로 나타난 막대는 그 줄에서 맨 위 단계부터 다시 센다.
+        depth = {k: min(parent_depth[k] + 1, MAX_LANE) if k in parent_depth else 0
+                 for k in blocks}
+        b = bar(it, blocks, level, hue)
         if b["visible"]:
-            bars_by_block[block].append(b)
+            for k in blocks:
+                bars_by_block[k].append({**b, "depth": depth[k]})
         for c in children.get(it["id"], []):
             if overlaps(c):
-                walk(c, block, depth + 1)
+                walk(c, blocks, depth, level + 1, hue)
 
+    seen: dict[int, int] = {}       # 영역마다 뿌리를 몇 개 봤는지(색조를 돌려 쓰려고)
     for it in children.get(None, []):
-        if it["area_id"] in tones and overlaps(it):
-            walk(it, "", 0)
+        if it["area_id"] not in tones or not overlaps(it):
+            continue
+        n = seen.get(it["area_id"], 0)
+        seen[it["area_id"]] = n + 1
+        walk(it, [], {}, 0, HUE_STEPS[n % len(HUE_STEPS)])
 
     # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
     return [{**row,
              "lanes": max((b["depth"] for b in bars_by_block[row["key"]]), default=0),
              "bars": bars_by_block[row["key"]]}
             for row in rows]
-
-
-def _clean_block(raw) -> str:
-    """폼에서 온 블록 값을 B1~B6 중 하나로. 비었거나 모르는 값이면 ''(미지정)."""
-    b = (raw or "").strip()
-    return b if b in CORE_BLOCKS else ""
 
 
 @router.post("/plan/item/add")
@@ -406,7 +415,7 @@ async def plan_item_add(request: Request):
             "INSERT INTO lt_item (area_id, parent_id, title, start_date, end_date, "
             "progress, block_label, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
             (area_id, parent_id, title, start.isoformat(), end.isoformat(),
-             _clean_block(form.get("block")) or None, now),
+             _clean_blocks(form.get("block")) or None, now),
         )
         new_id = cur.lastrowid
         _lt_rollup(conn, new_id)
@@ -426,7 +435,7 @@ async def plan_item_update(request: Request):
         fields["title"] = form.get("title").strip()
     # 블록은 빈 값도 뜻이 있다('미지정'으로 되돌리기). 칸이 왔는지로만 판단한다.
     if form.get("block") is not None:
-        fields["block_label"] = _clean_block(form.get("block")) or None
+        fields["block_label"] = _clean_blocks(form.get("block")) or None
     if form.get("start") is not None and (form.get("start") or "").strip():
         d = _parse_date(form.get("start"))
         if not d:
@@ -470,69 +479,58 @@ async def plan_item_update(request: Request):
 
 @router.post("/plan/item/shift")
 async def plan_item_shift(request: Request):
-    """계획 막대를 보고 있는 열 단위로 좌우로 옮긴다(기간 길이는 그대로).
+    """계획 막대를 끈 만큼(일 단위) 좌우로 옮긴다. 기간 길이는 그대로다.
 
-    하위가 있는 항목의 기간은 하위에서 자동 계산되므로 옮기지 않는다.
+    하위가 있으면 하위 사슬 전체를 같은 날수만큼 함께 민다(계획을 통째로 당기거나 미룬다).
     """
     form = await request.form()
     try:
         item_id = int(form.get("id"))
-        steps = int(form.get("steps"))
+        days = int(form.get("days"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
-    level = (form.get("level") or "").strip()
-    if level not in PLAN_LEVELS:
-        return JSONResponse({"ok": False, "error": "bad-level"}, status_code=400)
-    if steps == 0:
+    if days == 0:
         return JSONResponse({"ok": True, "moved": 0})
+    delta = timedelta(days=days)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
-        ).fetchone()
-        if not row:
-            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        if conn.execute(
-            "SELECT 1 FROM lt_item WHERE parent_id = ? LIMIT 1", (item_id,)
+        if not conn.execute(
+            "SELECT 1 FROM lt_item WHERE id = ?", (item_id,)
         ).fetchone():
-            return JSONResponse(
-                {"ok": False, "error": "하위가 있는 항목의 기간은 하위에서 자동 계산됩니다"},
-                status_code=400,
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        ids = [item_id, *_lt_descendants(conn, item_id)]
+        ph = ",".join("?" * len(ids))
+        for r in conn.execute(
+            f"SELECT id, start_date, end_date FROM lt_item WHERE id IN ({ph})", ids
+        ).fetchall():
+            s, e = _parse_date(r["start_date"]), _parse_date(r["end_date"])
+            if not s or not e:
+                continue
+            conn.execute(
+                "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? "
+                "WHERE id = ?",
+                ((s + delta).isoformat(), (e + delta).isoformat(), now, r["id"]),
             )
-        s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
-        if not s or not e:
-            return JSONResponse({"ok": False, "error": "기간 없음"}, status_code=400)
-        span = e - s
-        if level == "week":
-            s2 = s + timedelta(weeks=steps)
-        else:
-            s2 = _add_months(s, SHIFT_MONTHS[level] * steps)
-        e2 = s2 + span                     # 길이를 그대로 유지한다
-        conn.execute(
-            "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
-            (s2.isoformat(), e2.isoformat(), now, item_id),
-        )
         _lt_rollup(conn, item_id)
-    return JSONResponse({"ok": True, "start": s2.isoformat(), "end": e2.isoformat()})
+    return JSONResponse({"ok": True, "moved": days, "with_children": len(ids) - 1})
 
 
 @router.post("/plan/item/resize")
 async def plan_item_resize(request: Request):
-    """막대의 한쪽 끝(edge=start|end)만 열 단위로 늘리거나 줄인다.
+    """막대의 한쪽 끝(edge=start|end)만 끈 만큼(일 단위) 늘리거나 줄인다.
 
     하위가 있는 항목도 줄일 수 있지만 하위를 모두 품는 선까지만 줄어든다.
     """
     form = await request.form()
     try:
         item_id = int(form.get("id"))
-        steps = int(form.get("steps"))
+        days = int(form.get("days"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     edge = (form.get("edge") or "").strip()
-    level = (form.get("level") or "").strip()
-    if edge not in ("start", "end") or level not in PLAN_LEVELS:
+    if edge not in ("start", "end"):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
-    if steps == 0:
+    if days == 0:
         return JSONResponse({"ok": True, "moved": 0})
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
@@ -544,15 +542,10 @@ async def plan_item_resize(request: Request):
         s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
         if not s or not e:
             return JSONResponse({"ok": False, "error": "기간 없음"}, status_code=400)
-        moved = (s if edge == "start" else e)
-        if level == "week":
-            moved = moved + timedelta(weeks=steps)
-        else:
-            moved = _add_months(moved, SHIFT_MONTHS[level] * steps)
         if edge == "start":
-            s = moved
+            s = s + timedelta(days=days)
         else:
-            e = moved
+            e = e + timedelta(days=days)
         if e < s:
             return JSONResponse({"ok": False, "error": "기간이 뒤집힙니다"}, status_code=400)
         conn.execute(
@@ -711,6 +704,8 @@ def plan_view(request: Request, level: str = "month", anchor: str = ""):
             "past_count": past_count,
             "span_start": span_start.strftime("%Y-%m-%d"),
             "span_end": span_end.strftime("%Y-%m-%d"),
+            # 화면 가로폭을 이 날수로 나눠 픽셀↔날짜를 환산한다(막대를 끈 만큼만 움직이게).
+            "span_days": (span_end - span_start).days + 1,
             "default_start": default_start.strftime("%Y-%m-%d"),
         },
     )
