@@ -1429,6 +1429,11 @@
         const closeAll = () => {
             gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
         };
+        // 막대·편집칸·추가폼 바깥(격자의 빈 곳)을 누르면 열려 있던 입력칸을 닫는다
+        gantt.addEventListener('click', (e) => {
+            if (e.target.closest('.gt-bar, .gt-edit, .gt-form, .gt-add')) return;
+            closeAll();
+        });
         // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목과 그 영역을 폼에 실어 보낸다.
         const openForm = (block, areaId, parentId, parentTitle) => {
             closeAll();
@@ -1539,8 +1544,9 @@
                 data.block = [...box.querySelectorAll('.gt-e-blocks input:checked')]
                     .map((c) => c.value).join(',');
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
+                box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
                 postForm('/plan/item/update', data).then((d) => {
-                    if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
+                    if (!d || !d.ok) { box.hidden = false; toast((d && d.error) || '저장 실패'); return; }
                     location.reload();
                 });
             });

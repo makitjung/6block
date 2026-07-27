@@ -745,10 +745,10 @@ async def plan_item_delete(request: Request):
 
 
 @router.get("/plan")
-def plan_view(request: Request, level: str = "month", anchor: str = "", focus: str = ""):
-    # 기본은 월 단위(오늘이 든 분기의 3개월). 연·분기는 축소로, 주는 확대로 간다.
+def plan_view(request: Request, level: str = "week", anchor: str = "", focus: str = ""):
+    # 기본은 주 단위(이번 주가 두 번째 칸). 월·분기·연은 축소로 간다.
     if level not in PLAN_LEVELS:
-        level = "month"
+        level = "week"
     a = _parse_anchor(anchor)
     # focus = 방금 끌어 옮긴 항목. 그 항목이 보이는 기간 밖으로 나갔으면 화면을 그쪽으로
     # 옮겨 준다. 안 그러면 끌던 막대가 그냥 사라진 것처럼 보인다.
@@ -815,6 +815,10 @@ def plan_view(request: Request, level: str = "month", anchor: str = "", focus: s
             "span_end": span_end.strftime("%Y-%m-%d"),
             # 화면 가로폭을 이 날수로 나눠 픽셀↔날짜를 환산한다(막대를 끈 만큼만 움직이게).
             "span_days": (span_end - span_start).days + 1,
+            # 오늘 세로선 자리(보이는 기간에 대한 %). 기간 밖이면 None이라 선을 안 그린다.
+            "today_pct": (round((today - span_start).days
+                                / ((span_end - span_start).days + 1) * 100, 3)
+                          if span_start <= today <= span_end else None),
             "default_start": default_start.strftime("%Y-%m-%d"),
         },
     )

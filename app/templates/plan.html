@@ -84,6 +84,9 @@
         {% for col in columns %}{% if col.brk %}
         <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
         {% endif %}{% endfor %}
+        {% if today_pct is not none %}
+        <span class="gt-todayline" style="--p: {{ today_pct }}" data-label="오늘" aria-hidden="true"></span>
+        {% endif %}
         <div class="gt-row gt-headrow">
             <div class="gt-lead gt-headlead">블록</div>
             <div class="gt-track gt-headtrack">
@@ -123,7 +126,8 @@
                         style="left: {{ b.left }}%; width: {{ b.width }}%; --lane: {{ b.lane }}; --gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg"
                         title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.days }}일 · {{ b.level_label }} · {{ b.progress }}%{% if b.blocks %} · {{ b.blocks }}{% endif %}">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>
-                    <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>
+                    <span class="gt-bartext">{{ b.title }}</span>
+                    {% if b.progress %}<span class="gt-barpct mono">{{ b.progress }}</span>{% endif %}
                     <span class="gt-handle l" aria-hidden="true"></span>
                     <span class="gt-handle r" aria-hidden="true"></span>
                     <span class="gt-del" data-id="{{ b.id }}" role="button" aria-label="{{ b.title }} 삭제" title="삭제">✕</span>

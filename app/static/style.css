@@ -1620,8 +1620,22 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 .gt-track {
     position: relative; flex: 1 1 auto; min-width: 0;
+    /* 격자선은 있는 듯 없는 듯. 막대가 주인공이라 선이 세면 지저분해진다. */
     background-image: repeating-linear-gradient(to right,
-        var(--border) 0 1px, transparent 1px calc(100% / var(--cols)));
+        color-mix(in srgb, var(--border) 60%, transparent) 0 1px,
+        transparent 1px calc(100% / var(--cols)));
+}
+/* 오늘 세로선. 격자 전체를 가로지르고 머리글에 작은 깃발이 붙는다. */
+.gt-todayline {
+    position: absolute; top: 0; bottom: 0; width: 0; z-index: 4; pointer-events: none;
+    left: calc(var(--lead-w) + (100% - var(--lead-w)) * var(--p) / 100);
+    border-left: 2px solid var(--danger);
+}
+.gt-todayline::before {
+    content: attr(data-label); position: absolute; top: 6px; left: 4px;
+    font-size: 9px; font-weight: 800; letter-spacing: .02em; line-height: 1;
+    padding: 2px 5px; border-radius: var(--r-pill); white-space: nowrap;
+    background: var(--danger); color: #fff;
 }
 .gt-headrow { position: sticky; top: 0; z-index: 3; background: var(--bg); }
 .gt-headlead { font-size: 12px; font-weight: 700; color: var(--text-muted); }
@@ -1669,11 +1683,11 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 }
 /* 막대는 서로 가리지 않게 위아래 칸(lane)에 나눠 담는다. 칸 수만큼 줄을 높인다.
    블록마다 적어도 두 칸을 두므로 한 줄에 두 항목이 겹치지 않고 들어간다. */
-.gt-blockrow { --lane-h: 26px; min-height: calc(var(--lanes, 2) * var(--lane-h) + 6px); }
+.gt-blockrow { --lane-h: 29px; min-height: calc(var(--lanes, 2) * var(--lane-h) + 8px); }
 .gt-bar {
     position: absolute; min-width: 6px;
-    top: calc(3px + var(--lane, 0) * var(--lane-h, 26px));
-    height: calc(var(--lane-h, 26px) - 4px);
+    top: calc(4px + var(--lane, 0) * var(--lane-h, 29px));
+    height: calc(var(--lane-h, 29px) - 7px);
     display: flex; align-items: center; overflow: hidden; cursor: pointer;
     padding: 0; border: 1px solid; border-radius: var(--r-sm); text-align: left;
     z-index: 1;
@@ -1693,21 +1707,35 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     border-color: color-mix(in srgb, var(--gt-tone) 65%, transparent);
     color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
     filter: hue-rotate(var(--gt-hue));
-    border-radius: 999px;              /* 알약 모양이 요즘 간트차트의 기본 인상이다 */
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .07);
+    /* 알약보다 살짝만 둥근 사각이 요즘 간트(Asana·Linear 계열)의 인상이다 */
+    border-radius: 7px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .06);
     transition: box-shadow .12s, transform .12s;
 }
-.gt-bar:hover { transform: translateY(-1px); }
+.gt-bar:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(16, 24, 40, .14); }
 /* 하위를 품은 막대는 테두리를 점선으로 해 잎 항목과 구분한다(자리는 안 겹친다) */
 .gt-bar.is-parent { border-style: dashed; }
 .gt-bar:hover { box-shadow: var(--sh-2); }
 .gt-bar.clip-l { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: dotted; }
 .gt-bar.clip-r { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-style: dotted; }
-.gt-fill { position: absolute; left: 0; top: 0; bottom: 0; background: currentColor; opacity: 0.16; }
+/* 진척은 막대 안쪽을 같은 색 더 진하게 채워 한눈에 얼마나 갔는지 보인다 */
+.gt-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: color-mix(in srgb, var(--gt-tone) 42%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--gt-tone) 55%, transparent);
+}
 .gt-bartext {
-    position: relative; z-index: 1; padding: 1px 6px; font-size: 11px; font-weight: 700;
+    position: relative; z-index: 1; padding: 1px 8px; font-size: 11.5px; font-weight: 600;
+    letter-spacing: -.01em;
     color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 진척률은 막대 오른쪽 끝에 작게(막대가 좁으면 자연히 가려진다) */
+.gt-barpct {
+    position: absolute; right: 7px; z-index: 1; font-size: 10px; font-weight: 700;
+    opacity: .75; pointer-events: none;
+}
+.gt-barpct::after { content: '%'; font-size: 8px; margin-left: 1px; }
+.gt-bar:hover .gt-barpct { opacity: 0; }   /* ✕ 자리와 겹치지 않게 */
 /* 끌어 옮기기: 끄는 막대는 살짝 들어 올리고, 놓을 자리는 테두리로 알린다 */
 .gt-bar { touch-action: none; cursor: grab; }
 /* 끄는 동안에는 애니메이션을 꺼야 손끝을 바로 따라온다 */
