@@ -337,8 +337,10 @@
                             {% endfor %}
                         </select>
                     </div>
-                    {{ wk_link('wts_' ~ s.id, s.wk_todo) }}
-                    <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    <div class="slot-do-wrap">
+                        {{ wk_link('wts_' ~ s.id, s.wk_todo) }}
+                        <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
+                    </div>
                     <div class="slot-actions">
                     {% if st.show_did != '0' %}
                     <div class="hover-wrap slot-did">

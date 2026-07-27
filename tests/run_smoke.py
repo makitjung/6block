@@ -185,6 +185,27 @@ def run_checks(db_path):
     post("/save/field", {"entity": "slot", "id": slt, "field": "wk_todo", "value": ""})
     sw = db_query(db_path, "SELECT wk_todo FROM slots WHERE id=?", (slt,))[0]["wk_todo"]
     check("연결 안 함을 고르면 비워짐", sw is None, sw)
+    # 블록은 두 시간짜리라 여러 계획을 쉼표로 잇는다(슬롯·목표는 하나만).
+    post("/save/field", {"entity": "block", "id": blk, "field": "wk_todo",
+                         "value": "lt:9,wk:2"})
+    bw = db_query(db_path, "SELECT wk_todo FROM blocks WHERE id=?", (blk,))[0]["wk_todo"]
+    check("블록은 여러 계획을 함께 이음", bw == "lt:9,wk:2", bw)
+    # 목표 3줄의 연결은 daily_meta.goal_links 에 줄바꿈 3칸으로 합쳐 저장된다.
+    post("/save/field", {"entity": "meta", "id": "2026-07-31", "field": "goallink2",
+                         "value": "lt:9", "goallink1": "", "goallink2": "lt:9",
+                         "goallink3": ""})
+    gl = db_query(db_path,
+                  "SELECT goal_links FROM daily_meta WHERE date='2026-07-31'")
+    check("목표 줄의 계획 연결 저장",
+          gl and gl[0]["goal_links"] == "\nlt:9\n", gl and gl[0]["goal_links"])
+    # 연결 버튼은 그 주 목표 열에 이을 것이 하나라도 있어야 나온다(자유 란 하나로 확인).
+    post("/save/field", {"entity": "wmeta", "id": "2026-07-27", "field": "wgoal1",
+                         "value": "이번 주 자유 목표", "wgoal1": "이번 주 자유 목표",
+                         "wgoal2": "", "wgoal3": ""})
+    code, html = get("/day/2026-07-31")
+    check("블록·DO·목표 앞에 연결 버튼이 붙음",
+          html.count('class="wl-btn"') >= 3 and 'name="goallink1"' in html
+          and 'data-multi="1"' in html, html.count('class="wl-btn"'))
 
     # 7. 블록 시간이 바뀌어도 장소만 적은 날의 입력이 사라지지 않는지(회귀)
     post("/save/field", {"entity": "block", "id": blk, "field": "bloc", "value": "카페"})

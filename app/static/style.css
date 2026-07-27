@@ -650,7 +650,10 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     background: var(--surface); border: 1px solid var(--border); padding: 4px 6px;
     font-size: 12px; border-radius: var(--r-sm); width: 100%; color: var(--text-soft);
 }
+/* 연결 버튼과 DO 를 한 칸으로 묶어 슬롯 격자의 칸 수를 그대로 지킨다 */
+.slot-do-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .slot-do {
+    flex: 1 1 auto;
     background: transparent; border: 1px solid transparent; padding: 4px 8px;
     font-size: 13px; min-width: 0;
 }
