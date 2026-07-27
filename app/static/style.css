@@ -1699,24 +1699,25 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     .wk-lt-send { grid-column: 1 / -1; flex-wrap: wrap; }
 }
 
-/* 오늘 탭: 그 날짜에 걸친 장기 항목 한 줄 띠(읽기 전용 · 누르면 장기 탭) */
+/* 오늘 탭: 그 날짜에 걸친 장기 항목 띠(읽기 전용 · 누르면 장기 탭).
+   상위 항목 하나가 열 하나다. 상위끼리는 나란히 서고 하위는 그 열 아래로 쌓인다. */
 .lt-strip {
     max-width: 1180px; margin: 0 auto 8px; padding: 0 18px;
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
 }
 .lt-strip-label {
     font-size: 11px; font-weight: 800; color: var(--text-subtle);
-    letter-spacing: .04em; white-space: nowrap;
+    letter-spacing: .04em; white-space: nowrap; padding-top: 7px;
 }
-.lt-strip-list { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
-.lt-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lt-strip-list { display: flex; align-items: flex-start; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
+.lt-group { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; }
 .lt-chip {
-    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    display: flex; align-items: center; gap: 6px; max-width: 100%;
     padding: 4px 10px; font-size: 12px; text-decoration: none; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill);
 }
 .lt-chip:hover { border-color: var(--border-strong); }
-/* 하위 항목은 한 겹씩 들여쓰고 영역 이름 대신 └ 를 달아 상하관계를 드러낸다 */
+/* 하위는 상위 아래에 한 겹씩 안으로 들여써 상하관계를 드러낸다 */
 .lt-chip { margin-left: calc(var(--d, 0) * 14px); }
 .lt-chip-sub { font-size: 11px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
 .lt-chip-area { font-size: 11px; font-weight: 700; color: var(--accent-soft-text); white-space: nowrap; }
