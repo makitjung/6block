@@ -1928,6 +1928,7 @@
         const reset = () => {
             if (drag) {
                 clearTimeout(drag.holdT);
+                tip.hidden = true;
                 drag.bar.classList.remove('is-dragging', 'is-resizing',
                                           'is-nesting', 'is-detaching');
                 drag.bar.style.transform = '';
@@ -1943,6 +1944,36 @@
         const DETACH = 20;  // 하위 막대를 이만큼 곧장 아래로 끌면 상위에서 뗀다
         // 끈 픽셀을 주 단위 날수로. 하루 단위로 떨리지 않게 7일씩 끊어 붙인다.
         const dragDays = (dx) => Math.round(dx * daysPerPx(drag.track) / SNAP) * SNAP;
+        // 그 날수를 다시 픽셀로. 끄는 동안 막대를 이 값만큼만 움직여야 "보이는 자리 = 놓일 자리"다.
+        const snapPx = (dx) => {
+            const dpp = daysPerPx(drag.track);
+            return dpp ? dragDays(dx) / dpp : 0;
+        };
+        // 끄는 동안 바뀔 기간을 막대 위에 띄운다(몇 주 움직였고 며칠~며칠이 되는지)
+        const tip = document.createElement('span');
+        tip.className = 'gt-tip';
+        tip.hidden = true;
+        gantt.appendChild(tip);
+        const md = (iso, add) => {
+            const d = new Date(iso + 'T00:00:00');
+            d.setDate(d.getDate() + add);
+            return (d.getMonth() + 1) + '/' + d.getDate();
+        };
+        const showTip = (days, px) => {
+            const s = drag.bar.dataset.start;
+            const e = drag.bar.dataset.end;
+            if (!s || !e) return;
+            const ds = drag.edge === 'end' ? 0 : days;
+            const de = drag.edge === 'start' ? 0 : days;
+            const wk = days / SNAP;
+            tip.textContent = (wk > 0 ? '+' : '') + wk + '주 · ' + md(s, ds) + '~' + md(e, de);
+            const base = gantt.getBoundingClientRect();
+            const top = drag.px.top - base.top;
+            tip.style.left = Math.max(0, drag.px.left - base.left + px) + 'px';
+            // 위로 띄우면 머리글에 가리는 자리에서는 막대 아래로 내린다
+            tip.style.top = (top < 30 ? top + drag.bar.offsetHeight + 4 : top - 22) + 'px';
+            tip.hidden = false;
+        };
         // 아래로 곧장 끌어 빈 자리에 놓았는가(상위에서 떼는 몸짓)
         const wantsDetach = (dx, dy) => !!drag.parent && dy > DETACH && dy > Math.abs(dx);
         // 포인터 아래에 무엇이 있는지(끌고 있는 막대는 잠시 통과시켜 밑을 본다)
@@ -2001,7 +2032,7 @@
                     parent: bar.dataset.parent || '',
                     track: bar.closest('.gt-track'), row: bar.closest('.gt-blockrow'),
                     css: { left: bar.style.left, width: bar.style.width },
-                    px: { left: r.left, width: r.width },
+                    px: { left: r.left, width: r.width, top: r.top },
                 };
                 try { bar.setPointerCapture(e.pointerId); } catch (_) { /* 캡처 못해도 진행 */ }
             });
@@ -2011,21 +2042,25 @@
                 const dy = e.clientY - drag.y0;
                 if (!drag.moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
                 drag.moved = true;
+                // 놓일 자리(주 단위로 끊은 값)만큼만 움직여 '보이는 자리 = 놓일 자리'가 되게 한다.
+                // 1:1로 따라 움직이면 놓는 순간 딴 데로 붙어 안 먹은 것처럼 보인다.
+                const px = snapPx(dx);
+                showTip(dragDays(dx), drag.edge === 'start' ? px : 0);
                 if (drag.edge) {
                     // 기간 조절: 잡은 쪽 끝만 따라 움직인다
                     bar.classList.add('is-resizing');
                     const trackLeft = drag.track.getBoundingClientRect().left;
                     if (drag.edge === 'start') {
-                        const w = Math.max(6, drag.px.width - dx);
+                        const w = Math.max(6, drag.px.width - px);
                         bar.style.left = (drag.px.left - trackLeft + (drag.px.width - w)) + 'px';
                         bar.style.width = w + 'px';
                     } else {
-                        bar.style.width = Math.max(6, drag.px.width + dx) + 'px';
+                        bar.style.width = Math.max(6, drag.px.width + px) + 'px';
                     }
                     return;
                 }
                 bar.classList.add('is-dragging');
-                bar.style.transform = `translate(${dx}px, ${dy}px)`;
+                bar.style.transform = `translate(${px}px, ${dy}px)`;
                 const u = under(e.clientX, e.clientY);
                 const moved = Math.abs(e.clientX - drag.armX) > REARM
                            || Math.abs(e.clientY - drag.armY) > REARM;

@@ -211,22 +211,73 @@ def _assign_lanes(bars: list[dict]) -> int:
     것끼리는 같은 칸을 나눠 쓴다. 날짜는 'YYYY-MM-DD'라 문자열 비교가 곧 날짜 비교이며,
     화면에 보이는 구간(vs~ve)으로 재야 눈에 겹치지 않는다.
     """
-    lanes: list[list[tuple[str, str]]] = []   # 칸마다 이미 놓인 (시작, 끝) 목록
-    placed: dict[int, int] = {}               # 항목 id → 이 줄에서 쓴 칸
-    for b in sorted(bars, key=lambda x: (x["level"], x["vs"], x["ve"], x["id"])):
-        i = placed.get(b["parent_id"], -1) + 1
-        while True:
-            if i >= len(lanes):
-                lanes.append([])
-            if all(b["ve"] < s or b["vs"] > e for s, e in lanes[i]):
-                break
-            i += 1
+    # 한 뿌리(최상위)와 그 하위들을 한 묶음으로 보고, 묶음마다 연속한 칸을 통째로 준다.
+    # 그래야 상위와 하위 사이에 남남인 항목이 끼어들지 않는다.
+    byid = {b["id"]: b for b in bars}
+
+    def root_of(b) -> int:
+        cur, seen = b, set()
+        while cur["parent_id"] in byid and cur["id"] not in seen:
+            seen.add(cur["id"])
+            cur = byid[cur["parent_id"]]
+        return cur["id"]
+
+    fams: dict[int, list] = {}
+    for b in bars:
+        fams.setdefault(root_of(b), []).append(b)
+
+    lanes: list[list[tuple[str, str]]] = []      # 칸마다 이미 놓인 (시작, 끝) 목록
+    held: list[tuple[int, int]] = []             # 묶음이 통째로 잡아 둔 칸 범위
+    def open_at(i: int, b) -> bool:
+        """그 칸이 어느 묶음에도 잡혀 있지 않고 기간도 안 겹치는가."""
+        if any(lo <= i < hi for lo, hi in held):
+            return False
+        while i >= len(lanes):
+            lanes.append([])
+        return all(b["ve"] < s or b["vs"] > e for s, e in lanes[i])
+
+    def put(i: int, b):
+        while i >= len(lanes):
+            lanes.append([])
         lanes[i].append((b["vs"], b["ve"]))
         b["lane"] = i
-        placed[b["id"]] = i
+
+    # 하위를 거느린 묶음부터 자리를 잡고 그 칸 범위를 통째로 잡아 둔다(사이에 남이 못 낀다).
+    # 낱개 항목은 잡히지 않은 칸에서 기간이 안 겹치면 서로 칸을 나눠 써 줄이 낮아진다.
+    ordered = sorted(fams.values(),
+                     key=lambda f: (len(f) < 2, min(b["vs"] for b in f), f[0]["id"]))
+    for fam in ordered:
+        members = sorted(fam, key=lambda x: (x["level"], x["vs"], x["ve"], x["id"]))
+        if len(members) < 2:
+            b = members[0]
+            i = 0
+            while not open_at(i, b):
+                i += 1
+            put(i, b)
+            continue
+        rel: dict[int, int] = {}          # 항목 id → 묶음 안에서의 상대 칸
+        span: list[list[tuple[str, str]]] = []
+        for b in members:
+            k = rel.get(b["parent_id"], -1) + 1
+            while True:
+                if k >= len(span):
+                    span.append([])
+                if all(b["ve"] < s or b["vs"] > e for s, e in span[k]):
+                    break
+                k += 1
+            span[k].append((b["vs"], b["ve"]))
+            rel[b["id"]] = k
+        base = 0
+        while not all(open_at(base + rel[b["id"]], b) for b in members):
+            base += 1
+        for b in members:
+            put(base + rel[b["id"]], b)
+        held.append((base, base + len(span)))
     # 맨 아래 한 칸은 늘 비워 둔다. 하위 막대를 그리로 끌어내려 상위에서 떼고,
     # 다른 줄에서 끌어온 막대를 놓는 자리로도 쓴다.
-    return max(len(lanes) + 1, MIN_LANES)
+    # (lanes 는 자리를 찾다 늘어나기도 해서, 실제로 쓴 칸으로 센다)
+    used = max((b["lane"] for b in bars), default=-1) + 1
+    return max(used + 1, MIN_LANES)
 
 
 def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):

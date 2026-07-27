@@ -126,6 +126,7 @@
                         data-level="{{ b.level }}" data-lane="{{ b.lane }}"
                         data-id="{{ b.id }}" data-parent="{{ b.parent_id or '' }}"
                         data-area="{{ b.area_id }}" data-blocks="{{ b.blocks }}"
+                        data-start="{{ b.start_date }}" data-end="{{ b.end_date }}"
                         style="left: {{ b.left }}%; width: {{ b.width }}%; --lane: {{ b.lane }}; --gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg"
                         title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.days }}일 · {{ b.level_label }} · {{ b.progress }}%{% if b.blocks %} · {{ b.blocks }}{% endif %}">
                     <span class="gt-fill" style="width: {{ b.progress }}%"></span>
