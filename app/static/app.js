@@ -1429,12 +1429,14 @@
         const closeAll = () => {
             gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
         };
-        // 항목 추가 폼 열기(하위 추가면 상위 항목을 폼에 실어 보낸다)
-        const openForm = (areaId, parentId, parentTitle) => {
+        // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목과 그 영역을 폼에 실어 보낸다.
+        const openForm = (block, areaId, parentId, parentTitle) => {
             closeAll();
-            const form = gantt.querySelector('.gt-form[data-area="' + areaId + '"]');
+            const form = gantt.querySelector('.gt-form[data-block="' + (block || '') + '"]');
             if (!form) return;
             form.hidden = false;
+            const area = form.querySelector('.gt-f-area');
+            if (area && areaId) area.value = areaId;
             form.querySelector('.gt-f-parent').value = parentId || '';
             const label = form.querySelector('.gt-f-parent-label');
             if (label) label.textContent = parentId ? ('하위 · ' + parentTitle) : '';
@@ -1442,7 +1444,7 @@
         };
 
         gantt.querySelectorAll('.gt-add').forEach((btn) =>
-            btn.addEventListener('click', () => openForm(btn.dataset.area, '', '')));
+            btn.addEventListener('click', () => openForm(btn.dataset.block, '', '', '')));
 
         gantt.querySelectorAll('.gt-form').forEach((form) => {
             let sending = false;    // 보내는 중 다시 누르면 같은 항목이 2개 저장된다
@@ -1455,7 +1457,9 @@
                 if (!start || !end) { toast('시작일과 종료일을 고르세요'); return; }
                 sending = true;
                 postForm('/plan/item/add', {
-                    area_id: form.dataset.area, title: title, start: start, end: end,
+                    area_id: form.querySelector('.gt-f-area').value,
+                    block: form.dataset.block,
+                    title: title, start: start, end: end,
                     parent_id: form.querySelector('.gt-f-parent').value,
                 }).then((d) => {
                     if (d && d.ok) { location.reload(); return; }   // 성공하면 그대로 잠근다
@@ -1527,12 +1531,21 @@
                 const p = box.querySelector('.gt-e-progress');
                 data.start = s.value;
                 data.end = e.value;
+                data.block = box.querySelector('.gt-e-block').value;   // 빈 값이면 미지정 줄로
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 postForm('/plan/item/update', data).then((d) => {
                     if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
                     if (d.widened) toast('하위를 모두 품도록 기간을 넓혔습니다');
                     location.reload();
                 });
+            });
+            // 영역(막대 색)을 바꾼다. 하위 항목이면 상위에서 빠져 그 영역의 최상위가 된다.
+            box.querySelector('.gt-e-area')?.addEventListener('change', (ev) => {
+                postForm('/plan/item/reparent', { id: id, area_id: ev.target.value })
+                    .then((d) => {
+                        if (d && d.ok) location.reload();
+                        else toast((d && d.error) || '영역을 바꾸지 못했습니다');
+                    });
             });
             box.querySelector('.gt-e-del')?.addEventListener('click', () => {
                 if (!window.confirm('이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.')) return;
@@ -1543,7 +1556,7 @@
             });
             box.querySelector('.gt-e-child')?.addEventListener('click', (ev) => {
                 const b = ev.currentTarget;
-                openForm(b.dataset.area, b.dataset.parent, b.dataset.title);
+                openForm(b.dataset.block, b.dataset.area, b.dataset.parent, b.dataset.title);
             });
         });
 
@@ -1793,8 +1806,8 @@
 
     // ---- 장기: 막대 끌어 옮기기 ------------------------------------------
     // 같은 줄에서 좌우로 끌면 보고 있는 열 단위로 기간이 옮겨지고, 다른 막대 위에 놓으면
-    // 그 막대의 하위계획이 되어 상위 막대 안에 겹쳐 그려진다. 영역 줄이나 빈 줄에 놓으면
-    // 다시 최상위로 빠진다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
+    // 그 막대의 하위계획이 되어 상위 막대 안에 겹쳐 그려진다. 다른 블록(B1~B6·미지정) 줄에
+    // 놓으면 그 블록으로 옮겨진다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
     function bindGanttDrag(gantt) {
         const level = gantt.dataset.level || 'year';
         const cols = parseInt(getComputedStyle(gantt).getPropertyValue('--cols'), 10) || 1;
@@ -1824,10 +1837,9 @@
             if (!under) return null;
             const bar = under.closest('.gt-bar');
             if (bar && bar !== drag.bar) return { kind: 'bar', el: bar };
-            const areaRow = under.closest('.gt-arearow');
-            if (areaRow) return { kind: 'area', el: areaRow, area: areaRow.dataset.area };
-            const empty = under.closest('.gt-empty');
-            if (empty) return { kind: 'area', el: empty, area: empty.dataset.area };
+            // 자기 줄에 그대로 놓은 것은 좌우 기간 이동이므로 드롭 대상으로 치지 않는다.
+            const row = under.closest('.gt-blockrow');
+            if (row && row !== drag.row) return { kind: 'block', el: row, block: row.dataset.block };
             return null;
         };
 
@@ -1844,7 +1856,7 @@
                 drag = {
                     bar, id: bar.dataset.id, x0: e.clientX, y0: e.clientY, moved: false,
                     edge, hasChildren: bar.classList.contains('is-parent'),
-                    track: bar.closest('.gt-track'),
+                    track: bar.closest('.gt-track'), row: bar.closest('.gt-blockrow'),
                     css: { left: bar.style.left, width: bar.style.width },
                     px: { left: r.left, width: r.width },
                 };
@@ -1904,9 +1916,9 @@
                         if (d && d.ok) location.reload();
                         else toast((d && d.error) || '하위로 넣지 못했습니다');
                     });
-                } else if (target && target.kind === 'area') {
-                    postForm('/plan/item/reparent',
-                             { id: id, area_id: target.area }).then((d) => {
+                } else if (target && target.kind === 'block') {
+                    postForm('/plan/item/update',
+                             { id: id, block: target.block }).then((d) => {
                         if (d && d.ok) location.reload();
                         else toast((d && d.error) || '옮기지 못했습니다');
                     });
@@ -1955,6 +1967,7 @@
         });
     }
 
+    // 영역 관리(추가·이름·색·순서·숨김). 영역은 간트 행이 아니라 막대 색으로만 쓰인다.
     function bindPlanAreas() {
         const addBtn = document.getElementById('pg-area-add');
         if (!addBtn && !document.querySelector('.pg-area-name')) return;
@@ -1975,6 +1988,13 @@
                 if (!v) return;
                 postForm('/plan/area/update', { id: inp.dataset.id, name: v })
                     .then(() => toast('이름 저장'));
+            });
+        });
+        // 영역 색을 바꾸면 그 영역 막대가 전부 바뀌므로 화면을 다시 그린다
+        document.querySelectorAll('.pg-area-tone').forEach((sel) => {
+            sel.addEventListener('change', () => {
+                postForm('/plan/area/update', { id: sel.dataset.id, tone: sel.value })
+                    .then((d) => { if (d && d.ok) location.reload(); else toast('색 저장 실패'); });
             });
         });
         const move = (id, dir) =>

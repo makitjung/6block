@@ -5,7 +5,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.common import KST, _parse_date, templates
-from app.db import get_conn
+from app.config import CORE_BLOCKS, TONE_KEYS, TONES, area_tone
+from app.db import get_conn, get_day_blocks
 
 router = APIRouter()
 
@@ -270,21 +271,35 @@ def _add_months(d: date, n: int) -> date:
 SHIFT_MONTHS = {"year": 12, "quarter": 3, "month": 1}
 
 
-def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
-    """영역별 간트 행 목록. 최상위 항목 하나가 한 줄이고, 하위 항목은 그 줄 막대 안에 겹친다.
+def _block_rows() -> list[dict]:
+    """간트 왼쪽에 세울 행. 코어블록 B1~B6 + 블록을 정하지 않은 항목이 모이는 '미지정' 한 줄."""
+    times = {lbl: f"{s}~{e}" for lbl, is_core, s, e in get_day_blocks() if is_core}
+    rows = [{"key": b, "label": b, "time": times.get(b, "")} for b in CORE_BLOCKS]
+    rows.append({"key": "", "label": "미지정", "time": "블록 없음"})
+    return rows
 
-    한 줄은 bars(상위+하위 전부의 막대)와 edits(같은 항목들의 편집 폼)를 함께 담는다.
-    left/width 는 보이는 기간 전체에 대한 퍼센트, depth 는 겹칠 단계라 템플릿이 계산 없이 그린다.
+
+def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
+    """블록(B1~B6·미지정)별 간트 행 목록. 그 블록으로 배정된 막대가 한 줄에 모두 들어간다.
+
+    막대 색은 영역 톤(tone)이고 진하기는 기간 구분(span_class)이라 한 줄 안에서도
+    어느 영역·어느 기간인지 함께 읽힌다. 하위 항목은 자기 블록이 없으면 상위 블록을 따른다.
+    상위·하위는 지금처럼 한 줄에서 겹쳐 그리되, depth 는 같은 줄에 있는 조상 수로만 센다
+    (하위가 다른 블록으로 빠지면 그 줄에서는 다시 맨 위 단계가 된다).
+    left/width 는 보이는 기간 전체에 대한 퍼센트라 템플릿이 계산 없이 그린다.
     """
     total = (span_end - span_start).days + 1
     today = datetime.now(KST).date()
-    rows_by_area: dict[int, list] = {a["id"]: [] for a in areas}
+    tones = {a["id"]: a["tone"] for a in areas}
+    names = {a["id"]: a["name"] for a in areas}
+    rows = _block_rows()
+    valid = {b["key"] for b in rows}
     children: dict[int | None, list] = {}
     for r in conn.execute(
-        "SELECT id, area_id, parent_id, title, start_date, end_date, progress "
-        "FROM lt_item ORDER BY start_date, id"
+        "SELECT id, area_id, parent_id, title, start_date, end_date, progress, "
+        "       block_label FROM lt_item ORDER BY start_date, id"
     ):
-        if r["area_id"] in rows_by_area:
+        if r["area_id"] in tones:
             children.setdefault(r["parent_id"], []).append(dict(r))
 
     def overlaps(it) -> bool:
@@ -295,12 +310,13 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
             return True
         return any(overlaps(c) for c in children.get(it["id"], []))
 
-    def bar(it, depth: int) -> dict:
+    def bar(it, block: str, depth: int) -> dict:
         s = _parse_date(it["start_date"]) or span_start
         e = _parse_date(it["end_date"]) or s
         vs, ve = max(s, span_start), min(e, span_end)
         visible = vs <= ve
         row = dict(it)
+        row["block"] = block
         row["depth"] = min(depth, MAX_LANE)
         row["visible"] = visible
         row["left"] = round((vs - span_start).days / total * 100, 3) if visible else 0
@@ -312,36 +328,38 @@ def _gantt_areas(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["span_class"], row["span_label"] = _span_class(s, e)
         row["days"] = (e - s).days + 1
         row["past"] = e < today        # 종료일이 지난 항목은 화면에서 기본으로 접는다
+        row["tone"] = tones.get(it["area_id"], "blue")
+        row["area_name"] = names.get(it["area_id"], "")
         return row
 
-    def walk(it, depth: int, bars: list):
-        bars.append(bar(it, depth))
+    bars_by_block: dict[str, list] = {k: [] for k in valid}
+
+    def walk(it, parent_block: str, same_row_depth: int):
+        own = (it["block_label"] or "").strip()
+        block = own if (own and own in valid) else parent_block
+        depth = same_row_depth if block == parent_block else 0
+        b = bar(it, block, depth)
+        if b["visible"]:
+            bars_by_block[block].append(b)
         for c in children.get(it["id"], []):
             if overlaps(c):
-                walk(c, depth + 1, bars)
+                walk(c, block, depth + 1)
 
     for it in children.get(None, []):
-        if it["area_id"] in rows_by_area and overlaps(it):
-            bars: list[dict] = []
-            walk(it, 0, bars)
-            root = bars[0]
-            rows_by_area[it["area_id"]].append({
-                "id": root["id"],
-                "title": root["title"],
-                "range_label": root["range_label"],
-                "progress": root["progress"],
-                "span_class": root["span_class"],
-                "span_label": root["span_label"],
-                "past": root["past"],
-                "lanes": max(b["depth"] for b in bars),
-                "bars": [b for b in bars if b["visible"]],
-                "edits": bars,
-            })
+        if it["area_id"] in tones and overlaps(it):
+            walk(it, "", 0)
+
     # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
-    return [
-        {"id": a["id"], "name": a["name"], "rows": rows_by_area[a["id"]]}
-        for a in areas
-    ]
+    return [{**row,
+             "lanes": max((b["depth"] for b in bars_by_block[row["key"]]), default=0),
+             "bars": bars_by_block[row["key"]]}
+            for row in rows]
+
+
+def _clean_block(raw) -> str:
+    """폼에서 온 블록 값을 B1~B6 중 하나로. 비었거나 모르는 값이면 ''(미지정)."""
+    b = (raw or "").strip()
+    return b if b in CORE_BLOCKS else ""
 
 
 @router.post("/plan/item/add")
@@ -386,8 +404,9 @@ async def plan_item_add(request: Request):
             return JSONResponse({"ok": False, "error": "영역 없음"}, status_code=404)
         cur = conn.execute(
             "INSERT INTO lt_item (area_id, parent_id, title, start_date, end_date, "
-            "progress, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
-            (area_id, parent_id, title, start.isoformat(), end.isoformat(), now),
+            "progress, block_label, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+            (area_id, parent_id, title, start.isoformat(), end.isoformat(),
+             _clean_block(form.get("block")) or None, now),
         )
         new_id = cur.lastrowid
         _lt_rollup(conn, new_id)
@@ -396,7 +415,7 @@ async def plan_item_add(request: Request):
 
 @router.post("/plan/item/update")
 async def plan_item_update(request: Request):
-    """간트 항목의 제목·기간·진척률을 고친다(보낸 값만 바꾼다)."""
+    """간트 항목의 제목·기간·진척률·블록을 고친다(보낸 값만 바꾼다)."""
     form = await request.form()
     try:
         item_id = int(form.get("id"))
@@ -405,6 +424,9 @@ async def plan_item_update(request: Request):
     fields: dict = {}
     if (form.get("title") or "").strip():
         fields["title"] = form.get("title").strip()
+    # 블록은 빈 값도 뜻이 있다('미지정'으로 되돌리기). 칸이 왔는지로만 판단한다.
+    if form.get("block") is not None:
+        fields["block_label"] = _clean_block(form.get("block")) or None
     if form.get("start") is not None and (form.get("start") or "").strip():
         d = _parse_date(form.get("start"))
         if not d:
@@ -648,18 +670,17 @@ def plan_view(request: Request, level: str = "month", anchor: str = ""):
         areas = [
             dict(x)
             for x in conn.execute(
-                "SELECT id, name FROM lt_area WHERE is_active = 1 ORDER BY display_order"
+                "SELECT id, name, tone FROM lt_area WHERE is_active = 1 "
+                "ORDER BY display_order"
             )
         ]
         all_areas = conn.execute(
-            "SELECT id, name, is_active FROM lt_area "
+            "SELECT id, name, is_active, tone FROM lt_area "
             "ORDER BY is_active DESC, display_order"
         ).fetchall()
-        gantt = _gantt_areas(conn, areas, span_start, span_end)
+        gantt = _gantt_blocks(conn, areas, span_start, span_end)
     # 기본으로 접히는 지난 항목 수(0이면 '지난 항목 보기' 버튼도 내보내지 않는다)
-    past_count = sum(
-        1 for ar in gantt for r in ar["rows"] for b in r["bars"] if b["past"]
-    )
+    past_count = sum(1 for row in gantt for b in row["bars"] if b["past"])
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -685,6 +706,8 @@ def plan_view(request: Request, level: str = "month", anchor: str = ""):
             "levels": PLAN_LEVELS,
             "level_labels": PLAN_LEVEL_LABELS,
             "gantt": gantt,
+            "core_blocks": CORE_BLOCKS,
+            "tones": TONES,
             "past_count": past_count,
             "span_start": span_start.strftime("%Y-%m-%d"),
             "span_end": span_end.strftime("%Y-%m-%d"),
@@ -709,8 +732,9 @@ async def plan_area_add(request: Request):
                 "SELECT COALESCE(MAX(display_order), -1) + 1 FROM lt_area"
             ).fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO lt_area (name, display_order, is_active) VALUES (?, ?, 1)",
-                (name, order),
+                "INSERT INTO lt_area (name, display_order, is_active, tone) "
+                "VALUES (?, ?, 1, ?)",
+                (name, order, area_tone(order)),
             )
             cid = cur.lastrowid
     return JSONResponse({"ok": True, "id": cid, "name": name})
@@ -718,16 +742,25 @@ async def plan_area_add(request: Request):
 
 @router.post("/plan/area/update")
 async def plan_area_update(request: Request):
+    """영역 이름이나 막대 색(tone)을 바꾼다. 보낸 값만 고친다."""
     form = await request.form()
     try:
         cid = int(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
-    name = (form.get("name") or "").strip()
-    if not name:
+    fields: dict = {}
+    if (form.get("name") or "").strip():
+        fields["name"] = form.get("name").strip()
+    tone = (form.get("tone") or "").strip()
+    if tone:
+        if tone not in TONE_KEYS:
+            return JSONResponse({"ok": False, "error": "모르는 색"}, status_code=400)
+        fields["tone"] = tone
+    if not fields:
         return JSONResponse({"ok": False}, status_code=400)
+    sets = ", ".join(f"{k} = ?" for k in fields)
     with get_conn() as conn:
-        conn.execute("UPDATE lt_area SET name = ? WHERE id = ?", (name, cid))
+        conn.execute(f"UPDATE lt_area SET {sets} WHERE id = ?", (*fields.values(), cid))
     return JSONResponse({"ok": True})
 
 

@@ -32,24 +32,37 @@
         {% endfor %}
     </nav>
     <span class="plan-legend">
-        <span class="pl-key" data-span="l"></span>장기 6개월↑
-        <span class="pl-key" data-span="m"></span>중기 1~6개월
-        <span class="pl-key" data-span="s"></span>단기 1개월↓
+        <span class="pl-cap">영역 색</span>
+        {% for ar in areas %}
+        <span class="pl-key" data-span="l" style="--gt-tone: var(--tone-{{ ar.tone }})"></span>{{ ar.name }}
+        {% endfor %}
+    </span>
+    <span class="plan-legend">
+        <span class="pl-cap">기간 진하기</span>
         <span class="pl-key" data-span="xs"></span>초단기 1주↓
+        <span class="pl-key" data-span="s"></span>단기 1개월↓
+        <span class="pl-key" data-span="m"></span>중기 1~6개월
+        <span class="pl-key" data-span="l"></span>장기 6개월↑
     </span>
     {% if past_count %}
     <button type="button" id="pg-past-toggle" class="ghost-btn" data-count="{{ past_count }}">지난 항목 {{ past_count }}개 보기</button>
     {% endif %}
-    <span class="plan-hint">막대 가운데를 끌면 기간 이동 · 양 끝을 끌면 기간 조절 · 다른 막대 위에 놓으면 하위계획 · 영역 줄에 놓으면 최상위</span>
+    <span class="plan-hint">막대 가운데를 좌우로 끌면 기간 이동 · 양 끝을 끌면 기간 조절 · 위아래 다른 블록 줄에 놓으면 그 블록으로 이동 · 다른 막대 위에 놓으면 하위계획</span>
 </div>
 
 <details class="card theme-fold">
-    <summary class="card-title">영역 관리 <span class="card-sub">행으로 쓸 영역을 추가·이름변경·순서변경·숨김</span></summary>
+    <summary class="card-title">영역 관리 <span class="card-sub">막대 색으로 쓸 영역을 추가·이름변경·색변경·순서변경·숨김</span></summary>
     <div class="set-cat-list">
         {% for ar in all_areas %}
         <div class="set-cat-row {% if not ar.is_active %}is-hidden{% endif %}" data-id="{{ ar.id }}">
             {% if ar.is_active %}
             <input type="text" class="set-cat-name pg-area-name" data-id="{{ ar.id }}" value="{{ ar.name }}" autocomplete="off" aria-label="영역 이름">
+            <span class="pl-key" data-span="l" style="--gt-tone: var(--tone-{{ ar.tone }})" aria-hidden="true"></span>
+            <select class="pg-area-tone" data-id="{{ ar.id }}" aria-label="{{ ar.name }} 막대 색">
+                {% for key, tname in tones %}
+                <option value="{{ key }}" {% if key == ar.tone %}selected{% endif %}>{{ tname }}</option>
+                {% endfor %}
+            </select>
             <div class="set-cat-actions">
                 <button type="button" class="set-cat-up pg-area-up" data-id="{{ ar.id }}" title="위로">↑</button>
                 <button type="button" class="set-cat-down pg-area-down" data-id="{{ ar.id }}" title="아래로">↓</button>
@@ -79,7 +92,7 @@
         <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
         {% endif %}{% endfor %}
         <div class="gt-row gt-headrow">
-            <div class="gt-lead gt-headlead">영역 · 항목</div>
+            <div class="gt-lead gt-headlead">블록</div>
             <div class="gt-track gt-headtrack">
                 {% for col in columns %}
                 <div class="gt-col {% if col.current %}is-now{% endif %}{% if col.brk %} is-brk{% endif %}" data-lv="{{ col.brk_level }}">
@@ -96,14 +109,36 @@
             </div>
         </div>
 
-        {% for area in gantt %}
-        <div class="gt-row gt-arearow" data-area="{{ area.id }}">
-            <div class="gt-lead gt-areaname">{{ area.name }}</div>
+        {% for row in gantt %}
+        <div class="gt-row gt-blockrow{% if not row.key %} is-none{% endif %}" data-lanes="{{ row.lanes }}" data-block="{{ row.key }}">
+            <div class="gt-lead gt-blocklead">
+                <span class="gt-blockname">{{ row.label }}</span>
+                <span class="gt-blocktime mono">{{ row.time }}</span>
+                <button type="button" class="gt-add" data-block="{{ row.key }}" title="{{ row.label }}에 항목 추가" aria-label="{{ row.label }}에 항목 추가">+</button>
+            </div>
             <div class="gt-track">
-                <button type="button" class="gt-add" data-area="{{ area.id }}">+ 항목</button>
+                {% for b in row.bars %}
+                <button type="button"
+                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}"
+                        data-depth="{{ b.depth }}" data-span="{{ b.span_class }}"
+                        style="left: {{ b.left }}%; width: {{ b.width }}%; --gt-tone: var(--tone-{{ b.tone }})"
+                        data-id="{{ b.id }}"
+                        title="{{ b.area_name }} · {{ b.title }} · {{ b.range_label }} · {{ b.span_label }} {{ b.days }}일 · {{ b.progress }}%">
+                    <span class="gt-fill" style="width: {{ b.progress }}%"></span>
+                    <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>
+                    <span class="gt-handle l" aria-hidden="true"></span>
+                    <span class="gt-handle r" aria-hidden="true"></span>
+                    <span class="gt-del" data-id="{{ b.id }}" role="button" aria-label="{{ b.title }} 삭제" title="삭제">✕</span>
+                </button>
+                {% endfor %}
             </div>
         </div>
-        <div class="gt-form" data-area="{{ area.id }}" hidden>
+        <div class="gt-form" data-block="{{ row.key }}" hidden>
+            <select class="gt-f-area" aria-label="영역">
+                {% for ar in areas %}
+                <option value="{{ ar.id }}">{{ ar.name }}</option>
+                {% endfor %}
+            </select>
             <input type="text" class="gt-f-title" placeholder="항목 이름 (예: 노무사 1차 과목 1회독)" autocomplete="off">
             <input type="date" class="gt-f-start" value="{{ default_start }}" aria-label="시작일">
             <input type="date" class="gt-f-end" value="{{ span_end }}" aria-label="종료일">
@@ -115,53 +150,36 @@
             </span>
             <input type="hidden" class="gt-f-parent" value="">
             <span class="gt-f-parent-label"></span>
-            <button type="button" class="primary-btn gt-f-save">추가</button>
+            <button type="button" class="primary-btn gt-f-save">{{ row.label }}에 추가</button>
             <button type="button" class="ghost-btn gt-f-cancel">취소</button>
         </div>
-
-        {% for it in area.rows %}
-        <div class="gt-row gt-itemrow{% if it.past %} is-past{% endif %}" data-lanes="{{ it.lanes }}" data-id="{{ it.id }}">
-            <div class="gt-lead">
-                <span class="gt-span" data-span="{{ it.span_class }}">{{ it.span_label }}</span>
-                <span class="gt-title">{{ it.title }}</span>
-                <span class="gt-range mono">{{ it.range_label }}</span>
-            </div>
-            <div class="gt-track">
-                {% for b in it.bars %}
-                <button type="button"
-                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}"
-                        data-depth="{{ b.depth }}" data-span="{{ b.span_class }}"
-                        style="left: {{ b.left }}%; width: {{ b.width }}%"
-                        data-id="{{ b.id }}"
-                        title="{{ b.title }} · {{ b.range_label }} · {{ b.span_label }} {{ b.days }}일 · {{ b.progress }}%">
-                    <span class="gt-fill" style="width: {{ b.progress }}%"></span>
-                    <span class="gt-bartext">{{ b.title }}{% if b.progress %} · {{ b.progress }}%{% endif %}</span>
-                    <span class="gt-handle l" aria-hidden="true"></span>
-                    <span class="gt-handle r" aria-hidden="true"></span>
-                    <span class="gt-del" data-id="{{ b.id }}" role="button" aria-label="{{ b.title }} 삭제" title="삭제">✕</span>
-                </button>
-                {% endfor %}
-            </div>
-        </div>
-        {% for b in it.edits %}
-        <div class="gt-edit" data-id="{{ b.id }}" hidden>
-            <span class="gt-e-lv" data-span="{{ b.span_class }}">{{ b.span_label }} {{ b.days }}일</span>
+        {% for b in row.bars %}
+        <div class="gt-edit" data-id="{{ b.id }}" data-block="{{ row.key }}" data-area="{{ b.area_id }}" hidden>
+            <span class="gt-e-lv" data-span="{{ b.span_class }}" style="--gt-tone: var(--tone-{{ b.tone }})">{{ b.span_label }} {{ b.days }}일</span>
             <input type="text" class="gt-e-title" value="{{ b.title }}" aria-label="항목 이름">
+            <select class="gt-e-block" aria-label="블록">
+                <option value="">블록 미지정</option>
+                {% for bl in core_blocks %}
+                <option value="{{ bl }}" {% if bl == b.block_label %}selected{% endif %}>{{ bl }}</option>
+                {% endfor %}
+            </select>
+            <select class="gt-e-area" aria-label="영역">
+                {% for ar in areas %}
+                <option value="{{ ar.id }}" {% if ar.id == b.area_id %}selected{% endif %}>{{ ar.name }}</option>
+                {% endfor %}
+            </select>
             <input type="date" class="gt-e-start" value="{{ b.start_date }}" aria-label="시작일">
             <input type="date" class="gt-e-end" value="{{ b.end_date }}" aria-label="종료일">
             <label class="gt-e-proglabel">진척
                 <input type="number" class="gt-e-progress" min="0" max="100" step="5" value="{{ b.progress }}" {% if b.has_children %}disabled{% endif %}>%
             </label>
-            <button type="button" class="ghost-btn gt-e-child" data-area="{{ area.id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
+            <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
             <button type="button" class="primary-btn gt-e-save">저장</button>
             <button type="button" class="ghost-btn gt-e-del">삭제</button>
+            {% if b.parent_id %}<span class="gt-e-hint">영역을 바꾸면 상위에서 빠져 그 영역의 최상위 항목이 됩니다</span>{% endif %}
             {% if b.has_children %}<span class="gt-e-hint">진척률은 하위 평균 · 기간은 하위를 모두 품도록 자동으로 넓어집니다</span>{% endif %}
         </div>
         {% endfor %}
-        {% endfor %}
-        {% if not area.rows %}
-        <div class="gt-empty" data-area="{{ area.id }}">이 기간에 걸친 항목이 없습니다. 오른쪽 위 + 항목으로 추가하거나, 다른 막대를 여기로 끌어다 놓으세요.</div>
-        {% endif %}
         {% endfor %}
     </div>
 </div>

@@ -110,8 +110,22 @@ TONES = [
 ]
 TONE_KEYS = {k for k, _name in TONES}
 
-# 장기플랜 영역 행 기본값(lt_area 시드용). 첨부 엑셀의 중장기계획 영역을 따른다.
+# 장기플랜 영역 기본값(lt_area 시드용). 첨부 엑셀의 중장기계획 영역을 따른다.
 LT_AREAS = ["프로젝트", "투자", "학습", "여가", "기타"]
+
+
+# 장기 영역에 자동으로 배정할 색 순서. 막대에 칠했을 때 서로 잘 구분되는 색을 앞에 둔다
+# (검정은 회색 막대가 돼 눈에 띄지 않으므로 맨 뒤로 미룬다). 설정에서 언제든 바꿀 수 있다.
+AREA_TONE_ORDER = ["blue", "green", "orange", "purple", "teal", "red", "yellow", "black"]
+
+
+def area_tone(order: int) -> str:
+    """장기 영역의 기본 색 톤. 표시 순서대로 팔레트를 돌려 쓴다(색이 겹치지 않게)."""
+    return AREA_TONE_ORDER[order % len(AREA_TONE_ORDER)]
+
+
+# 코어블록 라벨(B1~B6). 장기 간트의 행이 되고, 항목의 block_label 로도 저장된다.
+CORE_BLOCKS = [label for label, is_core, _s, _e in DAY_BLOCKS if is_core]
 
 # 동작 설정 기본값(app_settings 시드·폴백용). 키 → 기본값(문자열).
 DEFAULT_SETTINGS = {

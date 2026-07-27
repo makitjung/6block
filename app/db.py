@@ -14,6 +14,7 @@ from app.config import (
     DEFAULT_SETTINGS,
     DB_PATH,
     LT_AREAS,
+    area_tone,
     cat_tone,
 )
 
@@ -69,8 +70,9 @@ def _seed_areas(conn: sqlite3.Connection):
         return
     for order, name in enumerate(LT_AREAS):
         conn.execute(
-            "INSERT INTO lt_area (name, display_order, is_active) VALUES (?, ?, 1)",
-            (name, order),
+            "INSERT INTO lt_area (name, display_order, is_active, tone) "
+            "VALUES (?, ?, 1, ?)",
+            (name, order, area_tone(order)),
         )
 
 
@@ -196,6 +198,18 @@ def _migrate(conn: sqlite3.Connection):
     # 오늘 '목표' 3줄이 각각 이어진 그 주 할 일(줄바꿈 3칸, 비면 연결 없음).
     if "goal_links" not in meta_cols:
         conn.execute("ALTER TABLE daily_meta ADD COLUMN goal_links TEXT")
+    # 장기 간트 행이 될 코어블록(B1~B6). NULL이면 상위를 따르고, 상위도 없으면 미지정 행에 그린다.
+    item_cols = {r[1] for r in conn.execute("PRAGMA table_info(lt_item)").fetchall()}
+    if "block_label" not in item_cols:
+        conn.execute("ALTER TABLE lt_item ADD COLUMN block_label TEXT")
+    # 영역 색 톤(막대 색). 없으면 추가하고 기존 영역을 표시 순서대로 팔레트에 배정한다.
+    area_cols = {r[1] for r in conn.execute("PRAGMA table_info(lt_area)").fetchall()}
+    if "tone" not in area_cols:
+        conn.execute("ALTER TABLE lt_area ADD COLUMN tone TEXT NOT NULL DEFAULT 'blue'")
+        for i, r in enumerate(conn.execute(
+            "SELECT id FROM lt_area ORDER BY display_order, id"
+        ).fetchall()):
+            conn.execute("UPDATE lt_area SET tone = ? WHERE id = ?", (area_tone(i), r[0]))
     # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
     conn.execute("DROP TABLE IF EXISTS weekday_concept")
     # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.

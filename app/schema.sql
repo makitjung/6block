@@ -109,12 +109,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL
 );
 
--- 장기플랜 영역 행(프로젝트·투자·학습·여가·기타). 설정처럼 추가·순서변경·숨김 가능.
+-- 장기플랜 영역(프로젝트·투자·학습·여가·기타). 설정처럼 추가·순서변경·숨김 가능.
+-- 간트에서 행은 B1~B6 블록이고 영역은 막대 색(tone)으로만 구분한다.
 CREATE TABLE IF NOT EXISTS lt_area (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     display_order INTEGER NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1
+    is_active INTEGER NOT NULL DEFAULT 1,
+    tone TEXT NOT NULL DEFAULT 'blue'    -- style.css 의 --tone-* 키
 );
 
 -- 장기플랜 칸. 단위(연/분기/월/주) × 기간키 × 영역에 계획 텍스트를 저장한다.
@@ -142,6 +144,7 @@ CREATE TABLE IF NOT EXISTS lt_item (
     start_date TEXT NOT NULL,            -- YYYY-MM-DD
     end_date TEXT NOT NULL,              -- YYYY-MM-DD (시작일 이상)
     progress INTEGER NOT NULL DEFAULT 0, -- 0~100
+    block_label TEXT,                    -- 간트 행이 될 코어블록(B1~B6). NULL이면 상위를 따르고 없으면 미지정
     updated_at TEXT NOT NULL
 );
 

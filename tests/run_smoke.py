@@ -225,8 +225,13 @@ def run_checks(db_path):
 
     # 8. 장기 계획 막대 · 추가 → 하위 추가 → 상위 자동 계산 → 삭제
     code, html = get("/plan")
-    areas = re.findall(r'class="gt-add" data-area="(\d+)"', html)
-    check("장기 화면에 영역별 추가 버튼", len(areas) >= 2, len(areas))
+    # 간트 왼쪽 줄은 코어블록 B1~B6 + 미지정. 영역은 줄이 아니라 막대 색으로만 쓰인다.
+    blocks = re.findall(r'class="gt-add" data-block="(\w*)"', html)
+    check("간트 왼쪽 줄이 B1~B6 + 미지정",
+          blocks == ["B1", "B2", "B3", "B4", "B5", "B6", ""], blocks)
+    opts = re.search(r'<select class="gt-f-area"[^>]*>(.*?)</select>', html, re.S)
+    areas = re.findall(r'value="(\d+)"', opts.group(1) if opts else "")
+    check("항목 추가 폼에 영역 선택칸", len(areas) >= 2, len(areas))
     check("장기 화면에 표(격자)가 없음", "plan-grid" not in html and "pg-input" not in html)
     code, out = post("/plan/item/add", {"area_id": areas[0], "title": "노무사 1차 합격",
                                         "start": "2026-08-01", "end": "2026-09-30"})
@@ -303,17 +308,50 @@ def run_checks(db_path):
                      {"area_id": areas[0], "title": title, "start": s, "end": e})
         spans[title] = o.get("id")
     code, html = get("/plan?level=year&anchor=2026-01-01")
-    found = dict(re.findall(r'class="gt-e-lv" data-span="(\w+)">(\S+) \d+일', html))
+    found = dict(re.findall(r'class="gt-e-lv" data-span="(\w+)"[^>]*>(\S+) \d+일', html))
     check("기간 길이로 장기·중기·단기·초단기를 나눔",
           found.get("xs") == "초단기" and found.get("s") == "단기"
           and found.get("m") == "중기" and found.get("l") == "장기", found)
     for i in spans.values():
         post("/plan/item/delete", {"id": i})
-    # 상위 항목 한 줄 안에 상위(depth 0)와 하위(depth 1) 막대가 함께 겹쳐 그려진다
-    row = re.search(r'<div class="gt-row gt-itemrow"[^>]*>.*?</div>\s*</div>', html, re.S)
-    seg = row.group(0) if row else ""
-    check("상위 막대 안에 하위 막대가 겹쳐 그려짐",
-          'data-depth="0"' in seg and 'data-depth="1"' in seg, seg[:120])
+    def block_seg(page, key):
+        """그 블록 줄 하나만 잘라낸다(막대 + 그 줄의 추가폼·편집칸까지)."""
+        for s in re.split(r'(?=<div class="gt-row gt-blockrow)', page):
+            if f'data-block="{key}"' in s.split(">", 1)[0] + ">":
+                return s
+        return ""
+    # 같은 블록 줄 안에서 상위(depth 0)와 하위(depth 1) 막대가 겹쳐 그려진다.
+    # 아직 블록을 안 준 항목이라 미지정(data-block="") 줄에 함께 들어 있다.
+    seg = block_seg(html, "")
+    check("같은 블록 줄에서 상위 막대 안에 하위 막대가 겹쳐 그려짐",
+          'data-depth="0"' in seg and 'data-depth="1"' in seg, seg[:160])
+
+    # 8-1. 블록(B1~B6) 배정과 영역 색
+    code, out = post("/plan/item/update", {"id": parent, "block": "B3"})
+    check("항목을 B3 블록으로 옮김", code == 200 and out.get("ok"), out)
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (parent,))[0]
+    check("블록이 저장됨", v["block_label"] == "B3", dict(v))
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    seg = block_seg(h, "B3")
+    check("상위·하위가 함께 B3 줄에 그려짐(하위는 상위 블록을 따름)",
+          "노무사 1차 합격" in seg and "노동법 1회독" in seg, seg[:160])
+    code, out = post("/plan/item/update", {"id": child, "block": "B5"})
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("하위에 블록을 따로 주면 그 줄로 빠짐",
+          "노동법 1회독" in block_seg(h, "B5")
+          and "노동법 1회독" not in block_seg(h, "B3"))
+    code, out = post("/plan/item/update", {"id": child, "block": "없는블록"})
+    v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
+    check("모르는 블록 값은 미지정으로", v["block_label"] is None, dict(v))
+    # 막대 색 = 영역 톤, 진하기 = 기간 구분(--gt-tone 과 data-span 이 함께 실린다)
+    check("막대에 영역 색이 실림", "--gt-tone: var(--tone-" in h)
+    code, out = post("/plan/area/update", {"id": areas[0], "tone": "purple"})
+    check("영역 색 변경", code == 200 and out.get("ok"), out)
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("바꾼 색이 막대에 반영", "--gt-tone: var(--tone-purple)" in h)
+    code, out = post("/plan/area/update", {"id": areas[0], "tone": "무지개"})
+    check("모르는 색은 거부", code == 400, out)
+    post("/plan/item/update", {"id": parent, "block": ""})
 
     # 주간 '목표' 열 = 장기 최하위 항목 + 자유 란 3개(카드 하나로 합쳐져 있다)
     code, html = get("/week/2026-08-03")
@@ -380,7 +418,7 @@ def run_checks(db_path):
     r = db_query(db_path,
                  "SELECT parent_id, area_id FROM lt_item WHERE id=?", (other,))[0]
     g = db_query(db_path, "SELECT area_id FROM lt_item WHERE id=?", (gchild,))[0]
-    check("영역 줄에 놓으면 최상위로 빠짐",
+    check("영역을 바꾸면 최상위로 빠짐",
           code == 200 and r["parent_id"] is None and r["area_id"] == int(areas[1]), dict(r))
     check("하위 사슬도 같은 영역으로 따라옴", g["area_id"] == int(areas[1]), dict(g))
     code, out = post("/plan/item/reparent", {"id": other, "area_id": "99999"})

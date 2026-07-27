@@ -55,6 +55,11 @@
     --sp-s-bg: #fde3cf;  --sp-s-bd: #e8710a;  --sp-s-tx: #8f4700;
     --sp-xs-bg: #ead6fb; --sp-xs-bd: #9334e6; --sp-xs-tx: #6a1eb0;
 
+    /* 장기 간트 막대: 색은 영역(--gt-tone), 진하기는 기간 구분. 장기가 가장 진하다.
+       글자는 톤을 거의 검정에 섞어 네 단계 어디에서든 읽히게 한다. */
+    --gt-mix-l: 64%;  --gt-mix-m: 44%;  --gt-mix-s: 26%;  --gt-mix-xs: 10%;
+    --gt-tx-mix: 34%;  --gt-tx-base: #0b0d10;
+
     /* shape */
     --r-sm: 8px;
     --r-md: 10px;
@@ -113,6 +118,10 @@
     --sp-m-bg: #14383a;  --sp-m-bd: #5bd1d7;  --sp-m-tx: #a7ecef;
     --sp-s-bg: #43301c;  --sp-s-bd: #fcad70;  --sp-s-tx: #ffd9b8;
     --sp-xs-bg: #38254a; --sp-xs-bd: #d7aefb; --sp-xs-tx: #ecd7ff;
+
+    /* 다크에서는 톤 자체가 밝은 파스텔이라 덜 섞고, 글자는 흰색 쪽으로 밝힌다. */
+    --gt-mix-l: 44%;  --gt-mix-m: 30%;  --gt-mix-s: 18%;  --gt-mix-xs: 8%;
+    --gt-tx-mix: 30%;  --gt-tx-base: #ffffff;
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --sh-2: 0 2px 6px rgba(0, 0, 0, 0.5);
     --sh-3: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -1101,14 +1110,15 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .plan-levels a:hover { color: var(--text); }
 .plan-levels a.is-active { background: var(--surface); color: var(--accent); box-shadow: var(--sh-1); }
-/* 막대 단계 범례(상위 → 하위로 갈수록 진해진다) */
+/* 범례: 영역은 색, 기간 구분은 그 색 안에서의 진하기 */
 .plan-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
-.pl-key { width: 16px; height: 10px; border-radius: 3px; border: 1px solid; }
+.pl-cap { font-weight: 700; color: var(--text-soft); }
+.pl-key {
+    width: 16px; height: 10px; border-radius: 3px;
+    border: 1px solid var(--gt-tone, var(--tone-blue));
+    background: color-mix(in srgb, var(--gt-tone, var(--tone-blue)) var(--gt-mix), var(--surface));
+}
 .pl-key + .pl-key { margin-left: 8px; }
-.pl-key[data-span="l"]  { background: var(--sp-l-bg);  border-color: var(--sp-l-bd); }
-.pl-key[data-span="m"]  { background: var(--sp-m-bg);  border-color: var(--sp-m-bd); }
-.pl-key[data-span="s"]  { background: var(--sp-s-bg);  border-color: var(--sp-s-bd); }
-.pl-key[data-span="xs"] { background: var(--sp-xs-bg); border-color: var(--sp-xs-bd); }
 .plan-hint { font-size: 12px; color: var(--text-subtle); }
 @media (max-width: 900px) { .plan-hint { display: none; } }
 #pg-past-toggle { font-size: 12px; padding: 4px 12px; white-space: nowrap; }
@@ -1592,7 +1602,7 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 
 /* ===== 장기플랜 계획 막대 ===== */
 .gantt {
-    --lead-w: 190px;
+    --lead-w: 150px;   /* 왼쪽 줄 이름은 'B1 07:30~09:30 +' 뿐이라 넓을 필요가 없다 */
     min-width: calc(var(--lead-w) + var(--cols) * 92px);
     display: flex; flex-direction: column; gap: 2px;
     position: relative;
@@ -1619,8 +1629,6 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     padding: 2px 8px 2px calc(8px + var(--depth, 0) * 14px);
     font-size: 13px; color: var(--text-soft);
 }
-.gt-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gt-range { font-size: 11px; color: var(--text-subtle); flex: 0 0 auto; }
 .gt-track {
     position: relative; flex: 1 1 auto; min-width: 0;
     background-image: repeating-linear-gradient(to right,
@@ -1648,27 +1656,41 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     padding: 0 3px; border-radius: var(--r-sm);
 }
 .gt-nav:hover { color: var(--accent); background: var(--accent-soft); }
-.gt-arearow { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 4px; }
-.gt-areaname { font-size: 13px; font-weight: 800; color: var(--text); }
-.gt-arearow .gt-track { background-image: none; display: flex; align-items: center; }
+/* 왼쪽 줄 이름 = 코어블록 B1~B6(+ 블록을 안 정한 항목이 모이는 미지정 줄) */
+.gt-blockrow { border-top: 1px solid var(--border); }
+.gt-blockrow.is-none { margin-top: 10px; }
+.gt-blocklead { gap: 6px; }
+.gt-blockname { font-size: 13px; font-weight: 800; color: var(--text); }
+.gt-blockrow.is-none .gt-blockname { color: var(--text-subtle); }
+.gt-blocktime { font-size: 11px; color: var(--text-subtle); }
 .gt-add {
-    font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
-    border: none; border-radius: var(--r-pill); padding: 3px 10px; cursor: pointer;
+    margin-left: auto; flex: 0 0 auto; line-height: 1;
+    font-size: 13px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
+    border: none; border-radius: var(--r-pill); padding: 2px 9px; cursor: pointer;
 }
 /* 하위 항목이 있는 줄은 막대를 겹쳐 그려야 하므로 단계 수(data-lanes)만큼 높이를 준다 */
-.gt-itemrow[data-lanes="1"] { min-height: 46px; }
-.gt-itemrow[data-lanes="2"] { min-height: 58px; }
+.gt-blockrow[data-lanes="1"] { min-height: 46px; }
+.gt-blockrow[data-lanes="2"] { min-height: 58px; }
 .gt-bar {
     position: absolute; top: 3px; bottom: 3px; min-width: 6px;
     display: flex; align-items: center; overflow: hidden; cursor: pointer;
     padding: 0; border: 1px solid; border-radius: var(--r-sm); text-align: left;
     z-index: 1;
 }
-/* 색은 기간 길이(장기·중기·단기·초단기)로 정한다. 어느 줄에 있든 같은 길이면 같은 색이다. */
-.gt-bar[data-span="l"]  { background: var(--sp-l-bg);  border-color: var(--sp-l-bd);  color: var(--sp-l-tx); }
-.gt-bar[data-span="m"]  { background: var(--sp-m-bg);  border-color: var(--sp-m-bd);  color: var(--sp-m-tx); }
-.gt-bar[data-span="s"]  { background: var(--sp-s-bg);  border-color: var(--sp-s-bd);  color: var(--sp-s-tx); }
-.gt-bar[data-span="xs"] { background: var(--sp-xs-bg); border-color: var(--sp-xs-bd); color: var(--sp-xs-tx); }
+/* 색은 영역(--gt-tone), 진하기는 기간 길이. 같은 영역이면 같은 계열, 기간이 길수록 진하다. */
+.gt-bar, .gt-e-lv, .pl-key {
+    --gt-tone: var(--tone-blue);
+    --gt-mix: var(--gt-mix-m);
+}
+.gt-bar[data-span="l"],  .gt-e-lv[data-span="l"],  .pl-key[data-span="l"]  { --gt-mix: var(--gt-mix-l); }
+.gt-bar[data-span="m"],  .gt-e-lv[data-span="m"],  .pl-key[data-span="m"]  { --gt-mix: var(--gt-mix-m); }
+.gt-bar[data-span="s"],  .gt-e-lv[data-span="s"],  .pl-key[data-span="s"]  { --gt-mix: var(--gt-mix-s); }
+.gt-bar[data-span="xs"], .gt-e-lv[data-span="xs"], .pl-key[data-span="xs"] { --gt-mix: var(--gt-mix-xs); }
+.gt-bar {
+    background: color-mix(in srgb, var(--gt-tone) var(--gt-mix), var(--surface));
+    border-color: var(--gt-tone);
+    color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
+}
 /* 자리는 상하위 관계로 정한다. 상위 막대 안쪽 아래에 하위 막대가 겹쳐 들어간다. */
 .gt-bar[data-depth="1"] { top: 44%; bottom: 4px; z-index: 2; }
 .gt-bar[data-depth="2"] { top: 66%; bottom: 4px; z-index: 3; }
@@ -1693,8 +1715,8 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-handle.r { right: 0; }
 .gt-bar.clip-l .gt-handle.l, .gt-bar.clip-r .gt-handle.r { cursor: grab; }
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
-.gt-arearow.is-drop-target .gt-track,
-.gt-empty.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
+/* 다른 블록 줄 위에 놓으면 그 블록으로 옮겨진다 */
+.gt-blockrow.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
 /* 막대 위 삭제(✕): 마우스를 올렸을 때만 오른쪽 끝에 나타난다 */
 .gt-del {
     position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
@@ -1706,16 +1728,14 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-del:hover { color: var(--danger); }
 @media (hover: none) { .gt-del { display: block; opacity: .85; } }
 
-/* 기간 구분 배지(편집창·항목 이름 옆) */
-.gt-e-lv, .gt-span {
+/* 기간 구분 배지(편집창). 막대와 같은 규칙으로 칠해 한눈에 짝이 맞는다. */
+.gt-e-lv {
     font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--r-pill);
-    border: 1px solid; white-space: nowrap; flex: 0 0 auto;
+    white-space: nowrap; flex: 0 0 auto;
+    border: 1px solid var(--gt-tone);
+    background: color-mix(in srgb, var(--gt-tone) var(--gt-mix), var(--surface));
+    color: color-mix(in srgb, var(--gt-tone) var(--gt-tx-mix), var(--gt-tx-base));
 }
-.gt-e-lv[data-span="l"],  .gt-span[data-span="l"]  { background: var(--sp-l-bg);  border-color: var(--sp-l-bd);  color: var(--sp-l-tx); }
-.gt-e-lv[data-span="m"],  .gt-span[data-span="m"]  { background: var(--sp-m-bg);  border-color: var(--sp-m-bd);  color: var(--sp-m-tx); }
-.gt-e-lv[data-span="s"],  .gt-span[data-span="s"]  { background: var(--sp-s-bg);  border-color: var(--sp-s-bd);  color: var(--sp-s-tx); }
-.gt-e-lv[data-span="xs"], .gt-span[data-span="xs"] { background: var(--sp-xs-bg); border-color: var(--sp-xs-bd); color: var(--sp-xs-tx); }
-.gt-span { font-size: 10px; padding: 1px 6px; }
 /* 추가 폼의 기간 길이 버튼 */
 .gt-f-len { display: inline-flex; gap: 4px; }
 .gt-f-len-btn {
@@ -1726,7 +1746,7 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-f-len-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .gt-form, .gt-edit {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-    margin: 4px 0 6px calc(var(--lead-w) - 180px);
+    margin: 4px 0 6px 10px;
     padding: 8px 10px; background: var(--surface-2);
     border: 1px solid var(--border); border-radius: var(--r-sm);
 }
@@ -1737,11 +1757,9 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-e-proglabel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .gt-e-progress { width: 64px; }
 .gt-e-hint, .gt-f-parent-label { font-size: 11px; color: var(--text-subtle); }
-.gt-empty { padding: 8px 10px; font-size: 12px; color: var(--text-subtle); }
+.gt-f-area, .gt-e-area, .gt-e-block { flex: 0 0 auto; width: auto; }
 /* 지난 항목(종료일이 오늘 이전)은 기본으로 접는다. '지난 항목 보기'를 누르면 흐리게 함께 보인다 */
-.gantt:not(.show-past) .gt-itemrow.is-past,
 .gantt:not(.show-past) .gt-bar.is-past { display: none; }
-.gantt.show-past .gt-itemrow.is-past .gt-lead { opacity: .55; }
 .gantt.show-past .gt-bar.is-past { opacity: .55; border-style: dotted; }
 @media (max-width: 720px) {
     .gantt { --lead-w: 120px; }
