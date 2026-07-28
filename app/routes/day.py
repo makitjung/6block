@@ -94,13 +94,40 @@ def _day_agenda(blocks, d, is_today):
     return cal_events, task_list, block_events
 
 
+MAX_LT_COLS = 3      # 오늘 띠는 최대 세 열. 영역이 더 많으면 열을 돌려 쓴다.
+
+
+def _lt_columns(items: list[dict]) -> list[list[dict]]:
+    """오늘 띠 항목을 영역별로 묶어 최대 세 열로 나눈다.
+
+    같은 영역은 반드시 같은 열에 모이고, 영역이 세 개를 넘으면 앞 열부터 돌려 쓴다.
+    items 는 이미 영역 표시 순서로 정렬돼 있어 열 순서도 그 순서를 따른다.
+    """
+    order: list[str] = []
+    for it in items:
+        if it["area_name"] not in order:
+            order.append(it["area_name"])
+    col_of = {name: i % MAX_LT_COLS for i, name in enumerate(order)}
+    cols: list[list[dict]] = [[] for _ in range(min(len(order), MAX_LT_COLS))]
+    for it in items:
+        cols[col_of[it["area_name"]]].append(it)
+    return cols
+
+
 def _lt_items_on(conn, d) -> list[dict]:
     """그 날짜에 걸친 장기 항목 중 최하위 것만. 오늘 탭 위 띠에 쓴다.
 
     상위는 하위를 묶는 껍데기라 빼고, 대신 어느 상위에서 내려온 것인지 제목을 붙인다.
-    남은 일수(D-n)도 함께 준다.
+    남은 일수(D-n)와, 그 주에 따로 적어 둔 계획(goal)이 있으면 그것도 함께 준다.
     """
     date_str = d.strftime("%Y-%m-%d")
+    wk = week_start(d).strftime("%Y-%m-%d")
+    goals = {
+        r["item_id"]: (r["goal_text"] or "").strip()
+        for r in conn.execute(
+            "SELECT item_id, goal_text FROM weekly_lt_goal WHERE week_start = ?", (wk,)
+        )
+    }
     rows = conn.execute(
         "SELECT i.id, i.parent_id, i.title, i.end_date, i.progress, i.block_label, "
         "       a.name AS area_name, "
@@ -117,6 +144,8 @@ def _lt_items_on(conn, d) -> list[dict]:
         out.append({
             "id": r["id"], "title": r["title"], "area_name": r["area_name"],
             "progress": r["progress"], "parent_title": r["parent_title"],
+            # 주간 탭에서 그 항목에 따로 적어 둔 이번 주 계획. 없으면 장기 이름을 그대로 쓴다.
+            "goal": goals.get(r["id"], ""),
             # 장기 탭에서 정한 코어블록(B1~B6). 어느 블록에서 할 일인지 오늘 띠에 같이 보인다.
             "blocks": (r["block_label"] or "").strip(),
             "dday": "D-day" if left <= 0 else f"D-{left}",
@@ -242,6 +271,7 @@ def _day_view(request: Request, date_str: str):
             "plan_tags": plan_tags,
             "grat_tags": grat_tags,
             "lt_today": lt_today,
+            "lt_today_cols": _lt_columns(lt_today),
             "wk_todos": wk_todos,
             "themes_by_label": themes_by_label,
             "block_name_by_id": block_name_by_id,

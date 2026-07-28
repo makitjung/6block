@@ -290,6 +290,17 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .wg-up { font-weight: 600; color: var(--text-subtle); }
+/* 직접 적은 문구를 쓰는 줄은 이름 앞에 표시를 둬 장기 이름과 구분한다 */
+.wg-item.has-goal .wg-lt::before { content: '✎ '; color: var(--accent); font-weight: 800; }
+.wg-edit {
+    flex: 0 0 auto; cursor: pointer; line-height: 1;
+    font-size: 12px; padding: 3px 7px; border-radius: var(--r-pill);
+    background: transparent; color: var(--text-subtle); border: 1px solid var(--border);
+}
+.wg-edit:hover, .wg-edit[aria-expanded="true"] {
+    color: var(--accent); border-color: var(--border-focus); background: var(--accent-soft);
+}
+.wg-goal[hidden] { display: none; }
 .wg-head .wk-lt-prog-input { width: 50px; }
 .wg-head .ghost-btn { font-size: 12px; padding: 3px 9px; white-space: nowrap; }
 .wg-row {
@@ -755,9 +766,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .theme-row { display: flex; align-items: center; gap: 8px; }
 .theme-label { flex: 0 0 auto; width: 26px; font-weight: 800; font-size: 13px; color: var(--accent); }
 .theme-row input { flex: 1 1 auto; min-width: 0; }
-.theme-wd-btn { flex: 0 0 auto; font-size: 12px; padding: 4px 10px; white-space: nowrap; }
-.theme-wd-btn.has-over { color: var(--accent); border-color: var(--border-focus); }
-.theme-wd-btn.is-open { background: var(--accent-soft); }
+/* 아래 7일 격자에서 그 블록 이름을 따로 정한 날 수 */
+.theme-over {
+    flex: 0 0 auto; font-size: 11px; font-weight: 700; white-space: nowrap;
+    color: var(--accent); background: var(--accent-soft);
+    padding: 3px 8px; border-radius: var(--r-pill);
+}
 .theme-wd {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 6px; margin-top: 8px; padding-left: 34px;
@@ -781,12 +795,14 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .cat-bar-val { font-size: 12px; text-align: right; color: var(--text-soft); }
 
 /* === Week grid (subgrid로 요일 간 같은 블록 행을 정렬) === */
+/* minmax(0,1fr) 이라야 칸 안의 긴 이름이 열을 밀어내지 못한다(1fr 은 콘텐츠가 늘리면 늘어난다) */
 .week-grid {
-    display: grid; grid-template-columns: repeat(7, 1fr);
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
     grid-template-rows: auto auto repeat(8, auto);
     gap: 5px 8px;
 }
-.day-col { display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; }
+.day-col { display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; min-width: 0; }
+.mini-block, .mini-head, .mini-left { min-width: 0; }
 .day-head { margin: 0 0 4px; text-align: center; }
 .day-head a {
     display: inline-flex; flex-direction: column; gap: 2px; color: var(--text);
@@ -826,9 +842,19 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 
 /* 주간 7일보기 미니블록(구분만 편집 · 이름은 위 카드에서 고친다) */
 .mini-go { display: inline-flex; align-items: center; gap: 2px; }
+/* 그 날만의 이름을 여기서 바로 고친다. 너비를 칸에 묶어 길어도 격자가 안 늘어나고,
+   넘치는 글자는 잘려 보인다(눌러서 커서를 옮기면 나머지를 볼 수 있다). */
 .mini-name {
-    margin-top: 4px; font-size: 11px; font-weight: 700; color: var(--accent-soft-text);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 4px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+    padding: 2px 5px; font-size: 11px; font-weight: 700; color: var(--accent-soft-text);
+    text-overflow: ellipsis;
+    background: transparent; border: 1px solid transparent; border-radius: 5px;
+}
+.mini-name::placeholder { font-weight: 500; color: var(--text-subtle); }
+.mini-name:hover { border-color: var(--border); background: var(--surface); }
+.mini-name:focus {
+    border-color: var(--border-focus); background: var(--surface);
+    text-overflow: clip; outline: none;
 }
 /* 주간 미니블록: 구분을 머리말 왼쪽에 작은 색 칩으로 */
 .mini-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1942,7 +1968,14 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     font-size: 11px; font-weight: 800; color: var(--text-subtle);
     letter-spacing: .04em; white-space: nowrap; padding-top: 7px;
 }
-.lt-strip-list { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+/* 같은 영역은 같은 열에 모으고 최대 세 열. 좁은 화면에서는 한 열로 접힌다. */
+.lt-strip-cols {
+    flex: 1 1 auto; min-width: 0;
+    display: grid; gap: 6px 10px; align-items: start;
+    grid-template-columns: repeat(var(--lt-cols, 1), minmax(0, 1fr));
+}
+.lt-strip-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+@media (max-width: 720px) { .lt-strip-cols { grid-template-columns: minmax(0, 1fr); } }
 .lt-chip {
     display: flex; align-items: center; gap: 6px; max-width: 100%;
     padding: 4px 10px; font-size: 12px; text-decoration: none; color: var(--text);

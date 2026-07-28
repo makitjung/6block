@@ -1606,31 +1606,20 @@
         }
     }
 
-    // ---- 주간 블록 이름: 요일별 펼치기 -------------------------------------
-    // 평소엔 B1~B6 여섯 칸만 보이고, '요일별'을 누른 줄만 월~일 7칸이 열린다.
-    // 요일 칸이 비면 주간 이름을 따르므로, 다르게 갈 날만 채우면 된다.
+    // ---- 주간 블록 이름 ----------------------------------------------------
+    // 주간 이름을 고치면 아래 7일 격자에서 아직 안 채운 칸의 안내글도 따라 바뀐다
+    // (그 칸이 비면 주간 이름을 따르므로, 다르게 갈 날만 채우면 된다).
     function bindThemeWeekdays() {
         document.querySelectorAll('.theme-item').forEach((item) => {
-            const btn = item.querySelector('.theme-wd-btn');
-            const box = item.querySelector('.theme-wd');
-            if (!btn || !box) return;
-            btn.addEventListener('click', () => {
-                const open = box.hidden;
-                box.hidden = !open;
-                btn.setAttribute('aria-expanded', String(open));
-                btn.classList.toggle('is-open', open);
-            });
-            // 주간 이름을 고치면 아직 안 채운 요일 칸의 안내글도 따라 바뀐다.
             const weekly = item.querySelector('input[name^="theme_"]');
+            const label = item.dataset.label;
             weekly?.addEventListener('input', () => {
-                const ph = weekly.value.trim() || item.dataset.label;
-                box.querySelectorAll('input').forEach((el) => { el.placeholder = ph; });
-            });
-            // 채워진 요일 수를 버튼에 남겨 접어 둬도 덮어쓴 날이 있는지 보인다.
-            box.addEventListener('input', () => {
-                const n = [...box.querySelectorAll('input')].filter((el) => el.value.trim()).length;
-                btn.textContent = n ? '요일별 ' + n : '요일별';
-                btn.classList.toggle('has-over', n > 0);
+                const ph = weekly.value.trim() || '이름';
+                document.querySelectorAll('.mini-block').forEach((mb) => {
+                    if (mb.querySelector('.mini-head strong')?.textContent.trim() !== label) return;
+                    const el = mb.querySelector('.mini-name');
+                    if (el) el.placeholder = ph;
+                });
             });
         });
     }
@@ -2168,6 +2157,16 @@
         const card = document.querySelector('.meta-goal');
         if (!card) return;
         const week = card.dataset.week;
+        // ✎ 를 누르면 그 줄에 직접 입력칸이 열린다. 비워 두면 장기 이름을 그대로 쓴다.
+        card.querySelectorAll('.wg-edit').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const inp = btn.closest('.wg-item').querySelector('.wg-goal');
+                const open = inp.hidden;
+                inp.hidden = !open;
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                if (open) inp.focus();
+            });
+        });
         card.querySelectorAll('.wg-item').forEach((row) => {
             const id = row.dataset.id;
             const prog = row.querySelector('.wk-lt-prog-input');

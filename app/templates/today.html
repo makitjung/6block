@@ -54,17 +54,22 @@
     <section class="lt-strip" aria-label="이 날짜에 걸친 장기 항목">
         <span class="lt-strip-label">주간</span>
         <button type="button" class="hint" data-hint="이 날짜에 걸친 이번 주 계획입니다. 장기 탭에서 만든 최하위 항목만 내려옵니다. 누르면 장기 탭으로 갑니다." aria-label="설명">?</button>
-        <div class="lt-strip-list">
-            {% for it in lt_today %}
-            <a class="lt-chip" href="/plan?level=month&amp;anchor={{ date_str }}"
-               title="{{ it.area_name }}{% if it.blocks %} · {{ it.blocks }}{% endif %} · {% if it.parent_title %}{{ it.parent_title }} › {% endif %}{{ it.title }} · 진척 {{ it.progress }}% · {{ it.dday }}">
-                <span class="lt-chip-area">{{ it.area_name }}</span>
-                {% if it.blocks %}<span class="lt-chip-blk">{{ it.blocks }}</span>{% endif %}
-                {% if it.parent_title %}<span class="lt-chip-up">{{ it.parent_title }} ›</span>{% endif %}
-                <span class="lt-chip-title">{{ it.title }}</span>
-                <span class="lt-chip-dday mono">{{ it.dday }}</span>
-                <span class="lt-chip-prog mono">{{ it.progress }}%</span>
-            </a>
+        {# 같은 영역은 같은 열에 모으고 최대 세 열까지만 쓴다 #}
+        <div class="lt-strip-cols" style="--lt-cols: {{ lt_today_cols | length }}">
+            {% for col in lt_today_cols %}
+            <div class="lt-strip-col">
+                {% for it in col %}
+                <a class="lt-chip" href="/plan?level=week&amp;anchor={{ date_str }}"
+                   title="{{ it.area_name }}{% if it.blocks %} · {{ it.blocks }}{% endif %} · {% if it.parent_title %}{{ it.parent_title }} › {% endif %}{{ it.title }}{% if it.goal %} · {{ it.goal }}{% endif %} · 진척 {{ it.progress }}% · {{ it.dday }}">
+                    <span class="lt-chip-area">{{ it.area_name }}</span>
+                    {% if it.blocks %}<span class="lt-chip-blk">{{ it.blocks }}</span>{% endif %}
+                    {# 그 주에 따로 적어 둔 계획이 있으면 그것을, 없으면 장기 이름을 그대로 #}
+                    <span class="lt-chip-title">{{ it.goal or it.title }}</span>
+                    <span class="lt-chip-dday mono">{{ it.dday }}</span>
+                    <span class="lt-chip-prog mono">{{ it.progress }}%</span>
+                </a>
+                {% endfor %}
+            </div>
             {% endfor %}
         </div>
     </section>
