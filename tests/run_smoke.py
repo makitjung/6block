@@ -377,6 +377,22 @@ def run_checks(db_path):
     code, out = post("/plan/item/update", {"id": child, "block": "없는블록"})
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]
     check("모르는 블록 값은 미지정으로", v["block_label"] is None, dict(v))
+    # 항목 숨기기. 기본 화면에서는 빠지고 '숨긴 항목 보기'로만 다시 나온다.
+    code, out = post("/plan/item/update", {"id": child, "hidden": "1"})
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    _c, h2 = get("/plan?level=month&anchor=2026-08-01&show_hidden=1")
+    # 막대만 세도록 좁힌다(영역 관리 버튼도 data-id 를 쓴다)
+    bar_of = f'data-id="{child}" data-parent='
+    check("숨긴 항목은 기본 화면에서 빠진다",
+          bar_of not in h and 'id="pg-show-hidden"' in h)
+    check("숨긴 항목 보기를 켜면 다시 나온다",
+          bar_of in h2 and "is-hidden-item" in h2)
+    post("/plan/item/update", {"id": child, "hidden": "0"})
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("숨김을 풀면 기본 화면에 돌아온다", bar_of in h)
+    # 오늘 세로선은 기본으로 안 그린다(체크박스로만 켠다)
+    check("오늘 선은 기본으로 꺼져 있다",
+          'id="pg-today-line"' in h and 'class="gantt"' in h)
     # 상위를 어느 블록에 놓으면 하위 사슬도 같은 블록으로 따라간다
     code, out = post("/plan/item/update", {"id": parent, "block": "B4,B6"})
     v = db_query(db_path, "SELECT block_label FROM lt_item WHERE id=?", (child,))[0]

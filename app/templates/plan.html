@@ -37,8 +37,13 @@
         <span class="pl-key" data-level="0" style="--gt-tone: var(--tone-{{ ar.tone }})"></span>{{ ar.name }}
         {% endfor %}
     </span>
+    <label class="plan-pastbox"><input type="checkbox" id="pg-today-line"> 오늘 선</label>
     {% if past_count %}
     <label class="plan-pastbox"><input type="checkbox" id="pg-past-hide"> 지난 항목 {{ past_count }}개 숨기기</label>
+    {% endif %}
+    {% if hidden_count or show_hidden %}
+    <label class="plan-pastbox"><input type="checkbox" id="pg-show-hidden" {% if show_hidden %}checked{% endif %}
+           data-url="/plan?level={{ level }}&amp;anchor={{ anchor }}"> 숨긴 항목 {{ hidden_count }}개 보기</label>
     {% endif %}
     <span class="plan-hint">좌우로 끌면 <b>주 단위</b>로 기간 이동(정확한 날짜는 막대를 눌러 적습니다) · 양 끝을 끌면 기간 조절 · <b>다른 막대 위에서 잠깐 멈추면</b> 그 막대의 하위계획으로 · <b>곧장 아래로 끌면</b> 상위에서 떼기 · 다른 블록 줄 빈 자리에 놓으면 그 블록으로 이동(상위를 옮기면 <b>하위도 같이</b> 따라갑니다)</span>
 </div>
@@ -118,7 +123,7 @@
             <div class="gt-track">
                 {% for b in row.bars %}
                 <button type="button"
-                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}{% if b.id == focus_id %} is-focus{% endif %}"
+                        class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}{% if b.hidden %} is-hidden-item{% endif %}{% if b.id == focus_id %} is-focus{% endif %}"
                         data-level="{{ b.level }}" data-lane="{{ b.lane }}"
                         data-id="{{ b.id }}" data-parent="{{ b.parent_id or '' }}"
                         data-area="{{ b.area_id }}" data-blocks="{{ b.blocks }}"
@@ -181,6 +186,7 @@
                     <option value="{{ ar.id }}" {% if ar.id == b.area_id %}selected{% endif %}>{{ ar.name }}</option>
                     {% endfor %}
                 </select>
+                <label class="gt-e-blk gt-e-hide"><input type="checkbox" class="gt-e-hidden" {% if b.hidden %}checked{% endif %}>숨김</label>
                 <span class="gt-e-act">
                     <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
                     <button type="button" class="primary-btn gt-e-save">저장</button>

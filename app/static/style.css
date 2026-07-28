@@ -1625,8 +1625,10 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
         color-mix(in srgb, var(--border) 60%, transparent) 0 1px,
         transparent 1px calc(100% / var(--cols)));
 }
-/* 오늘 세로선. 격자 전체를 가로지르고 머리글에 작은 깃발이 붙는다. */
-.gt-todayline {
+/* 오늘 세로선. 늘 그어 두면 눈에 너무 띄어서 '오늘 선'을 켤 때만 나온다. */
+.gt-todayline { display: none; }
+.gantt.show-today .gt-todayline {
+    display: block;
     position: absolute; top: 0; bottom: 0; width: 0; z-index: 4; pointer-events: none;
     left: calc(var(--lead-w) + (100% - var(--lead-w)) * var(--p) / 100);
     border-left: 2px solid var(--danger);
@@ -1863,6 +1865,12 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .gt-e-hint, .gt-f-parent-label { font-size: 11px; color: var(--text-subtle); }
 .gt-f-area, .gt-e-area { flex: 0 0 auto; width: auto; }
 .gt-e-parent { flex: 0 1 auto; width: auto; max-width: 190px; }
+/* 접어 둔 항목('숨긴 항목 보기'로 꺼냈을 때만 나온다)은 한눈에 알아보게 옅은 점선으로 */
+.gt-bar.is-hidden-item { opacity: .5; border-style: dashed; }
+.gt-e-hide:has(input:checked) {
+    color: var(--danger); border-color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
 /* 지난 항목(종료일이 오늘 이전)은 흐리게 해서 기본으로 보여 주고, 체크할 때만 화면에서 뺀다 */
 .gt-bar.is-past { opacity: .55; border-style: dotted; }
 .gantt.hide-past .gt-bar.is-past { display: none; }

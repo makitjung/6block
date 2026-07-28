@@ -1429,9 +1429,15 @@
         const closeAll = () => {
             gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
         };
-        // 막대·편집칸·추가폼 바깥(격자의 빈 곳)을 누르면 열려 있던 입력칸을 닫는다
+        // 격자의 빈 곳을 누르면 닫는다. 입력칸 안이라도 칸·버튼이 아닌 빈 자리를 누르면
+        // 마찬가지로 닫는다(입력칸 자신이나 줄 묶음이 눌린 경우).
         gantt.addEventListener('click', (e) => {
-            if (e.target.closest('.gt-bar, .gt-edit, .gt-form, .gt-add')) return;
+            const box = e.target.closest('.gt-edit, .gt-form');
+            if (box) {
+                if (e.target === box || e.target.classList.contains('gt-e-row')) closeAll();
+                return;
+            }
+            if (e.target.closest('.gt-bar, .gt-add')) return;
             closeAll();
         });
         // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목과 그 영역을 폼에 실어 보낸다.
@@ -1543,6 +1549,7 @@
                 // 블록은 여러 개 고를 수 있다(여러 블록에서 동시 진행). 하나도 없으면 미지정.
                 data.block = [...box.querySelectorAll('.gt-e-blocks input:checked')]
                     .map((c) => c.value).join(',');
+                data.hidden = box.querySelector('.gt-e-hidden').checked ? '1' : '0';
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
                 postForm('/plan/item/update', data).then((d) => {
@@ -1566,6 +1573,15 @@
         });
 
         // 지난 항목(종료일이 오늘 이전) 접기·펴기. 새로고침하면 다시 접힌 상태로 돌아간다.
+        // 오늘 세로선은 기본으로 안 보이고, 체크할 때만 긋는다(늘 켜 두면 너무 튄다).
+        document.getElementById('pg-today-line')?.addEventListener('change', (e) => {
+            gantt.classList.toggle('show-today', e.target.checked);
+        });
+        // 숨긴 항목은 서버에서 아예 빼고 그리므로 화면을 다시 불러 온다(칸 배치가 달라진다).
+        document.getElementById('pg-show-hidden')?.addEventListener('change', (e) => {
+            const u = e.target.dataset.url;
+            location.href = u + (e.target.checked ? '&show_hidden=1' : '');
+        });
         // 지난 항목은 기본으로 보이고, 체크할 때만 화면에서 뺀다.
         const pastBox = document.getElementById('pg-past-hide');
         pastBox?.addEventListener('change', () => {

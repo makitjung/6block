@@ -370,7 +370,8 @@ def _clean_blocks(raw) -> str:
     return ",".join(_split_blocks(raw))
 
 
-def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
+def _gantt_blocks(conn, areas, span_start: date, span_end: date,
+                  show_hidden: bool = False) -> list[dict]:
     """블록(B1~B6·미지정)별 간트 행 목록. 그 블록으로 배정된 막대가 한 줄에 모두 들어간다.
 
     한 항목이 블록을 여러 개 가질 수 있어(여러 블록에서 동시에 진행) 같은 막대가 여러 줄에
@@ -391,9 +392,10 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
     children: dict[int | None, list] = {}
     for r in conn.execute(
         "SELECT id, area_id, parent_id, title, start_date, end_date, progress, "
-        "       block_label FROM lt_item ORDER BY start_date, id"
+        "       block_label, hidden FROM lt_item ORDER BY start_date, id"
     ):
-        if r["area_id"] in tones:
+        # 접어 둔 항목은 '숨긴 항목 보기'를 켰을 때만 끌어온다(하위도 함께 빠진다)
+        if r["area_id"] in tones and (show_hidden or not r["hidden"]):
             children.setdefault(r["parent_id"], []).append(dict(r))
 
     def overlaps(it) -> bool:
@@ -425,6 +427,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date) -> list[dict]:
         row["has_children"] = bool(children.get(it["id"]))
         row["days"] = (e - s).days + 1
         row["past"] = e < today        # 종료일이 지난 항목은 화면에서 기본으로 접는다
+        row["hidden"] = bool(it["hidden"])
         row["tone"] = tones.get(it["area_id"], "blue")
         row["area_name"] = names.get(it["area_id"], "")
         row["area_order"] = orders.get(it["area_id"], 999)
@@ -523,6 +526,8 @@ async def plan_item_update(request: Request):
     # 블록은 빈 값도 뜻이 있다('미지정'으로 되돌리기). 칸이 왔는지로만 판단한다.
     if form.get("block") is not None:
         fields["block_label"] = _clean_blocks(form.get("block")) or None
+    if form.get("hidden") is not None:
+        fields["hidden"] = 1 if (form.get("hidden") or "").strip() in ("1", "on") else 0
     if form.get("start") is not None and (form.get("start") or "").strip():
         d = _parse_date(form.get("start"))
         if not d:
@@ -757,7 +762,8 @@ async def plan_item_delete(request: Request):
 
 
 @router.get("/plan")
-def plan_view(request: Request, level: str = "week", anchor: str = "", focus: str = ""):
+def plan_view(request: Request, level: str = "week", anchor: str = "", focus: str = "",
+              show_hidden: str = ""):
     # 기본은 주 단위(이번 주가 두 번째 칸). 월·분기·연은 축소로 간다.
     if level not in PLAN_LEVELS:
         level = "week"
@@ -790,7 +796,15 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
             "SELECT id, name, is_active, tone FROM lt_area "
             "ORDER BY is_active DESC, display_order"
         ).fetchall()
-        gantt = _gantt_blocks(conn, areas, span_start, span_end)
+        seen_hidden = show_hidden == "1"
+        gantt = _gantt_blocks(conn, areas, span_start, span_end, seen_hidden)
+        # 접어 둔 항목이 몇 개인지(보이는 기간에 걸친 것만). 0이면 안내도 안 내보낸다.
+        hidden_count = conn.execute(
+            "SELECT COUNT(*) FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
+            "WHERE i.hidden = 1 AND a.is_active = 1 "
+            "AND i.start_date <= ? AND i.end_date >= ?",
+            (span_end.isoformat(), span_start.isoformat()),
+        ).fetchone()[0]
     # 지난 항목(종료일이 오늘 이전)은 기본으로 보여 주고, 체크박스를 켤 때만 숨긴다.
     # 0이면 체크박스도 내보내지 않는다.
     past_count = sum(1 for row in gantt for b in row["bars"] if b["past"])
@@ -820,6 +834,8 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
             "level_labels": PLAN_LEVEL_LABELS,
             "gantt": gantt,
             "focus_id": focus_id,
+            "hidden_count": hidden_count,
+            "show_hidden": seen_hidden,
             "core_blocks": CORE_BLOCKS,
             "tones": TONES,
             "past_count": past_count,

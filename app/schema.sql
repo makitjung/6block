@@ -144,7 +144,8 @@ CREATE TABLE IF NOT EXISTS lt_item (
     start_date TEXT NOT NULL,            -- YYYY-MM-DD
     end_date TEXT NOT NULL,              -- YYYY-MM-DD (시작일 이상)
     progress INTEGER NOT NULL DEFAULT 0, -- 0~100
-    block_label TEXT,                    -- 간트 행이 될 코어블록(B1~B6). NULL이면 상위를 따르고 없으면 미지정
+    block_label TEXT,                    -- 간트 행이 될 코어블록(B1~B6). 쉼표로 여러 개, 비면 미지정
+    hidden INTEGER NOT NULL DEFAULT 0,   -- 1이면 간트에서 접어 둔다('숨긴 항목 보기'로 다시 꺼낸다)
     updated_at TEXT NOT NULL
 );
 

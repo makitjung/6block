@@ -202,6 +202,10 @@ def _migrate(conn: sqlite3.Connection):
     item_cols = {r[1] for r in conn.execute("PRAGMA table_info(lt_item)").fetchall()}
     if "block_label" not in item_cols:
         conn.execute("ALTER TABLE lt_item ADD COLUMN block_label TEXT")
+    # 간트에서 접어 두는 항목. 1이면 안 그리고 '숨긴 항목 보기'로만 다시 꺼낸다.
+    if "hidden" not in item_cols:
+        conn.execute(
+            "ALTER TABLE lt_item ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     # 영역 색 톤(막대 색). 없으면 추가하고 기존 영역을 표시 순서대로 팔레트에 배정한다.
     area_cols = {r[1] for r in conn.execute("PRAGMA table_info(lt_area)").fetchall()}
     if "tone" not in area_cols:
