@@ -133,23 +133,24 @@
         if (ctx.state === 'suspended') ctx.resume().then(() => play(ctx)).catch(() => {});
         else play(ctx);
     }
-    function chime(times, freq) {
+    // 집중 시작 알람. 0.22초 사인파 한 번은 폰 스피커에서 너무 쉽게 묻혀서, 배음이 있는
+    // 삼각파로 밝게 세 번 올려 친다. 낮게 길게 울리는 종료음(bell)과 성격이 확실히 갈린다.
+    function chime() {
         withAudio((ctx) => {
-            const f = freq || 880;
-            for (let i = 0; i < times; i++) {
+            [880, 1108, 1318].forEach((f, i) => {   // A5 → C#6 → E6
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
-                osc.type = 'sine';
+                osc.type = 'triangle';
                 osc.frequency.value = f;
-                const start = ctx.currentTime + i * 0.42;
-                const end = start + 0.22;
+                const start = ctx.currentTime + i * 0.17;
+                const end = start + 0.18;
                 gain.gain.setValueAtTime(0.0001, start);
-                gain.gain.exponentialRampToValueAtTime(0.32, start + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.5, start + 0.015);
                 gain.gain.exponentialRampToValueAtTime(0.0001, end);
                 osc.connect(gain).connect(ctx.destination);
                 osc.start(start);
                 osc.stop(end + 0.05);
-            }
+            });
         });
     }
     // 종소리 알람(비조화 배음 + 긴 여운, 가볍게 times회). 시작 알람(chime, 고음 단발)과
@@ -211,7 +212,7 @@
         state.endsAt = endsAt;
         state.slotStart = slot;
         persist();
-        chime(1, 880);
+        chime();
         toast(`집중 시작 · ${Math.round((endsAt - Date.now()) / 60000)}분`);
         render();
     }
