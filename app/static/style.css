@@ -903,14 +903,14 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     transition: stroke-dashoffset .5s linear, stroke .2s ease;
 }
 .pomo.focus .pomo-ring-prog { stroke: var(--danger); }
-.pomo.break .pomo-ring-prog { stroke: var(--accent); }
+.pomo.break .pomo-ring-prog { stroke: var(--tone-green); }
 .pomo-center {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 2px; pointer-events: none;
 }
 .pomo-time { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: var(--text); }
 .pomo.focus .pomo-time { color: var(--danger); }
-.pomo.break .pomo-time { color: var(--accent); }
+.pomo.break .pomo-time { color: var(--tone-green); }
 .pomo-phase { font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 700; }
 
 .pomo-controls {

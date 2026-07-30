@@ -230,7 +230,8 @@
     function breakMin() {
         return Math.round((state.endsAt - state.startedAt) / 60000);
     }
-    // 집중 25분이 끝났을 때. 종소리로 알리고 한 일을 적게 한 뒤 휴식으로 넘어간다.
+    // 집중 25분이 끝났을 때. 종소리로 알리고 휴식으로 넘어간다.
+    // '한 일' 칸은 저절로 열지 않는다(슬롯의 '한' 버튼으로 직접 열어 적는다).
     function endFocus(auto) {
         const finished = state.slotStart;
         if (settingOn('pomo_end_alarm', true)) bell(2);
@@ -238,22 +239,6 @@
         notify('집중 완료', resting ? `휴식 ${breakMin()}분`
                                     : (auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!'));
         toast(resting ? `집중 완료 · 휴식 ${breakMin()}분` : '집중 완료 · 한 일을 적어두세요');
-        promptDidText(finished);
-    }
-
-    // 방금 끝난 슬롯의 '한일' 입력칸을 열어 커서를 둔다. 칸이 없으면(설정에서 껐거나 다른 날짜)
-    // 아무것도 하지 않는다. 입력값은 기존 자동저장 경로로 그대로 저장된다.
-    function promptDidText(slotStart) {
-        if (!slotStart) return;
-        const row = document.querySelector('.slot[data-start="' + slotStart + '"]');
-        const wrap = row && row.querySelector('.slot-did');
-        const input = wrap && wrap.querySelector('.slot-did-input');
-        if (!input) return;
-        wrap.classList.add('open');
-        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        setTimeout(() => input.focus(), 350);
-        const closeOnce = () => { wrap.classList.remove('open'); input.removeEventListener('blur', closeOnce); };
-        input.addEventListener('blur', closeOnce);
     }
     function skip() {
         if (state.phase === 'FOCUS') endFocus(false);
