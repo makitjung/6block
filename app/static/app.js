@@ -3,7 +3,9 @@
     'use strict';
 
     const TICK_MS = 1000;
-    const SLOT_MIN = 30;   // 슬롯 길이(분). 집중은 누른 슬롯의 종료시각까지 흐른다.
+    // 집중 25분 뒤에는 다음 슬롯이 시작할 때까지 휴식한다. 슬롯이 30분이라 블록 안에서는 5분,
+    // B1·B3·B5의 마지막 슬롯은 블록 사이 10분 공백이 더해져 15분 휴식이 된다.
+    const FOCUS_MIN = 25;
     const RING_C = 2 * Math.PI * 44;   // 진행 링 둘레(r=44), CSS stroke-dasharray와 일치
 
     // 서버 동작 설정(window.__settings). localStorage 값이 있으면 우선, 없으면 이 기본값을 따른다.
@@ -16,9 +18,9 @@
     }
 
     const state = {
-        phase: 'IDLE',      // 'IDLE' | 'FOCUS'
-        startedAt: 0,       // epoch ms (집중 시작 시각)
-        endsAt: 0,          // epoch ms (집중 종료 = 슬롯 종료시각)
+        phase: 'IDLE',      // 'IDLE' | 'FOCUS' | 'BREAK'
+        startedAt: 0,       // epoch ms (집중 시작 시각, 휴식이면 집중이 끝난 시각)
+        endsAt: 0,          // epoch ms (집중이면 시작+25분, 휴식이면 다음 슬롯 시작시각)
         slotStart: '',      // 'HH:MM'
         auto: localStorage.getItem('pomoAuto') !== null
             ? localStorage.getItem('pomoAuto') === 'true'
@@ -36,14 +38,13 @@
     function restore() {
         try {
             const raw = JSON.parse(localStorage.getItem('pomoState') || '{}');
-            if (raw.phase === 'FOCUS') {
-                state.phase = 'FOCUS';
+            if (raw.phase === 'FOCUS' || raw.phase === 'BREAK') {
+                state.phase = raw.phase;
                 state.startedAt = raw.startedAt || 0;
                 state.endsAt = raw.endsAt || 0;
                 state.slotStart = raw.slotStart || '';
                 // 종료시각이 지난 세션은 즉시 정리
                 if (!state.endsAt || Date.now() >= state.endsAt) state.phase = 'IDLE';
-                else warn5Fired = (state.endsAt - Date.now()) <= 5 * 60 * 1000;
             }
         } catch (e) {}
     }
@@ -87,12 +88,25 @@
         if (!s) return -1;
         return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
     }
-    // 'HH:MM' 슬롯 시작 → 그 슬롯 종료시각(시작+30분)의 epoch ms (오늘 기준)
-    function slotEndEpoch(slotStart) {
-        const endMin = hhmmToMin(slotStart) + SLOT_MIN;
+    // 오늘의 '자정부터 몇 분' → epoch ms
+    function epochAtMin(min) {
         const d = new Date();
-        d.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0);
+        d.setHours(Math.floor(min / 60), min % 60, 0, 0);
         return d.getTime();
+    }
+    function hhmmOfEpoch(ms) {
+        const d = new Date(ms);
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+    // 'HH:MM' 슬롯 시작 → 그 슬롯의 집중 종료시각(시작+25분)의 epoch ms (오늘 기준)
+    function focusEndEpoch(slotStart) {
+        return epochAtMin(hhmmToMin(slotStart) + FOCUS_MIN);
+    }
+    // 이 슬롯 다음에 오는 슬롯 행. 하루의 마지막 슬롯이면 null.
+    // 휴식은 이 슬롯의 시작시각까지 흐르므로 블록 사이 공백이 그대로 휴식에 더해진다.
+    function nextSlotAfter(slotStart) {
+        const cur = hhmmToMin(slotStart);
+        return slotRanges().find((r) => r.s > cur) || null;
     }
 
     // ---- screen wake lock (화면 꺼짐 방지) -------------------------------
@@ -174,32 +188,56 @@
     }
 
     // ---- state transitions ----------------------------------------------
-    // 누른 슬롯의 종료시각까지 집중. 휴식 단계는 없고, AUTO는 다음 경계에서 다시 시작한다.
+    // 누른 슬롯의 앞 25분을 집중하고, 남은 시간은 다음 슬롯이 시작할 때까지 휴식한다.
+    // 집중 25분이 이미 지난 슬롯을 누르면 곧바로 휴식으로 들어간다.
     function startFocus(slotTime) {
         const slot = slotTime || currentSlotKey();
-        const endsAt = slotEndEpoch(slot);
-        // 이미 끝난 슬롯이면 시작하지 않는다
-        if (endsAt - Date.now() < 1000) { toast('이미 지난 슬롯'); return; }
+        const endsAt = focusEndEpoch(slot);
+        if (endsAt - Date.now() < 1000) {
+            if (startBreak(slot)) toast(`휴식 ${breakMin()}분 · ${hhmmOfEpoch(state.endsAt)} 시작`);
+            else toast('이미 지난 슬롯');
+            return;
+        }
         state.phase = 'FOCUS';
         state.startedAt = Date.now();
         state.endsAt = endsAt;
         state.slotStart = slot;
-        warn5Fired = (endsAt - Date.now()) <= 5 * 60 * 1000;  // 5분 이하 남았으면 사전알림 생략
         persist();
         chime(1, 880);
-        const mins = Math.round((endsAt - state.startedAt) / 60000);
-        toast(`집중 시작 · ${state.slotStart} 끝까지 ${mins}분`);
+        toast(`집중 시작 · ${Math.round((endsAt - Date.now()) / 60000)}분`);
         render();
     }
-    function transitionToIdle(auto) {
-        const finished = state.slotStart;
-        state.phase = 'IDLE';
-        state.endsAt = 0;
+    // 휴식 단계로 넘긴다. 다음 슬롯이 없거나 이미 지났으면 IDLE로 두고 false를 준다.
+    function startBreak(slot) {
+        const next = nextSlotAfter(slot);
+        const endsAt = next ? epochAtMin(next.s) : 0;
+        if (!endsAt || endsAt - Date.now() < 1000) {
+            state.phase = 'IDLE';
+            state.startedAt = 0;
+            state.endsAt = 0;
+            persist();
+            render();
+            return false;
+        }
+        state.phase = 'BREAK';
+        state.startedAt = focusEndEpoch(slot);   // 링 진행률을 휴식 전체 길이로 재게 한다
+        state.endsAt = endsAt;
+        state.slotStart = slot;
         persist();
-        // 완료 알람음은 울리지 않는다. 소리는 시작(chime)·종료 5분전(bell) 두 가지로만 구분한다.
-        notify('슬롯 완료', auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!');
-        toast('슬롯 완료 · 한 일을 적어두세요');
         render();
+        return true;
+    }
+    function breakMin() {
+        return Math.round((state.endsAt - state.startedAt) / 60000);
+    }
+    // 집중 25분이 끝났을 때. 종소리로 알리고 한 일을 적게 한 뒤 휴식으로 넘어간다.
+    function endFocus(auto) {
+        const finished = state.slotStart;
+        if (settingOn('pomo_end_alarm', true)) bell(2);
+        const resting = startBreak(finished);
+        notify('집중 완료', resting ? `휴식 ${breakMin()}분`
+                                    : (auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!'));
+        toast(resting ? `집중 완료 · 휴식 ${breakMin()}분` : '집중 완료 · 한 일을 적어두세요');
         promptDidText(finished);
     }
 
@@ -218,7 +256,8 @@
         input.addEventListener('blur', closeOnce);
     }
     function skip() {
-        if (state.phase === 'FOCUS') transitionToIdle(false);
+        if (state.phase === 'FOCUS') endFocus(false);
+        else if (state.phase === 'BREAK') stop();
     }
     function stop() {
         state.phase = 'IDLE';
@@ -245,7 +284,6 @@
     let lastUserInteract = 0;   // 마지막 사용자 스크롤·터치 시각(자동 추적 억제용)
     let lastNowSlot = '';       // 마지막으로 추적한 현재 30분 슬롯(HH:MM)
     let lastRenderSlot = '';    // 슬롯·블록 강조를 마지막으로 다시 칠한 슬롯(매초 재계산 방지)
-    let warn5Fired = false;     // 종료 5분 전 사전 알림을 한 슬롯에 한 번만 울리기 위한 플래그
     function tick() {
         const now = new Date();
         const sec = now.getSeconds();
@@ -263,16 +301,19 @@
                 }
             }
         } else if (state.phase === 'FOCUS') {
-            const remain = state.endsAt - Date.now();
-            if (remain <= 0) {
-                transitionToIdle(state.auto);
-            } else if (!warn5Fired && remain <= 5 * 60 * 1000) {
-                // 종료 5분 전 사전 알림(종소리 2회, 설정에서 끌 수 있음)
-                warn5Fired = true;
-                if (settingOn('pomo_warn5', true)) {
-                    bell(2);
-                    notify('5분 남음', `슬롯 ${state.slotStart} 곧 종료`);
-                    toast('종료 5분 전');
+            if (state.endsAt - Date.now() <= 0) endFocus(state.auto);
+        } else if (state.phase === 'BREAK') {
+            // 휴식이 끝나는 시점은 다음 슬롯이 막 시작한 시점이다. 알람은 울리지 않고,
+            // 자동모드면 여기서 곧바로 다음 집중을 시작한다(시작음은 startFocus가 낸다).
+            if (state.endsAt - Date.now() <= 0) {
+                const next = nextSlotAfter(state.slotStart);
+                state.phase = 'IDLE';
+                state.startedAt = 0;
+                state.endsAt = 0;
+                persist();
+                if (next && state.auto && Date.now() - lastActiveAt < AUTO_IDLE_MS) {
+                    lastBoundaryFired = next.el.dataset.start;
+                    startFocus(next.el.dataset.start);
                 }
             }
         }
@@ -294,10 +335,12 @@
         if (pomo) {
             pomo.classList.toggle('active', state.phase !== 'IDLE' || state.auto);
             pomo.classList.toggle('focus', state.phase === 'FOCUS');
+            pomo.classList.toggle('break', state.phase === 'BREAK');
             const autoBtn = pomo.querySelector('.pomo-auto');
             if (autoBtn) autoBtn.classList.toggle('on', state.auto);
 
             const phaseLabel = state.phase === 'FOCUS' ? '집중'
+                              : state.phase === 'BREAK' ? '휴식'
                               : (state.auto ? '자동' : '대기');
             const phaseEl = pomo.querySelector('.pomo-phase');
             if (phaseEl) phaseEl.textContent = phaseLabel;
@@ -316,7 +359,9 @@
                 const frac = total > 0 ? Math.min(1, Math.max(0, remain / total)) : 0;
                 if (timeEl) timeEl.textContent = fmt(remain);
                 if (ringEl) ringEl.style.strokeDashoffset = RING_C * (1 - frac);
-                if (slotEl) slotEl.textContent = `슬롯 ${state.slotStart} 끝까지`;
+                if (slotEl) slotEl.textContent = state.phase === 'FOCUS'
+                    ? `슬롯 ${state.slotStart} · 집중 ${FOCUS_MIN}분`
+                    : `휴식 ${breakMin()}분 · ${hhmmOfEpoch(state.endsAt)} 시작`;
             }
         }
 

@@ -400,7 +400,7 @@ async def settings_cat_delete(request: Request):
 @router.post("/settings/save")
 async def settings_save(request: Request):
     form = await request.form()
-    allowed = {"start_view", "default_theme", "pomo_auto", "pomo_warn5", "collapse_blocks",
+    allowed = {"start_view", "default_theme", "pomo_auto", "pomo_end_alarm", "collapse_blocks",
                "show_location", "show_did", "show_reflect", "show_slot_play", "show_inbox"}
     for key in allowed:
         if form.get(key) is not None:

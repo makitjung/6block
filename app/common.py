@@ -63,7 +63,7 @@ def _asset_ver() -> str:
 
 # 화면(JS)에서 실제로 쓰는 설정만 페이지에 싣는다. 예전에는 app_settings 전체를 내보내
 # 캘린더 ID·AI 주소까지 모든 페이지 소스에 남았다.
-CLIENT_SETTING_KEYS = ("pomo_auto", "pomo_warn5", "collapse_blocks")
+CLIENT_SETTING_KEYS = ("pomo_auto", "pomo_end_alarm", "collapse_blocks")
 
 
 def _client_settings() -> dict:

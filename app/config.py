@@ -132,7 +132,7 @@ DEFAULT_SETTINGS = {
     "start_view": "today",      # 시작 화면: today | week
     "default_theme": "light",   # 기본 테마: light | dark
     "pomo_auto": "0",           # 포모도로 자동 모드 기본값(0/1)
-    "pomo_warn5": "1",          # 종료 5분 전 알람(0/1)
+    "pomo_end_alarm": "1",      # 집중 25분 종료 알람(0/1)
     "collapse_blocks": "1",     # 오늘 화면 '현재 블록만 보기' 기본값(0/1)
     "show_location": "1",       # 오늘 블록 장소 콤보박스 표시(0/1)
     "show_did": "1",            # 슬롯 '한'(실제로 한 일) 버튼 표시(0/1)

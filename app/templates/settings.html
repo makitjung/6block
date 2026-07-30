@@ -90,7 +90,7 @@
         </section>
 
         <section class="card">
-            <h2 class="card-title">포모도로 <span class="card-sub">슬롯 종료까지 집중하는 타이머</span></h2>
+            <h2 class="card-title">포모도로 <span class="card-sub">집중 25분 + 다음 슬롯까지 휴식</span></h2>
             <div class="set-grid">
                 <label class="set-field">
                     <span class="set-label">자동 모드</span>
@@ -100,14 +100,14 @@
                     </select>
                 </label>
                 <label class="set-field">
-                    <span class="set-label">종료 5분 전 알람</span>
-                    <select data-key="pomo_warn5">
-                        <option value="1" {% if settings.pomo_warn5 == '1' %}selected{% endif %}>켬</option>
-                        <option value="0" {% if settings.pomo_warn5 == '0' %}selected{% endif %}>끔</option>
+                    <span class="set-label">집중 종료 알람</span>
+                    <select data-key="pomo_end_alarm">
+                        <option value="1" {% if settings.pomo_end_alarm == '1' %}selected{% endif %}>켬</option>
+                        <option value="0" {% if settings.pomo_end_alarm == '0' %}selected{% endif %}>끔</option>
                     </select>
                 </label>
             </div>
-            <p class="set-events-hint">자동 모드는 슬롯이 시작되는 시각에 그 슬롯 집중을 스스로 시작합니다(블록이 09:10처럼 시작해도 그 시각에 맞춥니다).</p>
+            <p class="set-events-hint">집중은 슬롯 시작부터 25분이고, 남은 시간은 다음 슬롯이 시작할 때까지 휴식입니다. 블록 안에서는 5분, B1·B3·B5의 마지막 슬롯은 블록 사이 10분이 더해져 15분 쉽니다. 자동 모드는 슬롯이 시작되는 시각에 그 슬롯 집중을 스스로 시작합니다(블록이 09:10처럼 시작해도 그 시각에 맞춥니다).</p>
         </section>
     </div>
 </section>
