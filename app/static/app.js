@@ -125,49 +125,57 @@
         catch (e) { audioCtx = null; }
         return audioCtx;
     }
-    function chime(times, freq) {
+    // 잠긴(suspended) 오디오는 시계가 멈춰 있다. resume()은 비동기라서 먼저 소리를 예약하면
+    // 멈춘 시계 기준으로 예약돼 깨어난 순간엔 이미 지난 시각이 되어 그냥 사라진다.
+    // 그래서 반드시 깨어난 뒤에 예약한다. 시작음이 안 울리던 원인이 이것이다.
+    function withAudio(play) {
         const ctx = getAudio(); if (!ctx) return;
-        if (ctx.state === 'suspended') ctx.resume();
-        const f = freq || 880;
-        for (let i = 0; i < times; i++) {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = f;
-            const start = ctx.currentTime + i * 0.42;
-            const end = start + 0.22;
-            gain.gain.setValueAtTime(0.0001, start);
-            gain.gain.exponentialRampToValueAtTime(0.32, start + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.0001, end);
-            osc.connect(gain).connect(ctx.destination);
-            osc.start(start);
-            osc.stop(end + 0.05);
-        }
+        if (ctx.state === 'suspended') ctx.resume().then(() => play(ctx)).catch(() => {});
+        else play(ctx);
+    }
+    function chime(times, freq) {
+        withAudio((ctx) => {
+            const f = freq || 880;
+            for (let i = 0; i < times; i++) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = f;
+                const start = ctx.currentTime + i * 0.42;
+                const end = start + 0.22;
+                gain.gain.setValueAtTime(0.0001, start);
+                gain.gain.exponentialRampToValueAtTime(0.32, start + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, end);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(start);
+                osc.stop(end + 0.05);
+            }
+        });
     }
     // 종소리 알람(비조화 배음 + 긴 여운, 가볍게 times회). 시작 알람(chime, 고음 단발)과
     // 확연히 구분되도록 저음역대로 낮게 잡았다.
     function bell(times) {
-        const ctx = getAudio(); if (!ctx) return;
-        if (ctx.state === 'suspended') ctx.resume();
-        const base = 440;
-        const partials = [1, 2.0, 2.96, 4.21];   // 종 특유의 비조화 배음
-        const weights = [1, 0.5, 0.3, 0.18];
-        for (let n = 0; n < (times || 1); n++) {
-            const t0 = ctx.currentTime + n * 0.9;
-            partials.forEach((p, i) => {
-                const osc = ctx.createOscillator();
-                const g = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.value = base * p;
-                const peak = 0.22 * weights[i];
-                g.gain.setValueAtTime(0.0001, t0);
-                g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
-                g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
-                osc.connect(g).connect(ctx.destination);
-                osc.start(t0);
-                osc.stop(t0 + 1.7);
-            });
-        }
+        withAudio((ctx) => {
+            const base = 440;
+            const partials = [1, 2.0, 2.96, 4.21];   // 종 특유의 비조화 배음
+            const weights = [1, 0.5, 0.3, 0.18];
+            for (let n = 0; n < (times || 1); n++) {
+                const t0 = ctx.currentTime + n * 0.9;
+                partials.forEach((p, i) => {
+                    const osc = ctx.createOscillator();
+                    const g = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = base * p;
+                    const peak = 0.22 * weights[i];
+                    g.gain.setValueAtTime(0.0001, t0);
+                    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
+                    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
+                    osc.connect(g).connect(ctx.destination);
+                    osc.start(t0);
+                    osc.stop(t0 + 1.7);
+                });
+            }
+        });
     }
     function ensureNotifPermission() {
         if (!('Notification' in window)) return;
@@ -3301,13 +3309,13 @@
                 .catch(() => {});
         }
 
-        // first user interaction → unlock audio
+        // 화면을 만질 때마다 오디오 잠금을 푼다. 만들어만 두고 resume 하지 않으면 잠긴 채로
+        // 남아 알람이 안 울리고, 탭이 백그라운드에 갔다 오면 다시 잠기므로 한 번만 걸지 않는다.
         const unlock = () => {
-            getAudio();
-            document.removeEventListener('click', unlock);
-            document.removeEventListener('touchstart', unlock);
+            const ctx = getAudio();
+            if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
         };
-        document.addEventListener('click', unlock, { once: true });
-        document.addEventListener('touchstart', unlock, { once: true });
+        document.addEventListener('click', unlock);
+        document.addEventListener('touchstart', unlock, { passive: true });
     });
 })();
