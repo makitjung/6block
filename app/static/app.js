@@ -130,11 +130,12 @@
             osc.stop(end + 0.05);
         }
     }
-    // 종소리 알람(비조화 배음 + 긴 여운, 가볍게 times회)
+    // 종소리 알람(비조화 배음 + 긴 여운, 가볍게 times회). 시작 알람(chime, 고음 단발)과
+    // 확연히 구분되도록 저음역대로 낮게 잡았다.
     function bell(times) {
         const ctx = getAudio(); if (!ctx) return;
         if (ctx.state === 'suspended') ctx.resume();
-        const base = 740;
+        const base = 440;
         const partials = [1, 2.0, 2.96, 4.21];   // 종 특유의 비조화 배음
         const weights = [1, 0.5, 0.3, 0.18];
         for (let n = 0; n < (times || 1); n++) {
@@ -195,7 +196,7 @@
         state.phase = 'IDLE';
         state.endsAt = 0;
         persist();
-        bell(2);
+        // 완료 알람음은 울리지 않는다. 소리는 시작(chime)·종료 5분전(bell) 두 가지로만 구분한다.
         notify('슬롯 완료', auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!');
         toast('슬롯 완료 · 한 일을 적어두세요');
         render();
