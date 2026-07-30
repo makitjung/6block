@@ -344,8 +344,12 @@
             if (state.phase === 'IDLE') {
                 if (timeEl) timeEl.textContent = state.auto ? 'AUTO' : '—';
                 if (ringEl) ringEl.style.strokeDashoffset = RING_C;
-                if (slotEl) slotEl.textContent = state.auto
-                    ? `다음 시작 · ${nextBoundary()}` : '';
+                if (slotEl) {
+                    const nb = state.auto ? nextBoundary() : '';
+                    // 슬롯 행이 없는 화면(설정·장기 등)에서는 자동 시작이 걸리지 않으므로 비워 둔다.
+                    slotEl.textContent = nb ? `다음 시작 · ${nb}`
+                        : (state.auto && slotRanges().length ? '오늘 남은 슬롯 없음' : '');
+                }
             } else {
                 const total = (state.endsAt - state.startedAt) / 1000;
                 const remain = (state.endsAt - Date.now()) / 1000;
@@ -419,12 +423,14 @@
         });
     }
 
+    // 자동 시작이 다음으로 걸릴 슬롯 시작시각. 30분 격자로 계산하면 블록이 09:40·11:10처럼
+    // 시작하는 실제 시간표와 어긋나므로(11:00에 11:30이라고 잘못 표시됐다) 슬롯 행을 따른다.
+    // 남은 슬롯이 없으면 빈 문자열.
     function nextBoundary() {
         const d = new Date();
-        d.setSeconds(0, 0);
-        if (d.getMinutes() < 30) d.setMinutes(30);
-        else { d.setHours(d.getHours() + 1); d.setMinutes(0); }
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const m = d.getHours() * 60 + d.getMinutes();
+        const next = slotRanges().find((r) => r.s > m);
+        return next ? next.el.dataset.start : '';
     }
 
     // ---- category color stripe ------------------------------------------
