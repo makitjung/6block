@@ -133,50 +133,83 @@
         if (ctx.state === 'suspended') ctx.resume().then(() => play(ctx)).catch(() => {});
         else play(ctx);
     }
-    // 집중 시작 알람. 0.22초 사인파 한 번은 폰 스피커에서 너무 쉽게 묻혀서, 배음이 있는
-    // 삼각파로 밝게 세 번 올려 친다. 낮게 길게 울리는 종료음(bell)과 성격이 확실히 갈린다.
-    function chime() {
-        withAudio((ctx) => {
-            [880, 1108, 1318].forEach((f, i) => {   // A5 → C#6 → E6
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.value = f;
-                const start = ctx.currentTime + i * 0.17;
-                const end = start + 0.18;
-                gain.gain.setValueAtTime(0.0001, start);
-                gain.gain.exponentialRampToValueAtTime(0.5, start + 0.015);
-                gain.gain.exponentialRampToValueAtTime(0.0001, end);
-                osc.connect(gain).connect(ctx.destination);
-                osc.start(start);
-                osc.stop(end + 0.05);
-            });
-        });
+    // ---- 알람 음원 -------------------------------------------------------
+    // 음원과 길이는 설정 탭에서 고른다. 파일 없이 코드로 만들어 어떤 길이로도 늘어난다.
+    // 한 음을 예약하는 공통 도구. mix는 다 합쳐 1이 넘지 않게 두어 찌그러짐을 막는다.
+    function tone(ctx, at, dur, freq, mix, type, attack) {
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0002, mix), at + (attack || 0.01));
+        g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+        g.connect(ctx.destination);
+        const osc = ctx.createOscillator();
+        osc.type = type || 'triangle';
+        osc.frequency.value = freq;
+        osc.connect(g);
+        osc.start(at);
+        osc.stop(at + dur + 0.05);
     }
-    // 종소리 알람(비조화 배음 + 긴 여운, 가볍게 times회). 시작 알람(chime, 고음 단발)과
-    // 확연히 구분되도록 저음역대로 낮게 잡았다.
-    function bell(times) {
-        withAudio((ctx) => {
-            const base = 440;
-            const partials = [1, 2.0, 2.96, 4.21];   // 종 특유의 비조화 배음
-            const weights = [1, 0.5, 0.3, 0.18];
-            for (let n = 0; n < (times || 1); n++) {
-                const t0 = ctx.currentTime + n * 0.9;
-                partials.forEach((p, i) => {
-                    const osc = ctx.createOscillator();
-                    const g = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = base * p;
-                    const peak = 0.22 * weights[i];
-                    g.gain.setValueAtTime(0.0001, t0);
-                    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
-                    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
-                    osc.connect(g).connect(ctx.destination);
-                    osc.start(t0);
-                    osc.stop(t0 + 1.7);
-                });
+
+    // 각 음원은 (ctx, t0, sec)를 받아 sec 길이로 울린다.
+    const SOUNDS = {
+        // 맑은 완전5도 화음 한 번 + 또렷한 어택. 집중 시작에 어울리는 기본값.
+        chord(ctx, t0, sec) {
+            [[659, 0.4], [988, 0.22], [1319, 0.12]].forEach(([f, mix]) =>
+                tone(ctx, t0, sec, f, mix, 'triangle', 0.05));
+            tone(ctx, t0, 0.12, 1976, 0.2, 'triangle', 0.008);
+        },
+        // 비조화 배음의 종소리. 길이에 맞춰 여러 번 친다.
+        bell(ctx, t0, sec) {
+            const strikes = Math.max(1, Math.round(sec / 1.3));
+            const gap = sec / strikes;
+            for (let n = 0; n < strikes; n++) {
+                [[1, 0.22], [2.0, 0.11], [2.96, 0.07], [4.21, 0.04]].forEach(([p, mix]) =>
+                    tone(ctx, t0 + n * gap, gap * 0.95, 440 * p, mix, 'sine', 0.006));
             }
-        });
+        },
+        // 낮고 깊게 퍼지는 울림. 종소리보다 묵직하다.
+        gong(ctx, t0, sec) {
+            [[1, 0.3], [1.48, 0.12], [2.35, 0.07], [3.42, 0.04]].forEach(([p, mix]) =>
+                tone(ctx, t0, sec, 220 * p, mix, 'sine', 0.02));
+        },
+        // 또렷한 비프 반복. 가장 알람답고 놓치기 어렵다.
+        beep(ctx, t0, sec) {
+            for (let at = 0; at < sec - 0.05; at += 0.45) {
+                tone(ctx, t0 + at, Math.min(0.2, sec - at), 1046, 0.45, 'triangle', 0.01);
+            }
+        },
+        // 아래에서 위로 올라가는 한 줄기 소리.
+        rise(ctx, t0, sec) {
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.exponentialRampToValueAtTime(0.5, t0 + sec * 0.3);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + sec);
+            g.connect(ctx.destination);
+            const osc = ctx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(440, t0);
+            osc.frequency.exponentialRampToValueAtTime(1320, t0 + sec * 0.9);
+            osc.connect(g);
+            osc.start(t0);
+            osc.stop(t0 + sec + 0.05);
+        },
+    };
+
+    function soundSec(key, def) {
+        const v = parseFloat(setget(key));
+        return (v > 0 && v <= 10) ? v : def;
+    }
+    function playSound(name, sec) {
+        const make = SOUNDS[name] || SOUNDS.chord;
+        withAudio((ctx) => make(ctx, ctx.currentTime, sec));
+    }
+    // 집중 시작 알람
+    function chime() {
+        playSound(setget('pomo_start_sound') || 'chord', soundSec('pomo_start_sec', 2.5));
+    }
+    // 집중 종료(= 휴식 시작) 알람
+    function bell() {
+        playSound(setget('pomo_end_sound') || 'bell', soundSec('pomo_end_sec', 2.5));
     }
     function ensureNotifPermission() {
         if (!('Notification' in window)) return;
@@ -243,7 +276,7 @@
     // '한 일' 칸은 저절로 열지 않는다(슬롯의 '한' 버튼으로 직접 열어 적는다).
     function endFocus(auto) {
         const finished = state.slotStart;
-        if (settingOn('pomo_end_alarm', true)) bell(2);
+        if (settingOn('pomo_end_alarm', true)) bell();
         const resting = startBreak(finished);
         notify('집중 완료', resting ? `휴식 ${breakMin()}분`
                                     : (auto ? '자동 모드: 다음 슬롯 대기' : '잘했어!'));
@@ -311,7 +344,35 @@
                 }
             }
         }
+        checkVersion();
         render(false);
+    }
+
+    // ---- 새 버전 자동 반영 -------------------------------------------------
+    // 오래 열어둔 탭이 옛 코드를 들고 있으면 기기마다 동작이 달라진다(폰은 새 동작, 맥은 옛
+    // 동작). 서버의 현재 버전과 이 페이지가 불러온 버전을 견줘 다르면 스스로 새로고침한다.
+    // 탭을 다시 볼 때, 그리고 10분마다 확인한다. 집중·휴식이 도는 중이거나 무언가 입력하는
+    // 중에는 미룬다(타이머를 끊거나 타이핑을 날리지 않게).
+    const VERSION_CHECK_MS = 10 * 60 * 1000;
+    let myVer = '';
+    let lastVerCheck = 0;
+    let verChecking = false;
+    function checkVersion(force) {
+        // 안 보이는 탭도 확인한다. 오히려 그때 새로고침하는 것이 가장 방해가 적다.
+        if (!myVer || verChecking) return;
+        if (!force && Date.now() - lastVerCheck < VERSION_CHECK_MS) return;
+        lastVerCheck = Date.now();
+        verChecking = true;
+        fetch('/version', { cache: 'no-store' })
+            .then((r) => r.json())
+            .then((d) => {
+                if (!d.v || d.v === myVer) return;
+                const tag = (document.activeElement || {}).tagName || '';
+                const busy = state.phase !== 'IDLE' || /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
+                if (!busy) location.reload();
+            })
+            .catch(() => {})
+            .then(() => { verChecking = false; });
     }
 
     // ---- render ----------------------------------------------------------
@@ -3282,9 +3343,21 @@
         window.addEventListener('orientationchange', () => scheduleRefocus(true));
         window.addEventListener('resize', () => scheduleRefocus(false));
 
+        // 이 페이지가 불러온 app.js 버전. 서버 버전과 달라지면 스스로 새로고침한다.
+        const appSrcForVer = document.querySelector('script[src*="/static/app.js"]');
+        if (appSrcForVer) {
+            myVer = new URL(appSrcForVer.src, location.href).searchParams.get('v') || '';
+        }
+        const verMineEl = document.getElementById('set-ver-mine');   // 설정 탭에만 있다
+        if (verMineEl) verMineEl.textContent = myVer || '알 수 없음';
+
         // 화면 꺼짐 방지: 로드 시 + 다시 보일 때 + 첫 입력 시 wake lock 획득
         requestWakeLock();
-        document.addEventListener('visibilitychange', () => { if (!document.hidden) requestWakeLock(); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) return;
+            requestWakeLock();
+            checkVersion(true);   // 탭을 다시 볼 때 옛 코드면 바로 새로고침
+        });
         window.addEventListener('pointerdown', requestWakeLock, { passive: true, once: true });
 
         render();

@@ -49,7 +49,7 @@ templates.env.filters["pretty_date"] = _pretty_date
 templates.env.filters["short_date"] = _short_date
 
 
-def _asset_ver() -> str:
+def asset_ver() -> str:
     """app.js/style.css의 최신 수정시각을 캐시버스팅 쿼리값으로 반환(파일 바뀌면 자동 변경)."""
     try:
         mtimes = [
@@ -72,7 +72,7 @@ def _client_settings() -> dict:
     return {k: s.get(k) for k in CLIENT_SETTING_KEYS}
 
 
-templates.env.globals["asset_ver"] = _asset_ver
+templates.env.globals["asset_ver"] = asset_ver
 templates.env.globals["get_settings"] = get_settings
 templates.env.globals["client_settings"] = _client_settings
 

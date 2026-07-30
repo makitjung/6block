@@ -307,7 +307,12 @@
             <button type="button" class="primary-btn" id="set-restart-btn">서버 재시작</button>
             <span class="set-bt-msg" id="set-restart-msg"></span>
         </div>
+        <div class="set-data-row">
+            <span class="set-label">코드 버전</span>
+            <span class="set-bt-msg mono" id="set-ver-msg">서버 {{ asset_ver() }} · 이 화면 <span id="set-ver-mine">확인 중</span></span>
+        </div>
         <p class="set-events-hint mono">.env 위치 · {{ env_path }}</p>
+        <p class="set-events-hint">두 버전이 같으면 이 기기가 최신 코드를 쓰고 있습니다. 다르면 화면이 스스로 새로고침해 맞춥니다(집중·휴식이 도는 중이거나 입력 중일 때는 끝난 뒤로 미룹니다).</p>
         <p class="set-events-hint">재시작 동안 몇 초간 화면이 끊길 수 있고, 서버가 다시 올라오면 자동으로 새로고침됩니다.</p>
     </section>
 </section>

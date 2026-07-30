@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.common import BASE_DIR, KST
+from app.common import BASE_DIR, KST, asset_ver
 from app.config import ALLOWED_ORIGINS
 from app.db import get_settings, init_db
 from app.integrations import gcal, gcal_write, things
@@ -97,6 +97,13 @@ def root():
 
 
 # -- PWA --------------------------------------------------------------------
+
+
+@app.get("/version")
+def version():
+    """지금 서버가 내보내는 app.js/style.css 버전. 화면이 옛 코드를 들고 있는지 스스로 판단해
+    새로고침하는 데 쓴다(기기마다 다른 버전이 도는 문제를 막는다)."""
+    return JSONResponse({"v": asset_ver()}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/sw.js")
