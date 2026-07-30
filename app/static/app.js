@@ -3351,6 +3351,17 @@
         const verMineEl = document.getElementById('set-ver-mine');   // 설정 탭에만 있다
         if (verMineEl) verMineEl.textContent = myVer || '알 수 없음';
 
+        // 설정 탭 '들어보기'. 저장 전에도 지금 고른 음원·길이 그대로 울려 바로 비교할 수 있다.
+        document.querySelectorAll('[data-preview]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const which = btn.dataset.preview;
+                const sound = document.querySelector('[data-key="pomo_' + which + '_sound"]');
+                const sec = document.querySelector('[data-key="pomo_' + which + '_sec"]');
+                playSound(sound ? sound.value : 'chord',
+                          parseFloat(sec ? sec.value : '2.5') || 2.5);
+            });
+        });
+
         // 화면 꺼짐 방지: 로드 시 + 다시 보일 때 + 첫 입력 시 wake lock 획득
         requestWakeLock();
         document.addEventListener('visibilitychange', () => {

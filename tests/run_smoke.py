@@ -599,8 +599,10 @@ def run_checks(db_path):
     code, html = get("/today")
     m = re.search(r"window\.__settings = (\{.*?\});", html)
     keys = set(json.loads(m.group(1)).keys()) if m else set()
-    check("화면에는 필요한 설정 3개만 실림",
-          keys == {"pomo_auto", "pomo_end_alarm", "collapse_blocks"}, sorted(keys))
+    check("화면에는 필요한 설정만 실림(캘린더 ID·AI 주소 제외)",
+          keys == {"pomo_auto", "pomo_end_alarm", "collapse_blocks",
+                   "pomo_start_sound", "pomo_start_sec",
+                   "pomo_end_sound", "pomo_end_sec"}, sorted(keys))
 
     # 11. .env 편집기는 값을 가려서 보여주고, 가린 채 저장해도 실제 값이 유지되는지
     #     (서버가 임시 폴더의 가짜 .env 를 보도록 되어 있어 실제 .env 는 건드리지 않는다)

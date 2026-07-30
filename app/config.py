@@ -127,12 +127,27 @@ def area_tone(order: int) -> str:
 # 코어블록 라벨(B1~B6). 장기 간트의 행이 되고, 항목의 block_label 로도 저장된다.
 CORE_BLOCKS = [label for label, is_core, _s, _e in DAY_BLOCKS if is_core]
 
+# 알람 음원 목록(키 → 화면 이름). 소리는 파일 없이 app.js의 SOUNDS가 만들며 키가 1:1로 맞다.
+ALARM_SOUNDS = [
+    ("chord", "화음"),
+    ("bell", "종소리"),
+    ("gong", "낮은 울림"),
+    ("beep", "비프 반복"),
+    ("rise", "올라가는 음"),
+]
+# 알람 길이 선택값(초). 문자열로 두어 설정값과 그대로 비교한다.
+ALARM_SECS = ["1.0", "1.5", "2.0", "2.5", "3.0", "4.0", "5.0"]
+
 # 동작 설정 기본값(app_settings 시드·폴백용). 키 → 기본값(문자열).
 DEFAULT_SETTINGS = {
     "start_view": "today",      # 시작 화면: today | week
     "default_theme": "light",   # 기본 테마: light | dark
     "pomo_auto": "0",           # 포모도로 자동 모드 기본값(0/1)
     "pomo_end_alarm": "1",      # 집중 25분 종료 알람(0/1)
+    "pomo_start_sound": "chord",  # 집중 시작 음원: chord|bell|gong|beep|rise
+    "pomo_start_sec": "2.5",      # 집중 시작 알람 길이(초)
+    "pomo_end_sound": "bell",     # 집중 종료 음원
+    "pomo_end_sec": "2.5",        # 집중 종료 알람 길이(초)
     "collapse_blocks": "1",     # 오늘 화면 '현재 블록만 보기' 기본값(0/1)
     "show_location": "1",       # 오늘 블록 장소 콤보박스 표시(0/1)
     "show_did": "1",            # 슬롯 '한'(실제로 한 일) 버튼 표시(0/1)

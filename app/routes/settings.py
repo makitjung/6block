@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse, Response
 
 from app.common import BASE_DIR, CORE_LABELS, KST, KO_WEEKDAYS, _off_loop, templates, today_str
 from app.config import (
+    ALARM_SECS,
+    ALARM_SOUNDS,
     BACKUP_DIR,
     CLOUD_BACKUP_DIR,
     DAY_BLOCKS,
@@ -102,6 +104,8 @@ def settings_view(request: Request):
             "core_labels": CORE_LABELS,
             "weekdays": list(enumerate(KO_WEEKDAYS)),
             "tones": TONES,
+            "alarm_sounds": ALARM_SOUNDS,
+            "alarm_secs": ALARM_SECS,
             "settings": settings,
             "block_scopes": _block_scopes(),
             "weekday_concepts": get_weekday_concepts(),
@@ -401,6 +405,7 @@ async def settings_cat_delete(request: Request):
 async def settings_save(request: Request):
     form = await request.form()
     allowed = {"start_view", "default_theme", "pomo_auto", "pomo_end_alarm", "collapse_blocks",
+               "pomo_start_sound", "pomo_start_sec", "pomo_end_sound", "pomo_end_sec",
                "show_location", "show_did", "show_reflect", "show_slot_play", "show_inbox"}
     for key in allowed:
         if form.get(key) is not None:

@@ -106,7 +106,45 @@
                         <option value="0" {% if settings.pomo_end_alarm == '0' %}selected{% endif %}>끔</option>
                     </select>
                 </label>
+                <label class="set-field">
+                    <span class="set-label">시작 알람 음원</span>
+                    <select data-key="pomo_start_sound">
+                        {% for key, name in alarm_sounds %}
+                        <option value="{{ key }}" {% if settings.pomo_start_sound == key %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">시작 알람 길이</span>
+                    <select data-key="pomo_start_sec">
+                        {% for sec in alarm_secs %}
+                        <option value="{{ sec }}" {% if settings.pomo_start_sec == sec %}selected{% endif %}>{{ sec }}초</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">종료 알람 음원</span>
+                    <select data-key="pomo_end_sound">
+                        {% for key, name in alarm_sounds %}
+                        <option value="{{ key }}" {% if settings.pomo_end_sound == key %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="set-field">
+                    <span class="set-label">종료 알람 길이</span>
+                    <select data-key="pomo_end_sec">
+                        {% for sec in alarm_secs %}
+                        <option value="{{ sec }}" {% if settings.pomo_end_sec == sec %}selected{% endif %}>{{ sec }}초</option>
+                        {% endfor %}
+                    </select>
+                </label>
             </div>
+            <div class="set-data-row">
+                <span class="set-label">들어보기</span>
+                <button type="button" class="primary-btn" data-preview="start">시작 알람</button>
+                <button type="button" class="primary-btn" data-preview="end">종료 알람</button>
+            </div>
+            <p class="set-events-hint">들어보기는 지금 고른 음원과 길이로 바로 울립니다. 두 알람은 서로 다른 음원으로 두세요.</p>
             <p class="set-events-hint">집중은 슬롯 시작부터 25분이고, 남은 시간은 다음 슬롯이 시작할 때까지 휴식입니다. 블록 안에서는 5분, B1·B3·B5의 마지막 슬롯은 블록 사이 10분이 더해져 15분 쉽니다. 자동 모드는 슬롯이 시작되는 시각에 그 슬롯 집중을 스스로 시작합니다(블록이 09:10처럼 시작해도 그 시각에 맞춥니다).</p>
         </section>
     </div>
