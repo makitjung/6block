@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def uid_from_created(created: str | None) -> str:
@@ -230,6 +230,12 @@ def _migrate(conn: sqlite3.Connection):
             conn.execute("UPDATE lt_area SET tone = ? WHERE id = ?", (area_tone(i), r[0]))
     # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
     conn.execute("DROP TABLE IF EXISTS weekday_concept")
+    # 장기 계획은 간트(lt_item) 하나로 일원화했다. 표로 적던 lt_plan 은 코드에서 사라졌다.
+    # 옛 .sql 덤프에는 아직 들어 있어, 복원하면 되살아나므로 여기서 함께 정리한다.
+    conn.execute("DROP INDEX IF EXISTS idx_lt_plan_lookup")
+    conn.execute("DROP TABLE IF EXISTS lt_plan")
+    # 외부 일정을 DB에 담아 두려다 만 흔적. 캘린더는 받아서 바로 쓰고 저장하지 않는다.
+    conn.execute("DROP TABLE IF EXISTS external_events")
     # 점심·저녁 버퍼 블록의 빈 구분을 '기타'로 채운다(주간 시간분포 통계 일관성). 멱등.
     conn.execute(
         "UPDATE blocks SET category_id = (SELECT id FROM categories WHERE name = '기타' LIMIT 1) "
