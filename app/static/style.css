@@ -255,6 +255,50 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .hero-date-sub { color: var(--text-muted); font-size: 12px; }
 .hero-actions { display: flex; gap: 8px; align-items: center; }
 
+/* 날짜·요일은 왼쪽 위, 오늘 컨셉은 그 바로 아래, 구글 일정은 그 둘 옆. */
+.hero-main {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    align-items: center; gap: 4px 16px; min-width: 0;
+}
+.hero-date { grid-column: 1; grid-row: 1; }
+.hero-concept { grid-column: 1; grid-row: 2; }
+.hero-cal { grid-column: 2; grid-row: 1 / span 2; }
+
+/* 오늘 컨셉 3칸. 날짜 아래 한 줄로 좁게 붙인다. */
+.hero-concept { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.hc-label {
+    font-size: 11px; font-weight: 800; color: var(--text-subtle);
+    letter-spacing: .04em; white-space: nowrap;
+}
+.hero-concept input {
+    width: 104px; min-width: 0; padding: 4px 8px; font-size: 12px;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--surface-2); color: var(--text); font-family: inherit;
+}
+.hero-concept input:focus {
+    outline: none; background: var(--surface); border-color: var(--border-focus);
+}
+
+/* 구글 일정 한 건씩 번갈아. 길면 뒤를 …로 자른다. */
+.hero-cal {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    padding: 5px 12px; border-radius: var(--r-pill);
+    background: var(--surface-2); border: 1px solid var(--border);
+}
+.hero-cal[hidden] { display: none; }
+.hero-cal-t { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--accent); }
+.hero-cal-x {
+    flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 다음 일정으로 넘어갈 때 살짝 나타난다. 글자는 먼저 갈아 끼우고 이 애니메이션은 덧입히기만
+   한다(원래 opacity 가 1이라, 애니메이션이 안 돌아도 배너가 비어 보이는 일이 없다). */
+.hero-cal.is-swap .hero-cal-t, .hero-cal.is-swap .hero-cal-x { animation: hero-cal-in .22s ease; }
+@keyframes hero-cal-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* 좁은 화면에서의 hero 규칙은 아래 Responsive 묶음 끝에 있다.
+   그 안의 .hero 규칙보다 뒤에 와야 이기기 때문이다. */
+
 /* === Cards === */
 .card, .meta-card, .block, .context-card {
     background: var(--surface);
@@ -325,22 +369,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 }
 .ctx-head .count { color: var(--accent); font-weight: 700; }
 .ctx-empty { font-size: 12px; color: var(--text-subtle); }
-
-/* 오늘 컨셉 3칸(1행 3열) */
-.concept-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.concept-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.concept-cell input {
-    flex: 1; min-width: 0; padding: 7px 10px;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    background: var(--surface-2); color: var(--text); font: inherit;
-}
-.concept-cell input:focus { outline: none; background: var(--surface); border-color: var(--border-focus); }
-.concept-no {
-    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
-    background: var(--surface-3); color: var(--text-muted); font-size: 11px; font-weight: 700;
-    display: inline-flex; align-items: center; justify-content: center;
-}
-@media (max-width: 560px) { .concept-row { grid-template-columns: 1fr; gap: 6px; } }
 
 /* 목표 3 · 계획 3 */
 .goal-plan { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
@@ -542,6 +570,11 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 
 /* === KPI === */
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+/* 오늘 탭에서는 맨 아래에 접어 두고 버튼으로만 편다 */
+.kpi-fold { margin: 18px 0 8px; }
+.kpi-fold .kpi-row { margin: 10px 0 0; }
+.kpi-fold .kpi-row[hidden] { display: none; }
+.kpi-toggle { font-size: 12px; }
 .kpi {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
     padding: 13px 15px; display: flex; flex-direction: column; gap: 6px;
@@ -949,6 +982,23 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .pomo { bottom: 72px; }
     .actions-sticky { bottom: 12px; right: 12px; }
 }
+/* 폰에서는 hero 가운데 칸이 너무 좁다. 날짜·컨셉·일정을 한 줄 통째로 내려 폭을 다 쓰게 하고,
+   이전·다음과 새로고침·저장만 윗줄에 남긴다(안 그러면 날짜가 네 줄로 접힌다).
+   위 900px 묶음의 .hero 규칙을 덮어야 해서 반드시 그 뒤에 둔다. */
+@media (max-width: 760px) {
+    .hero { grid-template-columns: auto minmax(0, 1fr); row-gap: 10px; }
+    .hero-nav { grid-column: 1; grid-row: 1; }
+    .hero-actions { grid-column: 2; grid-row: 1; justify-content: flex-end; }
+    .hero-main { grid-column: 1 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr); }
+    .hero-date, .hero-concept, .hero-cal { grid-column: 1; }
+    .hero-date { grid-row: 1; }
+    .hero-concept { grid-row: 2; }
+    .hero-cal { grid-row: 3; }
+    /* 컨셉 3칸은 좁은 화면에서도 한 줄에 셋. 이름표만 위로 올린다. */
+    .hero-concept { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 6px; }
+    .hc-label { grid-column: 1 / -1; }
+    .hero-concept input { width: auto; }
+}
 /* 가로 회전(landscape) - 주간 7열 유지, 좁은 높이에서 포모도로 축소 */
 @media (max-width: 900px) and (orientation: landscape) {
     .week-grid { grid-template-columns: repeat(7, 1fr); grid-template-rows: auto auto repeat(8, auto); }
@@ -1039,6 +1089,9 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 
 .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .set-field { display: flex; flex-direction: column; gap: 6px; }
+/* 여러 개를 쉼표로 적는 칸은 격자 한 줄을 다 쓴다 */
+.set-field-wide { grid-column: 1 / -1; }
+.set-field-wide input[type="text"] { width: 100%; }
 .set-label { font-size: 12px; font-weight: 700; color: var(--text-muted); }
 .set-sub { font-weight: 400; color: var(--text-subtle); }
 
@@ -1953,6 +2006,25 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
     font-size: 11px; font-weight: 800; color: var(--text-subtle);
     letter-spacing: .04em; white-space: nowrap; padding-top: 7px;
 }
+/* 띠 안쪽: 위에 Things3 할 일, 아래에 장기 항목 열 */
+.lt-strip-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+
+/* Things3 Today 할 일. 한 줄에 세 개씩. 누르면 Things3 가 그 할일을 연다. */
+.wk-tasks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px 10px; }
+.wk-tasks[hidden] { display: none; }
+.wk-task {
+    display: block; min-width: 0; padding: 4px 10px;
+    font-size: 12px; font-weight: 600; text-decoration: none; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+a.wk-task:hover { border-color: var(--border-strong); }
+.wk-task::before {
+    content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px;
+    vertical-align: 1px; border-radius: 2px; border: 1.5px solid var(--text-subtle);
+}
+@media (max-width: 720px) { .wk-tasks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* 같은 영역은 같은 열에 모으고 최대 세 열. 좁은 화면에서는 한 열로 접힌다. */
 .lt-strip-cols {
     flex: 1 1 auto; min-width: 0;

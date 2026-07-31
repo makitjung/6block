@@ -19,10 +19,16 @@ from app.common import (
     week_todos,
 )
 from app.config import hhmm_to_min
-from app.db import get_conn, get_weekday_concepts
+from app.db import get_conn, get_settings, get_weekday_concepts
 from app.integrations import gcal, gcal_write, things
 
 router = APIRouter()
+
+
+def _hidden_task_titles() -> set[str]:
+    """설정에서 정한 '화면에 안 보이게 할 할일 제목'(쉼표 구분). 제목이 정확히 같은 것만."""
+    raw = get_settings().get("hide_task_titles", "") or ""
+    return {t.strip() for t in raw.split(",") if t.strip()}
 
 
 @router.get("/today")
@@ -65,7 +71,13 @@ def _day_agenda(blocks, d, is_today):
     반환: (cal_events 전체, task_list 전체, block_id -> [시간 항목...]).
     """
     cal_events = gcal.events_for_date(d)
-    task_list = things.today_tasks(d, include_overdue=is_today)
+    # 설정에서 숨기기로 한 제목은 여기서 한 번에 걷어 낸다. 주간 띠 칩·블록 팝오버·개수가
+    # 모두 이 목록에서 나오므로, 한 군데서 빼면 화면 어디에도 나오지 않는다.
+    hidden = _hidden_task_titles()
+    task_list = [
+        t for t in things.today_tasks(d, include_overdue=is_today)
+        if t["title"].strip() not in hidden
+    ]
     timed: list = []
     for ev in cal_events:
         if not ev["all_day"] and ev["start_min"] is not None:
@@ -899,6 +911,8 @@ def api_day(date_str: str):
                     "deadline": t["deadline"],
                     "overdue": t["overdue"],
                     "tags": t.get("tags", []),
+                    # 주간 띠 할일 칩을 things:///show?id= 로 다시 걸기 위해 함께 보낸다.
+                    "id": t.get("id", ""),
                 }
                 for t in task_list
             ],

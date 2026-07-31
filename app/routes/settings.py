@@ -490,7 +490,8 @@ async def settings_save(request: Request):
     form = await request.form()
     allowed = {"start_view", "default_theme", "pomo_auto", "pomo_end_alarm", "collapse_blocks",
                "pomo_start_sound", "pomo_start_sec", "pomo_end_sound", "pomo_end_sec",
-               "show_location", "show_did", "show_reflect", "show_slot_play", "show_inbox"}
+               "show_location", "show_did", "show_reflect", "show_slot_play", "show_inbox",
+               "hide_task_titles"}
     for key in allowed:
         if form.get(key) is not None:
             set_setting(key, form.get(key))

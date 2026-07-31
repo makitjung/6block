@@ -1012,6 +1012,79 @@
         });
     }
 
+    // ---- 화면 맨 위 구글 일정 배너 ---------------------------------------
+    // 일정 칸의 목록은 감춰 두고, 그날 일정을 여기서 한 건씩 번갈아 보여 준다.
+    // 제목이 길면 CSS(text-overflow)가 앞부분만 남기고 …로 자른다.
+    const HERO_CAL_MS = 4000;
+    let heroCalItems = [];
+    let heroCalKey = '';
+    let heroCalIdx = 0;
+    let heroCalTimer = null;
+
+    function paintHeroCal() {
+        const box = document.getElementById('hero-cal');
+        const it = heroCalItems[heroCalIdx];
+        if (!box || !it) return;
+        box.querySelector('.hero-cal-t').textContent = it.t;
+        box.querySelector('.hero-cal-x').textContent = it.x;
+        box.title = (it.t ? it.t + ' · ' : '') + it.x;
+    }
+
+    function startHeroCal() {
+        const box = document.getElementById('hero-cal');
+        if (!box) return;
+        clearInterval(heroCalTimer);
+        heroCalTimer = null;
+        box.hidden = !heroCalItems.length;
+        if (!heroCalItems.length) return;
+        if (heroCalIdx >= heroCalItems.length) heroCalIdx = 0;
+        paintHeroCal();
+        if (heroCalItems.length < 2) return;
+        heroCalTimer = setInterval(() => {
+            if (document.hidden) return;
+            heroCalIdx = (heroCalIdx + 1) % heroCalItems.length;
+            // 글자를 먼저 갈아 끼우고 애니메이션은 덧입히기만 한다. 예전에는 먼저 흐리게 만든 뒤
+            // setTimeout 으로 되살렸는데, 그 사이 탭이 뒤로 가면 타이머가 눌려 배너가 빈 채로 남았다.
+            paintHeroCal();
+            box.classList.remove('is-swap');
+            void box.offsetWidth;          // 같은 애니메이션을 처음부터 다시 돌리기 위한 리플로우
+            box.classList.add('is-swap');
+        }, HERO_CAL_MS);
+    }
+
+    // 목록이 그대로면 돌아가던 순번을 건드리지 않는다(60초 폴링마다 처음으로 돌아가지 않게).
+    function setHeroCalItems(items) {
+        const key = JSON.stringify(items);
+        if (key === heroCalKey) return;
+        heroCalKey = key;
+        heroCalItems = items;
+        heroCalIdx = 0;
+        startHeroCal();
+    }
+
+    function heroCalFromPage() {
+        setHeroCalItems([...document.querySelectorAll('#agenda-events .agenda-row.event')]
+            .map((r) => ({
+                t: r.querySelector('.t')?.textContent || '',
+                x: r.querySelector('.x')?.textContent || '',
+            })));
+    }
+
+    // ---- 주간 띠의 Things3 할 일 칩 --------------------------------------
+    function renderWkTasks(tasks) {
+        const box = document.getElementById('wk-tasks');
+        if (!box) return;
+        box.textContent = '';
+        tasks.forEach((t) => {
+            // id 가 있으면 누를 때 Things3 가 그 할일을 연다(폰·맥 모두 같은 주소).
+            const node = t.id ? el('a', 'wk-task', t.title) : el('span', 'wk-task', t.title);
+            if (t.id) node.href = 'things:///show?id=' + encodeURIComponent(t.id);
+            node.title = t.title;
+            box.appendChild(node);
+        });
+        box.hidden = !tasks.length;
+    }
+
     function renderAgenda(data) {
         // 구글 일정과 Things3 할 일을 각각의 칸에 따로 그린다(분리 표시).
         const evBox = document.getElementById('agenda-events');
@@ -1041,6 +1114,11 @@
             });
             if (!tasks.length) taskBox.appendChild(el('div', 'ctx-empty agenda-empty', 'Things3 Today가 비어 있습니다.'));
         }
+        // 감춘 목록에서 실제로 보이는 두 자리(맨 위 일정 배너·주간 띠 할 일)를 함께 갱신한다.
+        setHeroCalItems(events.map((ev) => ({
+            t: ev.all_day ? '종일' : (ev.start || ''), x: ev.title,
+        })));
+        renderWkTasks(tasks);
         setupAgendaMoreAll();
     }
     function renderBlockAgendas(data) {
@@ -1378,10 +1456,10 @@
                     .then((d) => { if (d && d.ok) location.reload(); });
             }));
 
-        // 동작 설정(그룹이 나뉘어 있어도 data-key를 가진 select면 모두 같은 방식으로 저장)
-        document.querySelectorAll('select[data-key]').forEach((sel) => {
-            sel.addEventListener('change', () => {
-                const o = {}; o[sel.dataset.key] = sel.value;
+        // 동작 설정(그룹이 나뉘어 있어도 data-key를 가진 select·text면 모두 같은 방식으로 저장)
+        document.querySelectorAll('select[data-key], input[data-key]').forEach((f) => {
+            f.addEventListener('change', () => {
+                const o = {}; o[f.dataset.key] = f.value;
                 postForm('/settings/save', o).then(() => toast('설정 저장'));
             });
         });
@@ -3422,6 +3500,17 @@
         // 테마 토글
         document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
 
+        // 맨 아래 '하루 진행'(코어 실행·완료 슬롯·기록 슬롯). 기본은 접힘.
+        const kpiBtn = document.getElementById('kpi-toggle');
+        kpiBtn?.addEventListener('click', () => {
+            const row = document.getElementById('kpi-row');
+            if (!row) return;
+            const show = row.hidden;
+            row.hidden = !show;
+            kpiBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+            kpiBtn.textContent = show ? '하루 진행 접기' : '하루 진행';
+        });
+
         // 빠른 수집함. 한글 IME 조합 Enter(229/isComposing)는 무시해 2회 추가를 막는다.
         document.getElementById('inbox-add')?.addEventListener('click', inboxAdd);
         document.getElementById('inbox-input')?.addEventListener('keydown', (e) => {
@@ -3494,6 +3583,7 @@
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {
             fillTaskPopsFromPage();   // 첫 폴링 전까지 블록 팝오버를 채워 둔다
+            heroCalFromPage();        // 맨 위 일정 배너도 서버가 그려 준 목록에서 시작한다
             setInterval(pollDay, 60000);
             let hiddenAt = 0;
             document.addEventListener('visibilitychange', () => {

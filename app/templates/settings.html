@@ -86,6 +86,14 @@
                         <option value="0" {% if settings.show_inbox == '0' %}selected{% endif %}>끔</option>
                     </select>
                 </label>
+                <label class="set-field set-field-wide">
+                    <span class="set-label">숨길 할일 제목
+                        <button type="button" class="hint" data-hint="Things3 Today에 늘 있지만 화면에서는 볼 필요가 없는 할일을 걸러 냅니다. 쉼표로 여러 개를 적을 수 있고, 제목이 정확히 같은 것만 걸립니다. 주간 띠 칩과 블록 '할 일' 팝오버에서 함께 빠집니다." aria-label="설명">?</button>
+                        <span class="set-sub">쉼표로 구분 · 오늘 탭 주간 띠에서 제외</span></span>
+                    <input type="text" data-key="hide_task_titles"
+                           value="{{ settings.hide_task_titles or '' }}"
+                           placeholder="예: 체크/잡일(2분), 아침 점검" autocomplete="off">
+                </label>
             </div>
         </section>
 

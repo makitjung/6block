@@ -20,9 +20,25 @@
             <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날">‹</a>
             <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날">›</a>
         </div>
-        <div class="hero-date">
-            <div class="hero-date-main">{{ date_str | pretty_date }}{% if weekday_concept %} <span class="hero-wdc">({{ weekday_concept }})</span>{% endif %}</div>
-            <div class="hero-date-sub mono">{{ date_str }}{% if not is_today %} · <a href="/today">오늘로</a>{% endif %}</div>
+        {# 날짜·요일 / 그 아래 오늘 컨셉 / 그 옆에 구글 일정(여러 개면 번갈아) #}
+        <div class="hero-main">
+            <div class="hero-date">
+                <div class="hero-date-main">{{ date_str | pretty_date }}{% if weekday_concept %} <span class="hero-wdc">({{ weekday_concept }})</span>{% endif %}</div>
+                <div class="hero-date-sub mono">{{ date_str }}{% if not is_today %} · <a href="/today">오늘로</a>{% endif %}</div>
+            </div>
+            <div class="hero-concept">
+                <span class="hc-label">오늘 컨셉</span>
+                {% for i in range(3) %}
+                <input type="text" name="concept{{ i + 1 }}" value="{{ concepts[i] }}"
+                       placeholder="컨셉 {{ i + 1 }}" autocomplete="off"
+                       aria-label="오늘 컨셉 {{ i + 1 }}">
+                {% endfor %}
+            </div>
+            {# 일정 제목은 app.js 가 번갈아 갈아 끼운다. 첫 화면이 비어 보이지 않게 첫 건만 미리 그린다 #}
+            <div class="hero-cal" id="hero-cal"{% if not cal_events %} hidden{% endif %}>
+                <span class="hero-cal-t mono">{% if cal_events %}{% if cal_events[0].all_day %}종일{% else %}{{ cal_events[0].start }}{% endif %}{% endif %}</span>
+                <span class="hero-cal-x">{% if cal_events %}{{ cal_events[0].title }}{% endif %}</span>
+            </div>
         </div>
         <div class="hero-actions">
             <a href="/day/{{ date_str }}" class="ghost-btn">새로고침</a>
@@ -30,47 +46,41 @@
         </div>
     </section>
 
-    <!-- 하루 진행. 주간 탭 지표와 같은 형식이라 두 화면을 오가도 읽는 법이 같다. -->
-    <section class="kpi-row">
-        <div class="kpi">
-            <span class="kpi-label">코어 실행</span>
-            <span class="kpi-value mono"><strong>{{ day_stats.core_achieved }}</strong>/{{ day_stats.core_planned }}</span>
-            <div class="kpi-bar"><span style="width: {{ (day_stats.core_achieved / day_stats.core_planned * 100) | round(0) if day_stats.core_planned else 0 }}%"></span></div>
-        </div>
-        <div class="kpi">
-            <span class="kpi-label">완료 슬롯</span>
-            <span class="kpi-value mono"><strong>{{ day_stats.done }}</strong>/{{ day_stats.total }}</span>
-            <div class="kpi-bar"><span style="width: {{ (day_stats.done / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
-        </div>
-        <div class="kpi">
-            <span class="kpi-label">기록 슬롯</span>
-            <span class="kpi-value mono"><strong>{{ day_stats.recorded }}</strong>/{{ day_stats.total }}</span>
-            <div class="kpi-bar"><span style="width: {{ (day_stats.recorded / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
-        </div>
-    </section>
-
-    {% if lt_today %}
-    <!-- 이 날짜에 걸친 장기 항목(장기 탭 계획 막대). 읽기 전용 띠, 누르면 장기 탭으로 -->
-    <section class="lt-strip" aria-label="이 날짜에 걸친 장기 항목">
+    {% if lt_today or task_list %}
+    <!-- 이 날짜에 걸친 장기 항목(장기 탭 계획 막대) + Things3 Today 할 일. 읽기 전용 띠 -->
+    <section class="lt-strip" aria-label="이번 주 계획과 오늘 할 일">
         <span class="lt-strip-label">주간</span>
-        <button type="button" class="hint" data-hint="이 날짜에 걸친 이번 주 계획입니다. 장기 탭에서 만든 최하위 항목만 내려옵니다. 누르면 장기 탭으로 갑니다." aria-label="설명">?</button>
-        {# 같은 영역은 같은 열에 모으고 최대 세 열까지만 쓴다 #}
-        <div class="lt-strip-cols" style="--lt-cols: {{ lt_today_cols | length }}">
-            {% for col in lt_today_cols %}
-            <div class="lt-strip-col">
-                {% for it in col %}
-                <a class="lt-chip" href="/plan?level=week&amp;anchor={{ date_str }}"
-                   title="{{ it.area_name }}{% if it.blocks %} · {{ it.blocks }}{% endif %} · {% if it.parent_title %}{{ it.parent_title }} › {% endif %}{{ it.title }}{% if it.goal %} · {{ it.goal }}{% endif %} · 진척 {{ it.progress }}% · {{ it.dday }}">
-                    <span class="lt-chip-area">{{ it.area_name }}</span>
-                    {% if it.blocks %}<span class="lt-chip-blk">{{ it.blocks }}</span>{% endif %}
-                    {# 그 주에 따로 적어 둔 계획이 있으면 그것을, 없으면 장기 이름을 그대로 #}
-                    <span class="lt-chip-title">{{ it.goal or it.title }}</span>
-                    <span class="lt-chip-dday mono">{{ it.dday }}</span>
-                    <span class="lt-chip-prog mono">{{ it.progress }}%</span>
-                </a>
+        <div class="lt-strip-body">
+            {# Things3 Today 할 일. 한 줄에 세 개씩, 누르면 Things3 가 그 할일을 연다.
+               설정 '숨길 할일 제목'에 적은 것은 서버에서 이미 빠진 채로 온다.
+               폴링(60초)이 app.js 에서 이 자리를 통째로 다시 그린다. #}
+            <div class="wk-tasks" id="wk-tasks"{% if not task_list %} hidden{% endif %}>
+                {% for t in task_list %}
+                {% if t.id %}
+                <a class="wk-task" href="things:///show?id={{ t.id }}" title="{{ t.title }}">{{ t.title }}</a>
+                {% else %}
+                <span class="wk-task" title="{{ t.title }}">{{ t.title }}</span>
+                {% endif %}
                 {% endfor %}
             </div>
-            {% endfor %}
+            {# 같은 영역은 같은 열에 모으고 최대 세 열까지만 쓴다 #}
+            <div class="lt-strip-cols" style="--lt-cols: {{ lt_today_cols | length }}">
+                {% for col in lt_today_cols %}
+                <div class="lt-strip-col">
+                    {% for it in col %}
+                    <a class="lt-chip" href="/plan?level=week&amp;anchor={{ date_str }}"
+                       title="{{ it.area_name }}{% if it.blocks %} · {{ it.blocks }}{% endif %} · {% if it.parent_title %}{{ it.parent_title }} › {% endif %}{{ it.title }}{% if it.goal %} · {{ it.goal }}{% endif %} · 진척 {{ it.progress }}% · {{ it.dday }}">
+                        <span class="lt-chip-area">{{ it.area_name }}</span>
+                        {% if it.blocks %}<span class="lt-chip-blk">{{ it.blocks }}</span>{% endif %}
+                        {# 그 주에 따로 적어 둔 계획이 있으면 그것을, 없으면 장기 이름을 그대로 #}
+                        <span class="lt-chip-title">{{ it.goal or it.title }}</span>
+                        <span class="lt-chip-dday mono">{{ it.dday }}</span>
+                        <span class="lt-chip-prog mono">{{ it.progress }}%</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </section>
     {% endif %}
@@ -128,19 +138,7 @@
             </div>
         </details>
 
-        <div class="ctx-section concept-section">
-            <div class="ctx-head">오늘 컨셉
-                <button type="button" class="hint" data-hint="오늘 하루를 끌고 갈 세 가지 낱말입니다. 설정의 요일 컨셉과는 별개로 그날만 적습니다." aria-label="설명">?</button>
-            </div>
-            <div class="concept-row">
-                {% for i in range(3) %}
-                <label class="concept-cell">
-                    <span class="concept-no">{{ i + 1 }}</span>
-                    <input type="text" name="concept{{ i + 1 }}" value="{{ concepts[i] }}" placeholder="컨셉 {{ i + 1 }}" autocomplete="off">
-                </label>
-                {% endfor %}
-            </div>
-        </div>
+        {# 오늘 컨셉은 화면 맨 위 날짜 바로 아래(hero-concept)로 옮겼다 #}
 
         {% if st.show_inbox != '0' %}
         <div class="ctx-section">
@@ -179,37 +177,45 @@
                 {% else %}
                 <div class="agenda-hint mono">일정 쓰기를 켜려면 계획 캘린더를 서비스계정에 공유하고 .env의 GCAL_WRITE_EVENTS_CALENDAR_ID를 채우세요.</div>
                 {% endif %}
-                <div class="agenda" id="agenda-events">
-                    {% for ev in cal_events %}
-                    <div class="agenda-row event cal-{{ ev.color }}">
-                        <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
-                        <span class="x">{{ ev.title }}</span>
+                {# 목록은 숨기고 입력만 보인다. 일정은 화면 맨 위(hero-cal)에서 번갈아 보고,
+                   블록별 일정은 각 블록 '일정' 팝오버에서 본다. 다만 DOM 에서 지우지는 않는다.
+                   폴링이 이 자리를 갱신하고 app.js 가 여기서 값을 읽어 다른 자리를 채운다. #}
+                <div class="agenda-hidden" hidden>
+                    <div class="agenda" id="agenda-events">
+                        {% for ev in cal_events %}
+                        <div class="agenda-row event cal-{{ ev.color }}">
+                            <span class="t">{% if ev.all_day %}종일{% else %}{{ ev.start }}{% endif %}</span>
+                            <span class="x">{{ ev.title }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if not cal_events %}<div class="ctx-empty agenda-empty">오늘 일정이 없습니다.</div>{% endif %}
                     </div>
-                    {% endfor %}
-                    {% if not cal_events %}<div class="ctx-empty agenda-empty">오늘 일정이 없습니다.</div>{% endif %}
+                    <button type="button" class="agenda-more" data-target="agenda-events" hidden></button>
                 </div>
-                <button type="button" class="agenda-more" data-target="agenda-events" hidden></button>
             </div>
             <div class="agenda-col">
                 <div class="ctx-head">Things3 할 일</div>
                 {% if things_write_on %}
                 <div class="agenda-add">
-                    <input type="text" id="task-input" placeholder="할일 추가 → Things3" autocomplete="off" enterkeyhint="done">
+                    <input type="text" id="task-input" placeholder="할일 추가 → Things3 수집함" autocomplete="off" enterkeyhint="done">
                     <button type="button" class="inbox-add" id="task-add" aria-label="할일 추가">+</button>
                 </div>
                 {% endif %}
-                <div class="agenda" id="agenda-tasks">
-                    {% for t in task_list %}
-                    <div class="agenda-row task">
-                        {% if t.time %}<span class="t">{{ t.time }}</span>{% endif %}
-                        <span class="x">{{ t.title }}</span>
-                        {% for tg in (t.tags or []) %}<span class="task-tag">{{ tg }}</span>{% endfor %}
-                        {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
+                {# 목록은 숨기고 입력만 보인다. 할 일은 맨 위 주간 띠에서 본다(위 주석과 같은 이유로 남겨 둔다) #}
+                <div class="agenda-hidden" hidden>
+                    <div class="agenda" id="agenda-tasks">
+                        {% for t in task_list %}
+                        <div class="agenda-row task">
+                            {% if t.time %}<span class="t">{{ t.time }}</span>{% endif %}
+                            <span class="x">{{ t.title }}</span>
+                            {% for tg in (t.tags or []) %}<span class="task-tag">{{ tg }}</span>{% endfor %}
+                            {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
+                        </div>
+                        {% endfor %}
+                        {% if not task_list %}<div class="ctx-empty agenda-empty">Things3 Today가 비어 있습니다.</div>{% endif %}
                     </div>
-                    {% endfor %}
-                    {% if not task_list %}<div class="ctx-empty agenda-empty">Things3 Today가 비어 있습니다.</div>{% endif %}
+                    <button type="button" class="agenda-more" data-target="agenda-tasks" hidden></button>
                 </div>
-                <button type="button" class="agenda-more" data-target="agenda-tasks" hidden></button>
             </div>
         </div>
     </section>
@@ -443,6 +449,29 @@
         </div>
     </details>
     {% endif %}
+
+    {# 하루 진행 지표. 평소에는 볼 일이 없어 맨 아래에 접어 두고 버튼으로만 편다. #}
+    <div class="kpi-fold">
+        <button type="button" id="kpi-toggle" class="ghost-btn kpi-toggle" aria-expanded="false"
+                aria-controls="kpi-row">하루 진행</button>
+        <section class="kpi-row" id="kpi-row" hidden>
+            <div class="kpi">
+                <span class="kpi-label">코어 실행</span>
+                <span class="kpi-value mono"><strong>{{ day_stats.core_achieved }}</strong>/{{ day_stats.core_planned }}</span>
+                <div class="kpi-bar"><span style="width: {{ (day_stats.core_achieved / day_stats.core_planned * 100) | round(0) if day_stats.core_planned else 0 }}%"></span></div>
+            </div>
+            <div class="kpi">
+                <span class="kpi-label">완료 슬롯</span>
+                <span class="kpi-value mono"><strong>{{ day_stats.done }}</strong>/{{ day_stats.total }}</span>
+                <div class="kpi-bar"><span style="width: {{ (day_stats.done / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
+            </div>
+            <div class="kpi">
+                <span class="kpi-label">기록 슬롯</span>
+                <span class="kpi-value mono"><strong>{{ day_stats.recorded }}</strong>/{{ day_stats.total }}</span>
+                <div class="kpi-bar"><span style="width: {{ (day_stats.recorded / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
+            </div>
+        </section>
+    </div>
 
     <div class="actions-sticky">
         <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
