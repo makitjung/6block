@@ -40,6 +40,16 @@ def get(path, headers=None):
         return e.code, e.read().decode("utf-8")
 
 
+def get_binary(path):
+    """이미지처럼 utf-8 이 아닌 응답용. (상태코드, content-type, 바이트) 를 준다."""
+    req = urllib.request.Request(BASE + path)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.getcode(), r.headers.get("Content-Type", ""), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("Content-Type", ""), e.read()
+
+
 def post(path, data, headers=None):
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(BASE + path, data=body, method="POST")
@@ -687,6 +697,88 @@ def run_checks(db_path):
           '<span class="hero-wdc">(금요일컨셉)</span>' in html)
     code, html = get("/day/2026-07-30")          # 목요일은 비어 있어 괄호도 없음
     check("컨셉이 비면 괄호도 없음", "hero-wdc" not in html)
+
+    # 22. 아이콘: 아이폰 홈화면은 뿌리의 PNG 를 찾는다(SVG 는 무시한다)
+    for path, ctype in (("/favicon.ico", "image/x-icon"),
+                        ("/apple-touch-icon.png", "image/png"),
+                        ("/static/icon.png", "image/png")):
+        code, got, blob = get_binary(path)      # 이미지라 utf-8 로 읽으면 깨진다
+        check(f"{path} 응답 {ctype}", code == 200 and got.startswith(ctype),
+              f"{code} {got}")
+        check(f"{path} 내용 있음", len(blob) > 500, len(blob))
+    code, html = get("/today")
+    check("apple-touch-icon 은 PNG", 'rel="apple-touch-icon"' in html
+          and 'apple-touch-icon.png' in html)
+
+    # 23. 정적 파일 캐시: ?v= 가 붙으면 오래 캐시, 없으면 재검증
+    req = urllib.request.Request(BASE + "/static/app.js?v=1")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        cc_ver = r.headers.get("Cache-Control", "")
+    req = urllib.request.Request(BASE + "/static/app.js")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        cc_raw = r.headers.get("Cache-Control", "")
+    check("?v= 붙은 정적 파일은 immutable", "immutable" in cc_ver, cc_ver)
+    check("?v= 없는 정적 파일은 no-cache", cc_raw == "no-cache", cc_raw)
+    req = urllib.request.Request(BASE + "/today")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        check("HTML no-cache", r.headers.get("Cache-Control") == "no-cache",
+              r.headers.get("Cache-Control"))
+
+    # 24. 상태판: 연동·백업·기록·오류를 한 주소에서 준다
+    code, raw = get("/api/health")
+    st = json.loads(raw)
+    check("/api/health 200", code == 200, code)
+    for key in ("gcal", "gcal_write", "events", "achieve", "things", "ai",
+                "backup", "records", "errors", "version"):
+        check(f"상태판에 {key} 포함", key in st, sorted(st))
+    check("오류가 없으면 옛 트레이스백을 끌어오지 않는다",
+          st["errors"]["count"] or not st["errors"]["last"], st["errors"])
+
+    # 25. 구분 템플릿 격자는 펼칠 때 그린다(설정 화면에 42칸을 미리 싣지 않는다)
+    code, out = post("/settings/template/add", {"name": "스모크템플릿"})
+    tpl_id = out.get("id") if isinstance(out, dict) else None
+    code, html = get("/settings")
+    check("템플릿 격자는 비어서 나간다", 'class="set-tpl-cell' not in html)
+    check("격자를 그릴 값은 실려 나간다",
+          "__tplCells" in html and "__tplCats" in html and "__tplBlocks" in html)
+    if tpl_id:
+        code, out = post("/settings/template/cell", {
+            "template_id": tpl_id, "weekday": "3", "block_label": "B2",
+            "category_id": "",
+        })
+        check("템플릿 칸 저장(미지정)", code == 200 and out.get("ok"), out)
+        post("/settings/template/delete", {"id": tpl_id})
+
+    # 26. 하루 마감 · 기록이 빈 슬롯 모으기
+    #     날짜를 지정해 열면 오늘이 아니므로 목록이 없어야 한다(지나간 시각 기준이라).
+    code, html = get("/day/2026-07-30")
+    check("지난 날짜에는 빈 슬롯 목록이 없다", 'class="cu-row"' not in html)
+    code, html = get("/today")
+    rows = re.findall(r'<div class="cu-row" data-slot="(\d+)"', html)
+    check("오늘은 기록이 빈 슬롯을 모아 준다(0개 이상)", isinstance(rows, list))
+    if rows:
+        sid = rows[0]
+        code, out = post("/save/field", {"entity": "slot", "id": sid,
+                                         "field": "did_text", "value": "스모크 한일"})
+        check("빈 슬롯 칸에 적으면 저장된다", code == 200 and out.get("ok"), out)
+        r = db_query(db_path, "SELECT did_text FROM slots WHERE id = ?", (sid,))
+        check("한 일이 그 슬롯에 들어갔다",
+              r and r[0]["did_text"] == "스모크 한일", r and r[0]["did_text"])
+        code, html = get("/today")
+        check("기록이 생기면 목록에서 빠진다",
+              f'data-slot="{sid}"' not in re.sub(r'(?s).*?id="cu-list"', '', html)
+              .split("</div>\n            </div>")[0])
+        post("/save/field", {"entity": "slot", "id": sid,
+                             "field": "did_text", "value": ""})
+
+    # 27. 하루 마감의 '감사 한 줄'은 고결감 작성창 하나로 합쳐졌다
+    code, html = get("/today")
+    check("감사 한 줄 칸은 사라졌다", 'id="sd-thanks"' not in html)
+    check("고결감 작성창을 여는 버튼이 있다", 'class="ghost-btn open-reflect"' in html)
+
+    # 28. Things3 목록을 블록마다 다시 싣지 않는다
+    check("블록 할일 팝오버는 비어서 나간다",
+          html.count('class="hover-pop task-pop"></div>') == html.count("task-pop"))
 
 
 def main():

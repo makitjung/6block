@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.common import BASE_DIR, KST, asset_ver
 from app.config import ALLOWED_ORIGINS
 from app.db import get_settings, init_db
-from app.integrations import gcal, gcal_write, things
+from app.integrations import gcal, things
 from app.routes import analytics, day, plan, reflect, settings, week
 
 
@@ -163,16 +163,6 @@ def favicon():
 def apple_touch_icon():
     return FileResponse(BASE_DIR / "static" / "apple-touch-icon.png",
                         media_type="image/png")
-
-
-@app.get("/api/health")
-def api_health():
-    """연동 상태 점검. 브라우저에서 /api/health로 캘린더·Things 연결 확인."""
-    return {
-        "gcal": gcal.status(),
-        "gcal_write": gcal_write.status(),
-        "things": things.status(),
-    }
 
 
 @app.get("/api/now")

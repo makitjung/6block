@@ -332,7 +332,20 @@
 </section>
 
 <section class="set-group" id="set-g-server" hidden>
-    <h2 class="set-group-title">서버 <span class="set-group-sub">코드·환경변수를 바꾼 뒤 반영</span></h2>
+    <h2 class="set-group-title">서버 <span class="set-group-sub">상태 확인과 코드·환경변수 반영</span></h2>
+
+    {# 무엇이 고장 났는지 로그를 뒤지지 않고 알 수 있어야 한다. 연동·백업·기록·오류를 한 자리에
+       모은다. 구글 조회와 AppleScript 가 섞여 몇 초 걸리므로 화면이 뜬 뒤에 따로 불러온다. #}
+    <section class="card">
+        <h2 class="card-title">상태
+            <button type="button" class="hint" data-hint="연동·백업·기록·오류를 한 번에 확인합니다. 빨간 줄이 있으면 그것부터 보면 됩니다. 느린 점검이 섞여 있어 몇 초 걸릴 수 있습니다." aria-label="설명">?</button>
+            <span class="card-sub"><button type="button" class="ghost-btn" id="set-status-refresh">다시 확인</button></span>
+        </h2>
+        <div class="set-status-grid" id="set-status-grid">
+            <div class="ctx-empty" id="set-status-loading">확인 중…</div>
+        </div>
+    </section>
+
     <section class="card">
         <h2 class="card-title">재시작 <span class="card-sub">기록·백업·내보내기는 데이터 탭에 있습니다</span></h2>
         <div class="set-data-row">

@@ -1200,6 +1200,82 @@
         if (want && tabs.some((b) => b.dataset.tab === want)) show(want);
     }
 
+    // 설정 탭 상태판. 무엇이 고장 났는지 로그를 뒤지지 않고 알 수 있게 한 자리에 모은다.
+    // /api/health 는 구글 조회와 AppleScript 가 섞여 몇 초 걸려서, 화면이 뜬 뒤 따로 부른다.
+    function bindStatusPanel() {
+        const grid = document.getElementById('set-status-grid');
+        if (!grid) return;
+
+        // ok=true 초록, false 빨강, null 회색(설정 안 함 — 고장이 아니다)
+        const row = (label, ok, text) => {
+            const r = el('div', 'set-st-row' + (ok === true ? ' ok' : ok === false ? ' bad' : ' off'));
+            r.appendChild(el('span', 'set-st-label', label));
+            r.appendChild(el('span', 'set-st-val', text));
+            return r;
+        };
+        const load = () => {
+            grid.textContent = '';
+            grid.appendChild(el('div', 'ctx-empty', '확인 중…'));
+            fetch('/api/health', { cache: 'no-store' })
+                .then((r) => r.json())
+                .then((d) => {
+                    grid.textContent = '';
+                    const frag = document.createDocumentFragment();
+
+                    // 구글 캘린더 읽기: 캘린더마다 한 줄
+                    if (Array.isArray(d.gcal)) {
+                        d.gcal.forEach((c) => frag.appendChild(row(
+                            '캘린더 읽기 · ' + c.name,
+                            !!c.reachable,
+                            c.reachable ? c.vevents + '개 일정' : (c.reason || '연결 실패'),
+                        )));
+                    } else {
+                        frag.appendChild(row('캘린더 읽기', null, d.gcal?.reason || '미설정'));
+                    }
+                    const link = (label, o, offText) => frag.appendChild(row(
+                        label,
+                        o.enabled ? true : (o.calendar || o.reason ? false : null),
+                        o.enabled ? '연결됨' : (o.reason || offText),
+                    ));
+                    link('고결감 캘린더 쓰기', d.gcal_write, '미설정');
+                    link('일정 캘린더 쓰기', d.events, '미설정');
+                    link('성과 캘린더 쓰기', d.achieve, '미설정');
+                    frag.appendChild(row('Things3', d.things?.ok === true,
+                        d.things?.ok ? d.things.today + '개 Today' : (d.things?.reason || '연결 안 됨')));
+                    frag.appendChild(row('AI', d.ai?.enabled ? true : null,
+                        d.ai?.enabled ? d.ai.model : (d.ai?.has_key ? '주소·모델 필요' : '쓰지 않음')));
+
+                    // 백업: 하루라도 밀리면 빨강(매일 23시에 돌아야 한다)
+                    (d.backup || []).forEach((b) => frag.appendChild(row(
+                        '백업 · ' + b.label,
+                        b.ok ? (b.age !== null && b.age <= 1) : false,
+                        b.ok ? `${b.name} · ${b.kb}KB · ${b.age === null ? '?' : b.age}일 전` : '없음',
+                    )));
+
+                    // 기록 신선도: 이틀 넘게 비면 기록이 끊긴 것이다.
+                    // 앞날에 미리 적어 둔 기록이 있으면 경과일이 음수가 되므로 그때는 안 붙인다.
+                    const rec = d.records || {};
+                    const ago = (rec.age === null || rec.age < 0) ? ''
+                        : (rec.age === 0 ? ' · 오늘' : ` · ${rec.age}일 전`);
+                    frag.appendChild(row('마지막 기록', rec.age !== null && rec.age <= 1,
+                        rec.last + ago));
+
+                    // 오류: 로그 끝부분의 500 응답 수
+                    const er = d.errors || {};
+                    frag.appendChild(row('최근 오류', !er.count,
+                        er.count ? `500 응답 ${er.count}건 · ${er.last || ''}` : '없음'));
+                    frag.appendChild(row('서버 코드 버전', null, d.version || ''));
+                    grid.appendChild(frag);
+                })
+                .catch(() => {
+                    grid.textContent = '';
+                    grid.appendChild(el('div', 'ctx-empty', '상태를 불러오지 못했습니다 · 서버 연결을 확인하세요'));
+                });
+        };
+        document.getElementById('set-status-refresh')?.addEventListener('click', load);
+        load();
+    }
+
     // 구분 템플릿 격자(요일 7 × 코어블록 6 = 42칸)를 카드를 펼칠 때 그린다.
     // 서버에서 미리 그려 보내면 템플릿 하나당 40KB 넘게 붙어, 템플릿을 늘릴수록
     // 설정 화면이 계속 무거워졌다. 값은 window.__tpl* 에 JSON 으로만 실려 온다.
@@ -1361,6 +1437,7 @@
             });
         });
         buildTemplateGrids();
+        bindStatusPanel();
 
         // 서버(launchd) 재시작: 요청 후 서버가 다시 올라오면 자동 새로고침
         const restartBtn = document.getElementById('set-restart-btn');
@@ -3166,6 +3243,80 @@
     }
 
     // ---- 하루 마감(오늘 감사 한 줄 → 고결감 / 내일 가장 중요한 일 → 내일 목표) ----
+    // 하루 마감 '기록이 빈 슬롯'. 여기서 적으면 곧바로 저장하고 위 블록의 같은 슬롯에도 옮긴다.
+    // 위 슬롯 줄과 이름(name)이 겹치면 폼 저장 때 서로 덮어써서, 이 칸들은 이름 없이 두고
+    // data-slot 으로 직접 저장한다.
+    function bindCatchup() {
+        const list = document.getElementById('cu-list');
+        if (!list) return;
+        const countEl = document.getElementById('cu-count');
+        const emptyEl = document.getElementById('cu-empty');
+
+        // 위 블록에 있는 같은 슬롯의 칸들. 두 화면이 어긋나 보이지 않게 함께 맞춘다.
+        const mirror = (id, did, done) => {
+            const ta = document.querySelector(`textarea[name="did_${id}"]`);
+            if (ta && did !== null) {
+                ta.value = did;
+                ta.closest('.slot-did')?.querySelector('.slot-did-btn')
+                    ?.classList.toggle('has-did', !!did);
+            }
+            const cb = document.querySelector(`.slot-check[data-slot="${id}"]`);
+            if (cb && done !== null) {
+                cb.checked = done;
+                cb.closest('.slot')?.classList.toggle('is-done', done);
+            }
+        };
+        const settle = (row) => {
+            row.classList.add('is-filled');
+            const left = list.querySelectorAll('.cu-row:not(.is-filled)').length;
+            if (countEl) countEl.textContent = left;
+            if (emptyEl) emptyEl.hidden = left > 0;
+        };
+
+        list.querySelectorAll('.cu-row').forEach((row) => {
+            const id = row.dataset.slot;
+            const input = row.querySelector('.cu-did');
+            const check = row.querySelector('.cu-check');
+            const same = row.querySelector('.cu-same');
+
+            const saveDid = () => {
+                const v = input.value.trim();
+                if (!v) return;
+                saveField('slot', id, 'did_text', v);
+                mirror(id, v, null);
+                settle(row);
+            };
+            input.addEventListener('change', saveDid);
+            input.addEventListener('blur', saveDid);
+            input.addEventListener('keydown', (e) => {
+                // 한글 조합 중의 Enter 는 조합을 확정하는 키라 가로채면 글자가 잘린다.
+                if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+                e.preventDefault();
+                saveDid();
+                const rows = [...list.querySelectorAll('.cu-row:not(.is-filled) .cu-did')];
+                (rows.find((x) => x !== input) || input).focus();
+            });
+
+            check.addEventListener('change', () => {
+                const done = check.checked ? '1' : '0';
+                sendOrQueue(
+                    { id: genId(), kind: 'slot', url: '/slot/done/' + id,
+                      headers: FORM_HEADERS, body: 'done=' + done },
+                    () => toast(check.checked ? '완료 체크' : '체크 해제'),
+                    () => toast('전송 대기 · 자동 재시도'),
+                );
+                mirror(id, null, check.checked);
+                if (check.checked) settle(row);
+            });
+
+            same?.addEventListener('click', () => {
+                input.value = same.dataset.plan || '';
+                saveDid();
+                if (!check.checked) { check.checked = true; check.dispatchEvent(new Event('change')); }
+            });
+        });
+    }
+
     function bindShutdown() {
         const form = document.querySelector('.day-form');
         const date = form ? form.dataset.date : '';
@@ -3336,6 +3487,7 @@
         bindTodayExternal();
         bindRollover();
         bindShutdown();
+        bindCatchup();
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {

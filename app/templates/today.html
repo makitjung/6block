@@ -392,7 +392,33 @@
 
     {% if is_today %}
     <details class="card shutdown-card">
-        <summary class="card-title">오늘 마감</summary>
+        <summary class="card-title">오늘 마감{% if catchup %} <span class="count">{{ catchup | length }}</span>{% endif %}</summary>
+
+        {% if catchup %}
+        {# 실행 퍼널이 낮게 나오는 까닭은 계획을 안 세워서가 아니라 하고도 안 남겨서다.
+           지나갔는데 기록이 비어 있는 코어 슬롯만 모아 여기서 한 번에 메운다.
+           칸에 name 을 주지 않는다(위 슬롯 줄에 같은 이름이 이미 있어 폼 저장 때 서로 덮는다).
+           대신 app.js 가 data-slot 으로 즉시 저장하고 위 슬롯 줄에도 같이 반영한다. #}
+        <div class="field cu-field">
+            <span class="field-label">기록이 빈 슬롯 <span class="count" id="cu-count">{{ catchup | length }}</span>
+                <button type="button" class="hint" data-hint="지나갔는데 '한 일'도 완료 체크도 없는 코어 슬롯입니다. 적으면 바로 저장되고 위 블록에도 같이 반영됩니다. 계획대로 했으면 '계획대로'를 누르세요." aria-label="설명">?</button></span>
+            <div class="cu-list" id="cu-list">
+                {% for c in catchup %}
+                <div class="cu-row" data-slot="{{ c.id }}">
+                    <span class="cu-time mono">{{ c.time }}</span>
+                    <span class="cu-blk" title="{{ c.block }}{% if c.name %} · {{ c.name }}{% endif %}">{{ c.block }}{% if c.name %} · {{ c.name }}{% endif %}</span>
+                    <input type="text" class="cu-did" value="" placeholder="{{ c.plan or '실제로 한 일' }}" autocomplete="off" aria-label="{{ c.time }} 실제로 한 일">
+                    {% if c.plan %}
+                    <button type="button" class="ghost-btn cu-same" data-plan="{{ c.plan }}" title="계획한 대로 했으면 그대로 적고 완료 체크">계획대로</button>
+                    {% endif %}
+                    <input type="checkbox" class="cu-check" title="실제로 했는지 체크" aria-label="{{ c.time }} 실행 완료">
+                </div>
+                {% endfor %}
+            </div>
+            <div class="ctx-empty" id="cu-empty" hidden>빈 슬롯을 모두 메웠습니다.</div>
+        </div>
+        {% endif %}
+
         <div class="field">
             {# 예전에는 여기에 '감사 한 줄' 칸이 따로 있었다. 바로 위 '감사 · 반성' 3줄과
                묻는 것이 같은데 저장되는 곳만 달라(그쪽은 daily_meta, 이쪽은 고결감)

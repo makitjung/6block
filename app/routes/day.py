@@ -230,6 +230,27 @@ def _day_view(request: Request, date_str: str):
         "core_planned": core_planned, "core_achieved": core_achieved,
     }
 
+    # 하루 마감에서 한 번에 채울 '지나갔는데 기록이 없는' 코어 슬롯.
+    # 실행 퍼널이 낮게 나오는 까닭이 계획을 안 세워서가 아니라 하고도 안 남겨서라,
+    # 하루 끝에 빈 칸만 모아 한 화면에서 메우게 한다. 버퍼(점심·저녁)는 뺀다.
+    catchup = []
+    if is_today:
+        now_min = datetime.now(KST).hour * 60 + datetime.now(KST).minute
+        for b in blocks:
+            if not b["is_core"]:
+                continue
+            name = block_name_by_id.get(b["id"], "")
+            for s in slots_by_block.get(b["id"], []):
+                if hhmm_to_min(s["end_time"]) > now_min:
+                    continue                        # 아직 오지 않은 슬롯
+                if s["done"] or (s["did_text"] or "").strip():
+                    continue                        # 이미 기록이 있다
+                catchup.append({
+                    "id": s["id"], "time": s["start_time"],
+                    "block": b["block_label"], "name": name,
+                    "plan": (s["do_text"] or "").strip(),
+                })
+
     # 외부 연동: Things3 Today + 구글 캘린더 일정.
     # 전체 목록은 최상단에 1번만 줄바꿈으로 노출(cal_events, task_list),
     # 시각이 있는 항목만 해당 시간 블록의 아젠다로 배치한다.
@@ -284,6 +305,7 @@ def _day_view(request: Request, date_str: str):
             "things_write_on": things.enabled(),
             "gcal_events_on": gcal_write.write_enabled("events"),
             "day_stats": day_stats,
+            "catchup": catchup,
         },
     )
 

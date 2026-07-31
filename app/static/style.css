@@ -1341,6 +1341,48 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .set-backup-status .bk { font-size: 13px; color: var(--text-muted); }
 .set-backup-status .bk.bad { color: var(--danger); }
 
+/* 하루 마감 · 기록이 빈 슬롯 한 번에 메우기 */
+.cu-field { margin-bottom: 12px; }
+.cu-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.cu-row {
+    display: grid; grid-template-columns: 46px minmax(60px, 132px) 1fr auto 20px;
+    gap: 8px; align-items: center; padding: 4px 8px;
+    border-radius: var(--r-sm); border-left: 3px solid var(--warm, var(--border));
+}
+.cu-row:nth-child(odd) { background: var(--surface-hover); }
+/* 메운 줄은 지우지 않고 옅게 눌러 둔다(방금 무엇을 적었는지 그대로 보인다) */
+.cu-row.is-filled { opacity: .45; border-left-color: var(--success); }
+.cu-time { font-size: 12px; color: var(--text-muted); }
+.cu-blk {
+    font-size: 12px; font-weight: 600; color: var(--text-subtle);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cu-did { min-width: 0; font-size: 13px; padding: 3px 8px; }
+.cu-same { font-size: 12px; padding: 2px 10px; white-space: nowrap; }
+@media (max-width: 560px) {
+    .cu-row { grid-template-columns: 42px 1fr auto 20px; }
+    .cu-blk { display: none; }
+}
+
+/* 상태판(설정 > 서버). 왼쪽 색 막대로 정상·고장·안 씀을 한눈에 구분한다. */
+.set-status-grid { display: flex; flex-direction: column; gap: 2px; }
+.set-st-row {
+    display: grid; grid-template-columns: minmax(120px, 190px) 1fr; gap: 10px;
+    align-items: baseline; padding: 6px 10px; border-radius: var(--r-sm);
+    border-left: 3px solid var(--border); font-size: 13px;
+}
+.set-st-row:nth-child(odd) { background: var(--surface-hover); }
+.set-st-row.ok { border-left-color: var(--success); }
+.set-st-row.bad { border-left-color: var(--danger); }
+.set-st-row.off { border-left-color: var(--border); }
+.set-st-label { color: var(--text-muted); font-weight: 600; }
+.set-st-val { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.set-st-row.bad .set-st-val { color: var(--danger); }
+.set-st-row.off .set-st-val { color: var(--text-subtle); }
+@media (max-width: 560px) {
+    .set-st-row { grid-template-columns: 1fr; gap: 2px; }
+}
+
 /* 고결감: 태그 자동완성 */
 .rf-tags-wrap { position: relative; flex: 1; min-width: 0; }
 .rf-tags-wrap .rf-tags { width: 100%; }

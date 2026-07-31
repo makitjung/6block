@@ -10,13 +10,23 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.common import BASE_DIR, CORE_LABELS, KST, KO_WEEKDAYS, _off_loop, templates, today_str
+from app.common import (
+    BASE_DIR,
+    CORE_LABELS,
+    KST,
+    KO_WEEKDAYS,
+    _off_loop,
+    asset_ver,
+    templates,
+    today_str,
+)
 from app.config import (
     ALARM_SECS,
     ALARM_SOUNDS,
     BACKUP_DIR,
     CLOUD_BACKUP_DIR,
     DAY_BLOCKS,
+    DB_PATH,
     TONE_KEYS,
     TONES,
     hhmm_to_min,
@@ -32,9 +42,83 @@ from app.db import (
     get_weekday_overrides,
     set_setting,
 )
-from app.integrations import ai, gcal_write
+from app.integrations import ai, gcal, gcal_write, things
 
 router = APIRouter()
+
+
+# -- 상태 점검 (설정 탭 상태판 + /api/health) --------------------------------
+# 무엇이 고장 났는지 로그를 뒤지지 않고 알 수 있어야 한다. 연동·백업·기록·오류를 한 곳에
+# 모아 돌려준다. 구글 조회와 AppleScript 가 섞여 몇 초 걸릴 수 있어, 화면은 이 주소를
+# 페이지가 뜬 뒤에 따로 부른다(설정 화면 자체는 기다리지 않는다).
+
+
+def _recent_errors() -> dict:
+    """서버 로그 끝부분에서 최근 500 응답과 마지막 오류 줄을 센다."""
+    out = {"count": 0, "last": "", "log": ""}
+    log = DB_PATH.parent / "uvicorn.out.log"
+    err = DB_PATH.parent / "uvicorn.err.log"
+    out["log"] = str(log)
+    try:
+        with log.open("rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 512 * 1024))
+            tail = f.read().decode("utf-8", "replace")
+        out["count"] = tail.count('" 500 ')
+    except OSError:
+        pass
+    if not out["count"]:
+        return out          # 지금 500이 없으면 옛 트레이스백을 끌어와 보여주지 않는다
+    try:
+        with err.open("rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 64 * 1024))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+        for ln in reversed(lines):
+            if ln and not ln.startswith(("INFO:", " ", "\t")):
+                out["last"] = ln[:160]
+                break
+    except OSError:
+        pass
+    return out
+
+
+def _record_status() -> dict:
+    """기록이 언제까지 쌓여 있는지(마지막 기록일과 그 경과일)."""
+    today = datetime.now(KST).date()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT MAX(date) FROM slots "
+            "WHERE (do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1 "
+            "   OR (did_text IS NOT NULL AND TRIM(did_text) != '')"
+        ).fetchone()
+    last = row[0] if row and row[0] else ""
+    age = None
+    if last:
+        try:
+            age = (today - datetime.strptime(last, "%Y-%m-%d").date()).days
+        except ValueError:
+            age = None
+    return {"last": last or "없음", "age": age}
+
+
+@router.get("/api/health")
+def api_health():
+    """연동·백업·기록·오류 상태를 한 번에. 설정 탭 상태판이 읽고, 직접 열어 봐도 된다."""
+    return {
+        "gcal": gcal.status(),
+        "gcal_write": gcal_write.status(),
+        "events": {"enabled": gcal_write.write_enabled("events"),
+                   "calendar": gcal_write.calendar_id("events")},
+        "achieve": {"enabled": gcal_write.write_enabled("achieve"),
+                    "calendar": gcal_write.calendar_id("achieve")},
+        "things": things.status(),
+        "ai": ai.status(),
+        "backup": _backup_status(),
+        "records": _record_status(),
+        "errors": _recent_errors(),
+        "version": asset_ver(),
+    }
 
 
 # -- 설정 -------------------------------------------------------------------
