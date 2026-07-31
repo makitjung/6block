@@ -111,11 +111,18 @@ def _skeleton_matches_config(conn, date_str: str) -> bool:
 
 
 def _day_has_content(conn, date_str: str) -> bool:
-    """그날에 사용자가 입력한 내용이 있는지(슬롯 do·한 일·구분·완료, 블록 plan·see·이름·구분)."""
+    """그날에 사용자가 입력한 내용이 있는지(슬롯 do·한 일·구분·완료·주계획 연결,
+    블록 plan·see·이름·구분·장소·주계획 연결).
+
+    여기서 빠뜨린 칸은 세션 시간을 바꿀 때 골격 재생성으로 조용히 사라진다.
+    blocks·slots 에 사용자가 채우는 컬럼을 새로 만들면 반드시 여기에도 넣는다.
+    """
     if conn.execute(
         "SELECT 1 FROM slots WHERE date = ? AND ("
         "TRIM(COALESCE(do_text,'')) != '' OR TRIM(COALESCE(did_text,'')) != '' "
-        "OR category_id IS NOT NULL OR done = 1) LIMIT 1",
+        "OR category_id IS NOT NULL OR done = 1 "
+        # 그 주 할 일에 이어 둔 슬롯도 사용자 입력이다.
+        "OR TRIM(COALESCE(wk_todo,'')) != '') LIMIT 1",
         (date_str,),
     ).fetchone():
         return True
@@ -128,7 +135,9 @@ def _day_has_content(conn, date_str: str) -> bool:
             # 세션 시간 변경이 빈 날에도 반영되지 않는다).
             "OR (is_core = 1 AND category_id IS NOT NULL) OR TRIM(COALESCE(name,'')) != '' "
             # 장소만 지정해 둔 날도 사용자 입력이다(빠지면 시간 변경 시 골격 재생성으로 유실된다).
-            "OR TRIM(COALESCE(location,'')) != '') LIMIT 1",
+            "OR TRIM(COALESCE(location,'')) != '' "
+            # 그 주 할 일에 이어 둔 블록도 마찬가지다.
+            "OR TRIM(COALESCE(wk_todo,'')) != '') LIMIT 1",
             (date_str,),
         ).fetchone()
     )

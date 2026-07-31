@@ -126,6 +126,21 @@ def manifest():
     )
 
 
+# 브라우저와 iOS는 링크 태그와 무관하게 이 두 주소를 뿌리에서 먼저 찾는다. 없으면 404가
+# 나고, 아이폰 홈화면 아이콘은 앱 화면 스크린샷으로 잡힌다(iOS는 SVG 아이콘을 무시한다).
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(BASE_DIR / "static" / "favicon.ico",
+                        media_type="image/x-icon")
+
+
+@app.get("/apple-touch-icon.png")
+@app.get("/apple-touch-icon-precomposed.png")
+def apple_touch_icon():
+    return FileResponse(BASE_DIR / "static" / "apple-touch-icon.png",
+                        media_type="image/png")
+
+
 @app.get("/api/health")
 def api_health():
     """연동 상태 점검. 브라우저에서 /api/health로 캘린더·Things 연결 확인."""

@@ -7,3 +7,5 @@ icalendar==6.1.0
 recurring-ical-events==3.3.4
 google-api-python-client==2.149.0
 google-auth==2.35.0
+# 앱 구동에는 필요 없다. scripts/make_icons.py 로 아이콘을 다시 그릴 때만 쓴다.
+Pillow==12.3.0

@@ -10,8 +10,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="format-detection" content="telephone=no">
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-    <link rel="apple-touch-icon" href="/static/icon.svg">
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg?v={{ asset_ver() }}">
+    <link rel="icon" type="image/png" sizes="512x512" href="/static/icon.png?v={{ asset_ver() }}">
+    {# iOS는 apple-touch-icon 자리에서 SVG를 무시한다. 반드시 PNG를 준다. #}
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v={{ asset_ver() }}">
     <title>{% block title %}6block{% endblock %}</title>
     <script>
         // 페인트 전에 테마를 적용해 깜빡임 방지. 기본은 라이트.

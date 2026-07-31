@@ -12,6 +12,18 @@
     "categories": ["productivity", "lifestyle"],
     "icons": [
         {
+            "src": "/static/icon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/static/apple-touch-icon.png",
+            "sizes": "180x180",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
             "src": "/static/icon.svg",
             "sizes": "any",
             "type": "image/svg+xml",
