@@ -20,6 +20,13 @@ from app.config import (
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
+# 마이그레이션 판번호. _migrate 에 손댈 때마다 하나 올린다.
+# DB 의 PRAGMA user_version 이 이 값이면 _migrate 를 통째로 건너뛴다. 기동 때마다
+# PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
+# .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
+# 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
+SCHEMA_VERSION = 1
+
 
 def uid_from_created(created: str | None) -> str:
     """생성시각 문자열로 기록 공용 키(YYYYMMDD-HHMM-난수4, Record FORMAT.md 표준)를 만든다."""
@@ -43,7 +50,10 @@ def init_db():
             # 줄인다. 파일 헤더에 한 번 기록되면 계속 유지되므로 시작 시 한 번만 켠다.
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-            _migrate(conn)
+            have = conn.execute("PRAGMA user_version").fetchone()[0]
+            if have < SCHEMA_VERSION:
+                _migrate(conn)
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             _seed_categories(conn)
             _seed_areas(conn)
             _seed_settings(conn)
@@ -89,9 +99,13 @@ def _seed_settings(conn: sqlite3.Connection):
 def _migrate(conn: sqlite3.Connection):
     """기존 DB에 누락된 컬럼을 추가하고, 더 이상 쓰지 않는 컬럼을 정리한다.
 
-    컬럼 추가는 옛 백업(.sql 덤프)을 복원했을 때도 앱이 뜨도록 남겨 둔다.
-    이미 반영이 끝난 일회성 데이터 보정(라벨 이름 변경 등)은 제거했다. 백업은 30일만
-    보관하므로 복원 대상이 되는 덤프는 모두 그 보정 이후의 것이다.
+    user_version 이 SCHEMA_VERSION 보다 낮을 때만 불린다. 즉 평소 기동에서는 아예
+    돌지 않고, 옛 .sql 덤프를 복원했을 때만 한 번 돈다. 모든 단계는 조건 검사를
+    앞에 두어 몇 번을 돌려도 결과가 같다(멱등).
+
+    컬럼 추가는 옛 백업을 복원했을 때도 앱이 뜨도록 남겨 둔다. 이미 반영이 끝난
+    일회성 데이터 보정(라벨 이름 변경 등)은 제거했다. 백업은 30일만 보관하므로
+    복원 대상이 되는 덤프는 모두 그 보정 이후의 것이다.
     """
     cols = {r[1] for r in conn.execute("PRAGMA table_info(weekly_meta)").fetchall()}
     for new_col in ("vow", "memo"):
