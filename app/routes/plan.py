@@ -155,14 +155,6 @@ def _plan_breadcrumb(level: str, anchor: date):
 # 하위가 있는 항목은 기간(하위 최소~최대)과 진척률(하위 평균)을 하위에서 자동으로 따라간다.
 
 
-def _parse_date(s) -> date | None:
-    """'YYYY-MM-DD' 를 date 로. 형식이 틀리면 None."""
-    try:
-        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        return None
-
-
 def _lt_rollup(conn, item_id: int | None):
     """상위 사슬을 하위에 맞춘다. 기간은 하위를 모두 품도록 넓히고, 진척률은 하위 평균을 따른다.
 

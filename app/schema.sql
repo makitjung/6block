@@ -119,20 +119,6 @@ CREATE TABLE IF NOT EXISTS lt_area (
     tone TEXT NOT NULL DEFAULT 'blue'    -- style.css 의 --tone-* 키
 );
 
--- 장기플랜 칸. 단위(연/분기/월/주) × 기간키 × 영역에 계획 텍스트를 저장한다.
--- period_key: 연 '2026', 분기 '2026-Q2', 월 '2026-06', 주 '2026-06-15'(그 주 월요일).
-CREATE TABLE IF NOT EXISTS lt_plan (
-    id INTEGER PRIMARY KEY,
-    level TEXT NOT NULL,
-    period_key TEXT NOT NULL,
-    area_id INTEGER NOT NULL REFERENCES lt_area(id) ON DELETE CASCADE,
-    content TEXT,
-    updated_at TEXT NOT NULL,
-    UNIQUE(level, period_key, area_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_lt_plan_lookup ON lt_plan(level, period_key);
-
 -- 장기플랜 간트 항목. 영역별 과제를 시작~종료 기간과 진척률(0~100)로 관리한다.
 -- parent_id 로 상위(연·분기) 항목과 하위(월·주) 항목을 이어 연·분기·월·주를 한 줄기로 묶는다.
 -- 상위 항목의 기간·진척률은 하위가 있으면 하위에서 자동으로 계산해 덮어쓴다.
@@ -152,20 +138,28 @@ CREATE TABLE IF NOT EXISTS lt_item (
 CREATE INDEX IF NOT EXISTS idx_lt_item_area ON lt_item(area_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_lt_item_parent ON lt_item(parent_id);
 
--- 반복되는 고민·감상·결심을 기록하고 구글 캘린더 '고민/결심'에 반영한다.
+-- 고결감(고민·결정·감사)을 기록하고 구글 캘린더에 양방향으로 반영한다.
+-- '다시 볼 날짜'를 넣으면 그 날짜로 사본 한 줄이 따로 생기고 source_id 로 원본을 가리킨다.
 CREATE TABLE IF NOT EXISTS reflection (
     id INTEGER PRIMARY KEY,
-    kind TEXT NOT NULL,                  -- 고민 | 감상 | 결심
-    text TEXT NOT NULL,
+    kind TEXT NOT NULL,                  -- 고민 | 결정 | 감사
+    title TEXT,                          -- 구글 캘린더 제목칸
+    text TEXT NOT NULL,                  -- 구글 캘린더 설명칸
     tags TEXT,                           -- 공백/쉼표로 구분한 태그(나중에 찾기 쉽게)
     event_date TEXT NOT NULL,            -- 기록일 YYYY-MM-DD (자동 입력)
     review_date TEXT,                    -- 다시 볼 날짜 YYYY-MM-DD (입력할 때만 저장)
+    review_note TEXT,                    -- 그날 다시 읽고 남긴 메모
+    source_id INTEGER,                   -- 다시보기 사본이면 원본 id (원본이면 NULL)
+    uid TEXT,                            -- 기록 공용 키 YYYYMMDD-HHMM-난수4 (Record 통합용)
     created_at TEXT NOT NULL,
     gcal_event_id TEXT,                  -- 생성된 구글 캘린더 이벤트 id(삭제·중복방지용)
     synced INTEGER NOT NULL DEFAULT 0    -- 캘린더 반영 성공 여부
 );
 
 CREATE INDEX IF NOT EXISTS idx_reflection_kind ON reflection(kind, id);
+-- 오늘 탭 '오늘 다시 볼 고결감'과 주간 리뷰가 날짜로 훑고, 사본은 원본 id 로 찾는다.
+CREATE INDEX IF NOT EXISTS idx_reflection_date ON reflection(event_date);
+CREATE INDEX IF NOT EXISTS idx_reflection_source ON reflection(source_id);
 
 -- 구분 템플릿(요일 월~일 × 코어블록 구분). 주별로 골라 42칸(7일×6블록) 블록 구분을 일괄 입력한다.
 CREATE TABLE IF NOT EXISTS cat_template (
