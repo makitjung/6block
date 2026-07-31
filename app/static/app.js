@@ -3310,7 +3310,9 @@
             });
 
             same?.addEventListener('click', () => {
-                input.value = same.dataset.plan || '';
+                // 계획 글은 위 슬롯 줄의 DO 칸에서 지금 값을 읽는다(방금 고친 것도 반영된다).
+                const plan = document.querySelector(`input[name="do_${id}"]`);
+                input.value = (plan ? plan.value : input.placeholder).trim();
                 saveDid();
                 if (!check.checked) { check.checked = true; check.dispatchEvent(new Event('change')); }
             });

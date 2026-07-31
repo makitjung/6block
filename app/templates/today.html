@@ -408,8 +408,11 @@
                     <span class="cu-time mono">{{ c.time }}</span>
                     <span class="cu-blk" title="{{ c.block }}{% if c.name %} · {{ c.name }}{% endif %}">{{ c.block }}{% if c.name %} · {{ c.name }}{% endif %}</span>
                     <input type="text" class="cu-did" value="" placeholder="{{ c.plan or '실제로 한 일' }}" autocomplete="off" aria-label="{{ c.time }} 실제로 한 일">
+                    {# 계획 글은 위 슬롯 줄의 DO 칸에 이미 있다. 여기에 또 실으면 같은 글이
+                       한 화면에 세 벌이 된다. app.js 가 그 칸에서 지금 값을 읽어 쓴다
+                       (방금 고친 DO 도 그대로 반영된다). #}
                     {% if c.plan %}
-                    <button type="button" class="ghost-btn cu-same" data-plan="{{ c.plan }}" title="계획한 대로 했으면 그대로 적고 완료 체크">계획대로</button>
+                    <button type="button" class="ghost-btn cu-same" title="계획한 대로 했으면 그대로 적고 완료 체크">계획대로</button>
                     {% endif %}
                     <input type="checkbox" class="cu-check" title="실제로 했는지 체크" aria-label="{{ c.time }} 실행 완료">
                 </div>
