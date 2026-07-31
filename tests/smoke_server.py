@@ -38,8 +38,7 @@ settings_routes._env_file_path = lambda: TEST_ENV
 things.enabled = lambda: False
 things.today_tasks = lambda *a, **k: []
 gcal_write.enabled = lambda: False
-gcal_write.events_enabled = lambda: False
-gcal_write.achieve_enabled = lambda: False
+gcal_write.write_enabled = lambda which: False
 gcal_write.service_account_email = lambda: ""
 
 if __name__ == "__main__":

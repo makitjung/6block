@@ -282,7 +282,7 @@ def _day_view(request: Request, date_str: str):
             "due_reflections": [dict(r) for r in due_reflections],
             "cal_enabled": gcal.enabled(),
             "things_write_on": things.enabled(),
-            "gcal_events_on": gcal_write.events_enabled(),
+            "gcal_events_on": gcal_write.write_enabled("events"),
             "day_stats": day_stats,
         },
     )
@@ -403,7 +403,7 @@ async def save_day(date_str: str, request: Request):
         )
     # 저장 후: 오늘 달성 3줄을 '성과' 캘린더에 종일 이벤트로 자동 반영(설명란 1. 2. 3.).
     # 캘린더 I/O는 DB 잠금 밖에서 하고, 실패해도 저장은 그대로 둔다.
-    if gcal_write.achieve_enabled():
+    if gcal_write.write_enabled("achieve"):
         try:
             items = [(form.get(f"dplan{i}", "") or "").strip() for i in (1, 2, 3)]
             with get_conn() as conn:
@@ -429,6 +429,41 @@ async def save_day(date_str: str, request: Request):
 
 _VALID_BLOCK_FIELDS = {"plan_text", "see_text", "bcat", "bname", "bloc", "wk_todo"}
 _VALID_SLOT_FIELDS = {"do_text", "did_text", "cat", "wk_todo"}
+
+# daily_meta 에서 3칸을 줄바꿈으로 합쳐 한 컬럼에 담는 필드(폼 접두어 → 컬럼).
+# 접두어가 긴 것을 먼저 둔다. 'goaltag1'·'goallink1' 이 'goal' 에 먼저 걸리면
+# 태그·연결이 목표 본문 컬럼에 저장돼 버린다(같은 이유로 grattag 가 grat 보다 앞).
+_META_TRIPLES = (
+    ("goaltag", "goal_tags"), ("goallink", "goal_links"),
+    ("plantag", "plan_tags"), ("grattag", "grat_tags"),
+    ("goal", "today_goal"), ("dplan", "daily_plan"),
+    ("grat", "gratitude"), ("concept", "concept"),
+)
+# 3칸이 아니라 통째로 한 칸인 필드.
+_META_SINGLES = ("memo", "vow")
+
+
+def _merge3(conn, date_str: str, prefix: str, col: str, form) -> None:
+    """3칸 중 폼에 온 칸만 갈아끼워 줄바꿈으로 합쳐 저장한다.
+
+    한 칸이 바뀌어도 화면은 세 칸을 prefix1~3 으로 함께 보내므로, 온 칸만 덮어쓰고
+    나머지는 저장돼 있던 값을 지킨다. 칸 안의 줄바꿈은 공백으로 눌러 3칸 구분(줄바꿈)이
+    깨지지 않게 한다. 세 칸이 모두 비면 빈 문자열로 저장해 '입력 없음'과 같게 둔다.
+    """
+    row = conn.execute(
+        f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
+    ).fetchone()
+    parts = (((row[col] or "").split("\n") if row else []) + ["", "", ""])[:3]
+    for i in range(3):
+        key = f"{prefix}{i + 1}"
+        if key in form:
+            parts[i] = (form.get(key, "") or "").replace("\r", " ").replace("\n", " ")
+    joined = "\n".join(p.strip() for p in parts)
+    conn.execute(
+        f"INSERT INTO daily_meta (date, {col}) VALUES (?, ?) "
+        f"ON CONFLICT(date) DO UPDATE SET {col} = excluded.{col}",
+        (date_str, joined if joined.strip() else ""),
+    )
 
 
 @router.post("/save/field")
@@ -501,81 +536,28 @@ async def save_field(request: Request):
                     ((value or None) if field == "wk_todo" else value, now, rid),
                 )
         elif entity == "meta":
-            # id 자리에 날짜(문자열)가 온다. field: goal1~3|dplan1~3|memo|vow
+            # id 자리에 날짜(문자열)가 온다.
+            # field: goal1~3|dplan1~3|grat1~3|concept1~3|각 태그·연결 3칸|memo|vow
             date_str = form.get("id") or ""
             if not _parse_date(date_str):
                 return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
-            if field in ("memo", "vow"):
+            if field in _META_SINGLES:
                 conn.execute(
-                    "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
-                    "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
-                    % (field, field, field),
+                    f"INSERT INTO daily_meta (date, {field}) VALUES (?, ?) "
+                    f"ON CONFLICT(date) DO UPDATE SET {field} = excluded.{field}",
                     (date_str, value),
                 )
-            elif (field.startswith("goaltag") or field.startswith("plantag")
-                  or field.startswith("grattag") or field.startswith("goallink")):
-                # 목표/달성/감사 각 줄의 자유 태그 3칸(직접 입력)과 목표 3줄의 계획 연결 3칸.
-                # 바뀐 칸과 그룹 나머지 값을 prefix+번호(goaltag1) 키로 함께 받아 줄바꿈으로 합친다.
-                if field.startswith("goaltag"):
-                    prefix, col = "goaltag", "goal_tags"
-                elif field.startswith("plantag"):
-                    prefix, col = "plantag", "plan_tags"
-                elif field.startswith("goallink"):
-                    prefix, col = "goallink", "goal_links"
-                else:
-                    prefix, col = "grattag", "grat_tags"
-                existing = conn.execute(
-                    f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
-                ).fetchone()
-                parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
-                parts = (parts + ["", "", ""])[:3]
-                for i in range(3):
-                    key = f"{prefix}{i + 1}"
-                    if key not in form:
-                        continue
-                    parts[i] = (form.get(key, "") or "").replace("\r", " ").replace("\n", " ").strip()
-                joined = "\n".join(parts)
-                joined = joined if joined.strip() else ""
-                conn.execute(
-                    "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
-                    "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
-                    % (col, col, col),
-                    (date_str, joined),
-                )
-            elif (field.startswith("goal") or field.startswith("dplan")
-                  or field.startswith("grat") or field.startswith("concept")):
-                # 목표/달성/감사·반성/컨셉 3칸: 바뀐 한 칸과 나머지 두 칸을 prefix+번호(goal1) 키로
-                # 함께 받아 줄바꿈으로 합친다. 각 칸 내부 줄바꿈은 공백으로 눌러 3칸 구분을 지킨다.
-                if field.startswith("goal"):
-                    prefix, col = "goal", "today_goal"
-                elif field.startswith("dplan"):
-                    prefix, col = "dplan", "daily_plan"
-                elif field.startswith("concept"):
-                    prefix, col = "concept", "concept"
-                else:
-                    prefix, col = "grat", "gratitude"
-                existing = conn.execute(
-                    f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
-                ).fetchone()
-                parts = (existing[col] if existing and existing[col] else "").split("\n") if existing else []
-                parts = (parts + ["", "", ""])[:3]
-                for i in range(3):
-                    key = f"{prefix}{i + 1}"
-                    if key not in form:
-                        continue
-                    parts[i] = (form.get(key, "") or "").replace("\r", " ").replace("\n", " ")
-                joined = "\n".join(p.strip() for p in parts)
-                joined = joined if joined.strip() else ""
-                conn.execute(
-                    "INSERT INTO daily_meta (date, %s) VALUES (?, ?) "
-                    "ON CONFLICT(date) DO UPDATE SET %s = excluded.%s"
-                    % (col, col, col),
-                    (date_str, joined),
-                )
-                if prefix == "dplan":
-                    achieve_date = date_str  # 달성이 바뀌었으니 저장 후 성과 캘린더 반영
             else:
-                return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+                for prefix, col in _META_TRIPLES:
+                    if not field.startswith(prefix):
+                        continue
+                    _merge3(conn, date_str, prefix, col, form)
+                    if prefix == "dplan":
+                        achieve_date = date_str   # 달성이 바뀌었으니 성과 캘린더 반영
+                    break
+                else:
+                    return JSONResponse({"ok": False, "error": "bad-field"},
+                                        status_code=400)
         elif entity == "wmeta":
             # id 자리에 주 시작일(week_start).
             # field: wgoal1~3(목표 열 자유 란, 3칸을 합쳐 weekly_goal로)|appointments|vow|memo
@@ -624,7 +606,7 @@ async def save_field(request: Request):
         else:
             return JSONResponse({"ok": False, "error": "bad-entity"}, status_code=400)
     # 달성 자동저장이면 성과 캘린더에도 즉시 반영한다(저장 버튼 없이도 최신 유지). DB 잠금 밖에서 I/O.
-    if achieve_date and gcal_write.achieve_enabled():
+    if achieve_date and gcal_write.write_enabled("achieve"):
         try:
             with get_conn() as conn:
                 row = conn.execute(
@@ -741,7 +723,7 @@ async def gcal_event_add(request: Request):
     date_str = (form.get("date") or today_str()).strip()
     if not title:
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
-    if not gcal_write.events_enabled():
+    if not gcal_write.write_enabled("events"):
         return JSONResponse(
             {"ok": False, "error": "일정 쓰기 미설정(캘린더 공유 + GCAL_WRITE_EVENTS_CALENDAR_ID)"},
             status_code=400,

@@ -153,30 +153,71 @@ def service_account_email() -> str:
         return ""
 
 
-def events_calendar_id() -> str:
-    """일정용 캘린더 ID. 설정(app_settings)에 넣은 값이 우선, 없으면 .env 값."""
+# 쓰기용 캘린더 두 곳. 오늘 탭에서 만든 '일정'과, 오늘 '달성' 3줄을 올리는 '성과'다.
+# 값은 설정 탭(app_settings)에 넣은 것이 우선이고 없으면 .env 를 쓴다.
+# 셋째 캘린더가 생기면 여기 한 줄만 늘리면 된다.
+WRITE_CALENDARS = {
+    "events": ("gcal_events_calendar_id", GCAL_WRITE_EVENTS_CALENDAR_ID, "6block 연결테스트"),
+    "achieve": ("gcal_achieve_calendar_id", GCAL_WRITE_ACHIEVE_CALENDAR_ID, "6block 성과 연결테스트"),
+}
+
+
+def calendar_id(which: str) -> str:
+    """쓰기용 캘린더 ID. 설정에 넣은 값이 우선, 없으면 .env 값."""
+    key, env_value, _label = WRITE_CALENDARS[which]
     try:
         from app.db import get_settings
 
-        v = (get_settings().get("gcal_events_calendar_id") or "").strip()
+        v = (get_settings().get(key) or "").strip()
     except Exception:
         v = ""
-    return v or GCAL_WRITE_EVENTS_CALENDAR_ID
+    return v or env_value
 
 
-def events_enabled() -> bool:
-    """오늘 탭 '일정' 쓰기 가능 여부(일정용 캘린더 ID + 서비스계정 + 라이브러리)."""
+def write_enabled(which: str) -> bool:
+    """그 캘린더에 쓸 수 있는지(캘린더 ID + 서비스계정 키파일 + 라이브러리)."""
     return bool(
-        events_calendar_id()
+        calendar_id(which)
         and GCAL_SA_KEYFILE
         and _HAS_LIB
         and os.path.exists(GCAL_SA_KEYFILE)
     )
 
 
+def test_write(which: str) -> dict:
+    """그 캘린더에 테스트 이벤트를 만들고 즉시 지워 쓰기 권한을 확인한다.
+
+    캘린더를 서비스계정에 '읽기'로만 공유하면 조회는 되고 쓰기만 실패하므로,
+    실제로 한 건 만들어 봐야 연결 여부를 알 수 있다.
+    """
+    cal = calendar_id(which)
+    if not cal:
+        return {"ok": False, "error": "캘린더 ID가 비어 있습니다"}
+    svc = _svc()
+    if svc is None:
+        return {"ok": False, "error": "서비스계정 비활성(키파일 확인)"}
+    label = WRITE_CALENDARS[which][2]
+    d1 = (date.today() + timedelta(days=1)).isoformat()
+    d2 = (date.today() + timedelta(days=2)).isoformat()
+    try:
+        ev = svc.events().insert(
+            calendarId=cal,
+            body={"summary": f"[{label}] (자동삭제)",
+                  "start": {"date": d1}, "end": {"date": d2}},
+        ).execute()
+        eid = ev.get("id")
+    except Exception as e:
+        return {"ok": False, "error": "쓰기 실패(공유가 '변경 권한'인지 확인): " + str(e)[:140]}
+    try:
+        svc.events().delete(calendarId=cal, eventId=eid).execute()
+    except Exception:
+        return {"ok": True, "warn": "생성됐으나 삭제 실패(테스트 이벤트가 남았을 수 있음)"}
+    return {"ok": True}
+
+
 def create_calendar_event(summary: str, date_str: str, time_hhmm: str | None = None):
     """오늘 탭에서 만든 일정을 일정용 캘린더에 생성한다. 시간 있으면 1시간 블록, 없으면 종일."""
-    cal = events_calendar_id()
+    cal = calendar_id("events")
     svc = _svc()
     if svc is None or not cal:
         return None
@@ -200,54 +241,7 @@ def create_calendar_event(summary: str, date_str: str, time_hhmm: str | None = N
     return ev.get("id")
 
 
-def test_events_write() -> dict:
-    """일정용 캘린더에 테스트 이벤트를 만들고 즉시 지워 쓰기 권한을 확인한다."""
-    cal = events_calendar_id()
-    if not cal:
-        return {"ok": False, "error": "캘린더 ID가 비어 있습니다"}
-    svc = _svc()
-    if svc is None:
-        return {"ok": False, "error": "서비스계정 비활성(키파일 확인)"}
-    d1 = (date.today() + timedelta(days=1)).isoformat()
-    d2 = (date.today() + timedelta(days=2)).isoformat()
-    try:
-        ev = svc.events().insert(
-            calendarId=cal,
-            body={"summary": "[6block 연결테스트] (자동삭제)",
-                  "start": {"date": d1}, "end": {"date": d2}},
-        ).execute()
-        eid = ev.get("id")
-    except Exception as e:
-        return {"ok": False, "error": "쓰기 실패(공유가 '변경 권한'인지 확인): " + str(e)[:140]}
-    try:
-        svc.events().delete(calendarId=cal, eventId=eid).execute()
-    except Exception:
-        return {"ok": True, "warn": "생성됐으나 삭제 실패(테스트 이벤트가 남았을 수 있음)"}
-    return {"ok": True}
-
-
 # ---- '성과' 캘린더: 오늘 달성을 종일 이벤트로 기록(설명란에 1. 2. 3.) -------------
-
-
-def achieve_calendar_id() -> str:
-    """성과용 캘린더 ID. 설정(app_settings)에 넣은 값이 우선, 없으면 .env 값."""
-    try:
-        from app.db import get_settings
-
-        v = (get_settings().get("gcal_achieve_calendar_id") or "").strip()
-    except Exception:
-        v = ""
-    return v or GCAL_WRITE_ACHIEVE_CALENDAR_ID
-
-
-def achieve_enabled() -> bool:
-    """오늘 탭 '달성' 성과 쓰기 가능 여부(성과 캘린더 ID + 서비스계정 + 라이브러리)."""
-    return bool(
-        achieve_calendar_id()
-        and GCAL_SA_KEYFILE
-        and _HAS_LIB
-        and os.path.exists(GCAL_SA_KEYFILE)
-    )
 
 
 def _achieve_description(items) -> str:
@@ -262,7 +256,7 @@ def upsert_achievement_event(date_str: str, items, existing_event_id: str | None
     항목이 모두 비면 기존 이벤트를 지우고 None을 돌려준다. 항목이 있으면 event id를 돌려준다.
     존재하던 이벤트가 수동 삭제돼 patch가 실패하면 새로 만든다(중복 방지는 저장된 id로).
     """
-    cal = achieve_calendar_id()
+    cal = calendar_id("achieve")
     svc = _svc()
     if svc is None or not cal:
         return existing_event_id
@@ -295,32 +289,6 @@ def upsert_achievement_event(date_str: str, items, existing_event_id: str | None
             return ev.get("id")
         except Exception:
             return existing_event_id
-
-
-def test_achieve_write() -> dict:
-    """성과 캘린더에 테스트 이벤트를 만들고 즉시 지워 쓰기 권한을 확인한다."""
-    cal = achieve_calendar_id()
-    if not cal:
-        return {"ok": False, "error": "캘린더 ID가 비어 있습니다"}
-    svc = _svc()
-    if svc is None:
-        return {"ok": False, "error": "서비스계정 비활성(키파일 확인)"}
-    d1 = (date.today() + timedelta(days=1)).isoformat()
-    d2 = (date.today() + timedelta(days=2)).isoformat()
-    try:
-        ev = svc.events().insert(
-            calendarId=cal,
-            body={"summary": "[6block 성과 연결테스트] (자동삭제)",
-                  "start": {"date": d1}, "end": {"date": d2}},
-        ).execute()
-        eid = ev.get("id")
-    except Exception as e:
-        return {"ok": False, "error": "쓰기 실패(공유가 '변경 권한'인지 확인): " + str(e)[:140]}
-    try:
-        svc.events().delete(calendarId=cal, eventId=eid).execute()
-    except Exception:
-        return {"ok": True, "warn": "생성됐으나 삭제 실패(테스트 이벤트가 남았을 수 있음)"}
-    return {"ok": True}
 
 
 def update_event(event_id: str, kind: str, title: str, content: str, tags: str) -> bool:

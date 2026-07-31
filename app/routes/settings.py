@@ -109,10 +109,10 @@ def settings_view(request: Request):
             "settings": settings,
             "block_scopes": _block_scopes(),
             "weekday_concepts": get_weekday_concepts(),
-            "events_calendar_id": gcal_write.events_calendar_id(),
-            "gcal_events_on": gcal_write.events_enabled(),
-            "achieve_calendar_id": gcal_write.achieve_calendar_id(),
-            "gcal_achieve_on": gcal_write.achieve_enabled(),
+            "events_calendar_id": gcal_write.calendar_id("events"),
+            "gcal_events_on": gcal_write.write_enabled("events"),
+            "achieve_calendar_id": gcal_write.calendar_id("achieve"),
+            "gcal_achieve_on": gcal_write.write_enabled("achieve"),
             "sa_email": gcal_write.service_account_email(),
             "ai_status": ai.status(),
             "env_path": str(_env_file_path()),
@@ -279,13 +279,13 @@ async def settings_events_calendar(request: Request):
     form = await request.form()
     value = (form.get("value") or "").strip()
     set_setting("gcal_events_calendar_id", value)
-    return JSONResponse({"ok": True, "enabled": gcal_write.events_enabled()})
+    return JSONResponse({"ok": True, "enabled": gcal_write.write_enabled("events")})
 
 
 @router.post("/settings/events-calendar/test")
 async def settings_events_calendar_test():
     """저장된 일정용 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
-    return JSONResponse(await _off_loop(gcal_write.test_events_write))
+    return JSONResponse(await _off_loop(gcal_write.test_write, "events"))
 
 
 @router.post("/settings/achieve-calendar")
@@ -294,13 +294,13 @@ async def settings_achieve_calendar(request: Request):
     form = await request.form()
     value = (form.get("value") or "").strip()
     set_setting("gcal_achieve_calendar_id", value)
-    return JSONResponse({"ok": True, "enabled": gcal_write.achieve_enabled()})
+    return JSONResponse({"ok": True, "enabled": gcal_write.write_enabled("achieve")})
 
 
 @router.post("/settings/achieve-calendar/test")
 async def settings_achieve_calendar_test():
     """저장된 성과 캘린더에 테스트 이벤트를 만들고 지워 연결을 확인한다."""
-    return JSONResponse(await _off_loop(gcal_write.test_achieve_write))
+    return JSONResponse(await _off_loop(gcal_write.test_write, "achieve"))
 
 
 @router.post("/settings/category/add")

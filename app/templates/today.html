@@ -331,16 +331,10 @@
                         <button type="button" class="hover-btn" data-pop="task" aria-label="Things3 할 일 보기">
                             할 일 <span class="hb-count task-count">{{ task_list | length }}</span>
                         </button>
-                        <div class="hover-pop task-pop">
-                            {% for t in task_list %}
-                            <div class="pop-row task">
-                                <span class="x">{{ t.title }}</span>
-                                {% if t.overdue %}<span class="dl">지남</span>{% elif t.deadline %}<span class="dl">~{{ t.deadline }}</span>{% endif %}
-                            </div>
-                            {% else %}
-                            <div class="pop-empty">Things3 Today 비어 있음</div>
-                            {% endfor %}
-                        </div>
+                        {# 내용은 맨 위 'Things3 할 일' 목록과 늘 같다. 코어 블록마다 한 벌씩
+                           더 실어 보내면 같은 목록이 한 화면에 일곱 벌 들어가므로, 비워 보내고
+                           app.js 가 위 목록에서 만들어 채운다(폴링 갱신도 같은 함수를 쓴다). #}
+                        <div class="hover-pop task-pop"></div>
                     </div>
                     <button type="button" class="block-rollover" data-block-id="{{ b.id }}" title="이 블록 PLAN을 내일 같은 블록으로 복사">내일로 →</button>
                 </div>
@@ -400,11 +394,14 @@
     <details class="card shutdown-card">
         <summary class="card-title">오늘 마감</summary>
         <div class="field">
-            <span class="field-label">오늘 감사 한 줄
-                <button type="button" class="hint" data-hint="기록을 누르면 고결감 탭에 '감사'로 한 건 남습니다." aria-label="설명">?</button></span>
+            {# 예전에는 여기에 '감사 한 줄' 칸이 따로 있었다. 바로 위 '감사 · 반성' 3줄과
+               묻는 것이 같은데 저장되는 곳만 달라(그쪽은 daily_meta, 이쪽은 고결감)
+               같은 내용을 두 번 적게 됐다. 칸을 없애고, 고결감에 남길 것이 있을 때만
+               쓰던 그 작성창을 여는 버튼 하나로 합친다(종류도 골라 적을 수 있다). #}
+            <span class="field-label">고결감 기록
+                <button type="button" class="hint" data-hint="오늘 남길 고민·결정·감사를 고결감 탭에 한 건 기록합니다. 매일 적는 감사·반성은 위 3줄에 그대로 쓰세요." aria-label="설명">?</button></span>
             <div class="sd-row">
-                <input type="text" id="sd-thanks" placeholder="오늘 고마웠던 것 한 가지" autocomplete="off">
-                <button type="button" class="ghost-btn" id="sd-thanks-btn">기록</button>
+                <button type="button" class="ghost-btn open-reflect">고결감에 기록하기</button>
             </div>
         </div>
         <div class="field">

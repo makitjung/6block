@@ -1061,19 +1061,36 @@
             if (cnt) cnt.textContent = items.length;
         });
         // 각 블록 '할 일' 호버 팝오버: Things3 Today 전체(모든 블록 동일)
-        const tasks = data.tasks || [];
+        renderTaskPops((data.tasks || []).map((t) => ({
+            title: t.title,
+            dl: t.overdue ? '지남' : (t.deadline ? '~' + t.deadline : ''),
+        })));
+    }
+
+    // 블록마다 있는 '할 일' 팝오버는 맨 위 Things3 목록과 늘 같은 내용이다. 서버가 블록
+    // 수만큼 같은 목록을 더 그려 보내지 않도록, 여기서 한 번에 채운다.
+    // rows = [{title, dl}] · dl 은 '지남' 또는 '~마감'(없으면 빈 문자열).
+    function renderTaskPops(rows) {
         document.querySelectorAll('.task-pop').forEach((box) => {
             box.textContent = '';
-            tasks.forEach((t) => {
+            rows.forEach((t) => {
                 const row = el('div', 'pop-row task');
                 row.appendChild(el('span', 'x', t.title));
-                if (t.overdue) row.appendChild(el('span', 'dl', '지남'));
-                else if (t.deadline) row.appendChild(el('span', 'dl', '~' + t.deadline));
+                if (t.dl) row.appendChild(el('span', 'dl', t.dl));
                 box.appendChild(row);
             });
-            if (!tasks.length) box.appendChild(el('div', 'pop-empty', 'Things3 Today 비어 있음'));
+            if (!rows.length) box.appendChild(el('div', 'pop-empty', 'Things3 Today 비어 있음'));
         });
-        document.querySelectorAll('.task-count').forEach((c) => { c.textContent = tasks.length; });
+        document.querySelectorAll('.task-count').forEach((c) => { c.textContent = rows.length; });
+    }
+
+    // 첫 화면용. 폴링이 처음 돌기 전까지는 서버가 그려 준 맨 위 목록이 유일한 자료다.
+    function fillTaskPopsFromPage() {
+        const rows = [...document.querySelectorAll('#agenda-tasks .agenda-row.task')].map((r) => ({
+            title: r.querySelector('.x')?.textContent || '',
+            dl: r.querySelector('.dl')?.textContent || '',
+        }));
+        renderTaskPops(rows);
     }
     let polling = false;
     function pollDay() {
@@ -2849,7 +2866,8 @@
             modal.hidden = false;
             setTimeout(() => document.getElementById('rm-text')?.focus(), 30);
         };
-        document.querySelectorAll('.slot-reflect').forEach((btn) => {
+        // 슬롯의 '고민' 버튼과 하루 마감의 '고결감에 기록하기'가 같은 작성창을 연다.
+        document.querySelectorAll('.slot-reflect, .open-reflect').forEach((btn) => {
             btn.addEventListener('click', (e) => { e.preventDefault(); open(); });
         });
         modal.querySelector('.rm-close')?.addEventListener('click', close);
@@ -3102,26 +3120,7 @@
     function bindShutdown() {
         const form = document.querySelector('.day-form');
         const date = form ? form.dataset.date : '';
-        const thanks = document.getElementById('sd-thanks');
-        const saveThanks = () => {
-            const t = (thanks?.value || '').trim();
-            if (!t) return;
-            fetch('/reflect/add', {
-                method: 'POST', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind: '감사', title: t, text: '', tags: '' }).toString(),
-            })
-                .then((r) => r.json())
-                .then((d) => {
-                    if (d && d.ok) { thanks.value = ''; toast(d.synced ? '감사 기록 · 캘린더 반영' : '감사 기록'); }
-                    else toast('기록 실패');
-                })
-                .catch(() => toast('연결이 필요합니다'));
-        };
-        document.getElementById('sd-thanks-btn')?.addEventListener('click', saveThanks);
-        thanks?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveThanks(); }
-        });
-
+        // '감사 한 줄' 칸은 없앴다. 고결감 기록은 bindReflectModal 의 작성창 하나로 모았다.
         const tom = document.getElementById('sd-tomorrow');
         const saveTom = () => {
             const t = (tom?.value || '').trim();
@@ -3291,6 +3290,7 @@
 
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {
+            fillTaskPopsFromPage();   // 첫 폴링 전까지 블록 팝오버를 채워 둔다
             setInterval(pollDay, 60000);
             let hiddenAt = 0;
             document.addEventListener('visibilitychange', () => {
