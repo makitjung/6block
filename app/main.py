@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -112,6 +113,14 @@ async def cache_headers(request: Request, call_next):
     elif path.endswith(".webmanifest") or ctype.startswith("text/html"):
         response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+# HTML 은 no-cache 라 탭을 누를 때마다 통째로 다시 받는다. 그 HTML 이 같은 구조를 수십 번
+# 반복하는 표라 압축이 아주 잘 듣는다(오늘 140KB → 9KB, 주간 125KB → 7KB). 폰에서 테일스케일로
+# 붙으면 그 차이가 그대로 탭 전환 체감이 된다. app.js·style.css 도 함께 줄어든다(294KB → 70KB).
+# 테일스케일 serve 는 압축을 붙여 주지 않으므로 여기서 붙여야 한다.
+# 마지막에 더한 미들웨어가 가장 바깥이라, 위 두 미들웨어가 헤더를 다 정한 뒤에 압축한다.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.get("/")
