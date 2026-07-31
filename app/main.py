@@ -1,4 +1,5 @@
 # 6block FastAPI 앱 조립. 화면별 라우터를 모으고 미들웨어·PWA·헬스체크만 여기서 다룬다.
+import threading
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -14,9 +15,27 @@ from app.integrations import gcal, gcal_write, things
 from app.routes import analytics, day, plan, reflect, settings, week
 
 
+def _warm_caches():
+    """구글 캘린더·Things 캐시를 미리 채운다.
+
+    이 둘은 캐시가 있으면 즉시 응답하고 만료돼도 뒤에서 새로 받지만, 캐시가 아예 없는
+    기동 직후 첫 요청만은 기다려야 한다(합쳐 1.5초쯤). 재시작 뒤 처음 여는 화면이
+    그 값을 물지 않도록 미리 받아 둔다. 실패해도 그냥 넘어간다(다음 요청이 다시 받는다).
+    """
+    try:
+        gcal.events_for_date(datetime.now(KST).date())
+    except Exception:
+        pass
+    try:
+        things.today_tasks(datetime.now(KST).date())
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    threading.Thread(target=_warm_caches, daemon=True).start()
     yield
 
 
@@ -72,20 +91,25 @@ async def csrf_origin_guard(request: Request, call_next):
 
 
 @app.middleware("http")
-async def no_cache_headers(request: Request, call_next):
-    """정적 자원·HTML은 항상 서버와 재검증(no-cache)해 옛 캐시(특히 폰 PWA)가 남지 않게 한다.
+async def cache_headers(request: Request, call_next):
+    """HTML은 늘 다시 받고, 버전이 붙은 정적 파일은 오래 캐시한다.
 
-    StaticFiles의 ETag/Last-Modified와 함께 동작해, 안 바뀌면 304로 가볍게,
-    바뀌면 새 파일을 받게 한다.
+    HTML·매니페스트는 no-cache 로 두어 옛 화면(특히 폰 PWA)이 남지 않게 한다.
+    /static 은 ?v=<수정시각> 이 붙어 나가므로 내용이 바뀌면 주소 자체가 바뀐다.
+    그래서 ?v= 가 있으면 다시 물어볼 이유가 없어 1년 캐시(immutable)로 준다.
+    예전에는 여기에도 no-cache 를 걸어, 페이지를 열 때마다 app.js·style.css 를
+    두 번씩 재검증(304)했다. 폰에서 테일스케일로 붙으면 그 왕복이 그대로 체감된다.
+    ?v= 없이 부르는 경로(서비스워커가 미리 담아 두는 목록 등)는 종전대로 재검증한다.
     """
     response = await call_next(request)
     path = request.url.path
     ctype = response.headers.get("content-type", "")
-    if (
-        path.startswith("/static/")
-        or path.endswith(".webmanifest")
-        or ctype.startswith("text/html")
-    ):
+    if path.startswith("/static/"):
+        response.headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable" if request.url.query.startswith("v=")
+            else "no-cache"
+        )
+    elif path.endswith(".webmanifest") or ctype.startswith("text/html"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 

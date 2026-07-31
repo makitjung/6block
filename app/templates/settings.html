@@ -234,8 +234,17 @@
             </div>
     </section>
 
-    <details class="card set-template-card">
+    {# 격자는 템플릿 하나당 42칸(요일 7 × 코어블록 6)이고 칸마다 구분 목록이 통째로 들어간다.
+       서버에서 미리 그리면 템플릿 하나가 40KB 넘게 붙어, 템플릿을 늘릴수록 설정 화면이
+       계속 무거워진다. 뼈대와 값만 JSON 으로 보내고 카드를 펼칠 때 app.js 가 그린다. #}
+    <details class="card set-template-card" id="set-tpl-card">
         <summary class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트를 만들어 두면 주간 탭에서 한 번에 채웁니다</span></summary>
+        <script>
+            window.__tplCells = {{ cat_templates | map(attribute='cells') | list | tojson }};
+            window.__tplCats = {{ active_categories | tojson }};
+            window.__tplBlocks = {{ core_labels | tojson }};
+            window.__tplWeekdays = {{ weekdays | tojson }};
+        </script>
         <div id="set-tpl-list">
             {% for t in cat_templates %}
             <div class="set-tpl" data-id="{{ t.id }}">
@@ -243,21 +252,7 @@
                     <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" autocomplete="off" aria-label="템플릿 이름">
                     <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
                 </div>
-                <div class="set-tpl-grid" style="--cols: {{ weekdays | length }}">
-                    <div class="set-tpl-corner"></div>
-                    {% for wd, wd_label in weekdays %}<div class="set-tpl-blabel">{{ wd_label }}</div>{% endfor %}
-                    {% for lbl in core_labels %}
-                    <div class="set-tpl-daytype">{{ lbl }}</div>
-                    {% for wd, wd_label in weekdays %}
-                    <select class="set-tpl-cell cat-select" data-tpl="{{ t.id }}" data-weekday="{{ wd }}" data-label="{{ lbl }}" aria-label="{{ wd_label }} {{ lbl }} 구분">
-                        <option value="">—</option>
-                        {% for c in active_categories %}
-                        <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if t.cells.get(wd, {}).get(lbl) == c.id %}selected{% endif %}>{{ c.name }}</option>
-                        {% endfor %}
-                    </select>
-                    {% endfor %}
-                    {% endfor %}
-                </div>
+                <div class="set-tpl-grid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}"></div>
             </div>
             {% endfor %}
         </div>

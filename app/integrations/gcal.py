@@ -1,4 +1,5 @@
 # 여러 구글 캘린더 iCal 주소를 받아 캘린더별 색을 입혀 날짜별 일정으로 파싱·캐시하는 연동 모듈
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -10,6 +11,9 @@ from app.config import GCAL_CALENDARS
 KST = ZoneInfo("Asia/Seoul")
 _CACHE_TTL = 120  # 초. 같은 .ics를 2분 동안 재사용(구글 피드 갱신 지연이 더 큼).
 _cache: dict[str, dict] = {}  # url -> {"at": float, "cal": Calendar|None}
+# 지금 뒤에서 새로 받고 있는 주소. 같은 주소를 여러 번 겹쳐 받지 않게 표시해 둔다.
+_refreshing: set[str] = set()
+_refresh_lock = threading.Lock()
 
 try:
     import icalendar
@@ -49,21 +53,51 @@ def status():
     return out
 
 
-def _load_calendar(url: str):
-    """한 캘린더 주소에서 .ics를 받아 파싱한 Calendar를 TTL 캐시로 반환."""
-    now = time.time()
-    slot = _cache.get(url)
-    if slot and slot["cal"] is not None and (now - slot["at"]) < _CACHE_TTL:
-        return slot["cal"]
+def _fetch(url: str):
+    """.ics를 받아 파싱해 캐시에 넣는다. 실패하면 이전 캐시를 그대로 둔다."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "6block/1.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             raw = resp.read()
         cal = icalendar.Calendar.from_ical(raw)
     except Exception:
-        return slot["cal"] if slot else None  # 실패 시 이전 캐시(없으면 None) 유지.
-    _cache[url] = {"cal": cal, "at": now}
+        slot = _cache.get(url)
+        return slot["cal"] if slot else None
+    _cache[url] = {"cal": cal, "at": time.time()}
     return cal
+
+
+def _refresh_later(url: str):
+    """뒤에서 한 번만 새로 받는다(같은 주소가 겹쳐 도는 것을 막는다)."""
+    with _refresh_lock:
+        if url in _refreshing:
+            return
+        _refreshing.add(url)
+
+    def run():
+        try:
+            _fetch(url)
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(url)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _load_calendar(url: str):
+    """캘린더를 캐시에서 준다. 만료됐으면 있는 것을 그대로 주고 새것은 뒤에서 받는다.
+
+    구글 .ics 한 번 받아 파싱하는 데 1초쯤 걸린다. 예전에는 캐시가 만료될 때마다
+    그 1초를 화면을 여는 사람이 그대로 기다렸다(2분에 한 번씩 오늘 탭이 느려짐).
+    2분 지난 일정이 잠깐 보이는 것보다 화면이 즉시 뜨는 편이 낫고, 어차피 다음
+    폴링(60초)에서 새 값으로 바뀐다. 처음이라 줄 것이 아예 없을 때만 기다린다.
+    """
+    slot = _cache.get(url)
+    if slot and slot["cal"] is not None:
+        if (time.time() - slot["at"]) >= _CACHE_TTL:
+            _refresh_later(url)
+        return slot["cal"]
+    return _fetch(url)
 
 
 def events_for_range(start: date, end: date) -> dict[str, list[dict]]:

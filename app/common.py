@@ -1,6 +1,7 @@
 # 화면(라우터) 모듈이 공통으로 쓰는 것들. 템플릿 엔진, 시간·날짜 도우미,
 # 하루 골격 생성, 3칸 입력 처리, 계획 자동 세분화를 모아 둔다.
 import json
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -49,16 +50,33 @@ templates.env.filters["pretty_date"] = _pretty_date
 templates.env.filters["short_date"] = _short_date
 
 
+# ?v= 를 붙여 내보내는 정적 파일. 이 중 하나라도 바뀌면 버전이 올라가 기기가 새로 받는다.
+# 여기 빠진 파일에 ?v= 를 달면, 파일을 고쳐도 버전이 그대로라 브라우저가 옛것을 계속 쓴다
+# (정적 파일은 ?v= 가 붙으면 1년 캐시라 더욱 그렇다).
+VERSIONED_ASSETS = ("app.js", "style.css", "icon.svg", "icon.png", "apple-touch-icon.png")
+_ASSET_VER_TTL = 10          # 초. 한 페이지를 그리는 동안 stat 을 반복하지 않게만 잡아 둔다.
+_asset_ver_cache: tuple[float, str] | None = None
+
+
 def asset_ver() -> str:
-    """app.js/style.css의 최신 수정시각을 캐시버스팅 쿼리값으로 반환(파일 바뀌면 자동 변경)."""
-    try:
-        mtimes = [
-            (BASE_DIR / "static" / "app.js").stat().st_mtime,
-            (BASE_DIR / "static" / "style.css").stat().st_mtime,
-        ]
-        return str(int(max(mtimes)))
-    except OSError:
-        return "1"
+    """정적 파일의 최신 수정시각을 캐시버스팅 쿼리값으로 반환(파일 바뀌면 자동 변경).
+
+    한 페이지에서 파일 수만큼 여러 번 불리므로 결과를 짧게 캐시한다. 코드를 고치고
+    최대 10초 뒤에는 새 버전이 나가고, 화면은 /version 으로 그것을 보고 스스로 새로고침한다.
+    """
+    global _asset_ver_cache
+    now = time.monotonic()
+    if _asset_ver_cache and (now - _asset_ver_cache[0]) < _ASSET_VER_TTL:
+        return _asset_ver_cache[1]
+    mtimes = []
+    for name in VERSIONED_ASSETS:
+        try:
+            mtimes.append((BASE_DIR / "static" / name).stat().st_mtime)
+        except OSError:
+            pass
+    ver = str(int(max(mtimes))) if mtimes else "1"
+    _asset_ver_cache = (now, ver)
+    return ver
 
 
 # 화면(JS)에서 실제로 쓰는 설정만 페이지에 싣는다. 예전에는 app_settings 전체를 내보내

@@ -26,7 +26,12 @@ except Exception:  # 라이브러리 미설치 시 캘린더 쓰기만 비활성
     _HAS_LIB = False
 
 _service = None
-_list_cache: dict = {"at": 0.0, "key": None, "items": None}  # 양방향 읽기 60초 캐시
+_list_cache: dict = {"at": 0.0, "key": None, "items": None}
+# 고결감 탭을 열어 두면 60초마다 목록을 새로 그린다. 읽기 캐시도 60초면 그때마다 구글을
+# 실제로 호출해 하루 1440번이 된다. 캐시를 5분으로 두어 하루 288번으로 줄인다.
+# 내가 6block에서 만들고 고치고 지운 것은 그때 캐시를 비우므로 즉시 반영되고,
+# 구글 쪽에서 직접 고친 것만 최대 5분 늦게 보인다('지금 동기화' 버튼은 기다리지 않는다).
+_LIST_TTL = 300
 
 
 def enabled() -> bool:
@@ -363,7 +368,7 @@ def list_reflection_events(start: date, end: date) -> list[dict]:
     if (
         _list_cache["items"] is not None
         and _list_cache["key"] == key
-        and (now - _list_cache["at"]) < 60
+        and (now - _list_cache["at"]) < _LIST_TTL
     ):
         return _list_cache["items"]
     svc = _svc()

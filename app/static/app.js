@@ -1200,6 +1200,62 @@
         if (want && tabs.some((b) => b.dataset.tab === want)) show(want);
     }
 
+    // 구분 템플릿 격자(요일 7 × 코어블록 6 = 42칸)를 카드를 펼칠 때 그린다.
+    // 서버에서 미리 그려 보내면 템플릿 하나당 40KB 넘게 붙어, 템플릿을 늘릴수록
+    // 설정 화면이 계속 무거워졌다. 값은 window.__tpl* 에 JSON 으로만 실려 온다.
+    function buildTemplateGrids() {
+        const card = document.getElementById('set-tpl-card');
+        if (!card || !window.__tplCats) return;
+        const cats = window.__tplCats, blocks = window.__tplBlocks;
+        const weekdays = window.__tplWeekdays, cells = window.__tplCells;
+        let built = false;
+        const build = () => {
+            if (built) return;
+            built = true;
+            card.querySelectorAll('.set-tpl-grid').forEach((grid) => {
+                const mine = cells[Number(grid.dataset.idx)] || {};
+                const frag = document.createDocumentFragment();
+                frag.appendChild(el('div', 'set-tpl-corner'));
+                weekdays.forEach(([, label]) => frag.appendChild(el('div', 'set-tpl-blabel', label)));
+                blocks.forEach((lbl) => {
+                    frag.appendChild(el('div', 'set-tpl-daytype', lbl));
+                    weekdays.forEach(([wd, wdLabel]) => {
+                        const sel = el('select', 'set-tpl-cell cat-select');
+                        sel.dataset.tpl = grid.dataset.tpl;
+                        sel.dataset.weekday = wd;
+                        sel.dataset.label = lbl;
+                        sel.setAttribute('aria-label', wdLabel + ' ' + lbl + ' 구분');
+                        // JSON 키는 문자열이라 요일도 문자열로 찾는다.
+                        const cur = (mine[String(wd)] || {})[lbl];
+                        sel.appendChild(new Option('—', ''));
+                        cats.forEach((c) => {
+                            const o = new Option(c.name, c.id, false, c.id === cur);
+                            o.dataset.tone = c.tone;
+                            sel.appendChild(o);
+                        });
+                        frag.appendChild(sel);
+                    });
+                });
+                grid.appendChild(frag);
+                // 화면이 뜰 때 도는 초기 색칠(select.cat-select)은 이미 지나간 뒤라 여기서 칠한다.
+                grid.querySelectorAll('.set-tpl-cell').forEach(paintCategory);
+            });
+        };
+        // 열 때 한 번만 그린다. 이미 열린 채로 들어왔으면(브라우저가 상태를 되살릴 때) 바로.
+        card.addEventListener('toggle', () => { if (card.open) build(); });
+        if (card.open) build();
+        // 칸이 나중에 생기므로 위임으로 받는다.
+        card.addEventListener('change', (e) => {
+            const sel = e.target.closest('.set-tpl-cell');
+            if (!sel) return;
+            paintCategory(sel);
+            postForm('/settings/template/cell', {
+                template_id: sel.dataset.tpl, weekday: sel.dataset.weekday,
+                block_label: sel.dataset.label, category_id: sel.value,
+            }).then(() => toast('저장'));
+        });
+    }
+
     function bindSettings() {
         const addBtn = document.getElementById('set-cat-add-btn');
         // 설정·데이터 페이지가 아니면 종료(데이터 탭의 백업·CSV·삭제 버튼도 여기서 바인딩)
@@ -1304,14 +1360,7 @@
                     .then((d) => { if (d && d.ok) location.reload(); });
             });
         });
-        document.querySelectorAll('.set-tpl-cell').forEach((sel) => {
-            sel.addEventListener('change', () => {
-                postForm('/settings/template/cell', {
-                    template_id: sel.dataset.tpl, weekday: sel.dataset.weekday,
-                    block_label: sel.dataset.label, category_id: sel.value,
-                }).then(() => toast('저장'));
-            });
-        });
+        buildTemplateGrids();
 
         // 서버(launchd) 재시작: 요청 후 서버가 다시 올라오면 자동 새로고침
         const restartBtn = document.getElementById('set-restart-btn');

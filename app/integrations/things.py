@@ -1,11 +1,14 @@
 # Things3 'Today' 목록을 AppleScript로 읽고 쓰는(할일 추가) 연동 모듈 (macOS 전용)
 import subprocess
 import sys
+import threading
 import time
 from datetime import date
 
 _CACHE_TTL = 20  # 초. 폴링과 함께 Things Today를 거의 실시간으로 반영.
 _cache: dict = {"at": 0.0, "items": None}
+_refreshing = False
+_refresh_lock = threading.Lock()
 
 # Today 항목을 '이름<TAB>태그' 한 줄씩으로 직렬화해 반환(제목 안의 쉼표 문제 회피).
 # 태그는 Things에서 쉼표로 구분된 문자열로 오고, 태그가 없으면 빈칸이다.
@@ -55,25 +58,51 @@ def _today_names():
     return items
 
 
+def _fetch_into_cache():
+    """AppleScript로 Today를 읽어 캐시에 넣는다. 실패하면 이전 캐시를 그대로 둔다."""
+    fetched = _today_names()
+    if fetched is not None:
+        _cache["items"] = fetched
+        _cache["at"] = time.time()
+    return fetched
+
+
+def _refresh_later():
+    """뒤에서 한 번만 새로 읽는다(겹쳐 도는 것을 막는다)."""
+    global _refreshing
+    with _refresh_lock:
+        if _refreshing:
+            return
+        _refreshing = True
+
+    def run():
+        global _refreshing
+        try:
+            _fetch_into_cache()
+        finally:
+            with _refresh_lock:
+                _refreshing = False
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def today_tasks(target: date, include_overdue: bool = True) -> list[dict]:
     """Things3 'Today' 목록을 반환한다. (제목만; 시간/마감 없음)
 
     Things의 Today는 실제 오늘에만 의미가 있어 다른 날짜는 빈 목록.
+    캐시가 만료됐으면 있는 것을 그대로 주고 새것은 뒤에서 읽는다. osascript 한 번이
+    0.5초쯤 걸려서, 예전에는 20초마다 그 시간을 화면 여는 사람이 기다렸다.
+    캐시가 아예 없을 때(기동 직후·할일 추가 직후)만 기다린다.
     AppleScript 실패(권한 미승인 등) 시 직전 캐시 또는 빈 목록을 준다.
     """
     if target != date.today():
         return []
-    now = time.time()
-    if _cache["items"] is not None and (now - _cache["at"]) < _CACHE_TTL:
+    if _cache["items"] is not None:
+        if (time.time() - _cache["at"]) >= _CACHE_TTL:
+            _refresh_later()
         names = _cache["items"]
     else:
-        fetched = _today_names()
-        if fetched is not None:
-            _cache["items"] = fetched
-            _cache["at"] = now
-            names = fetched
-        else:
-            names = _cache["items"] or []
+        names = _fetch_into_cache() or []
     return [
         {"title": it["name"], "time": None, "time_min": None,
          "deadline": None, "overdue": False, "tags": it["tags"]}
