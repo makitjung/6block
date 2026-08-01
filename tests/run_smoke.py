@@ -307,8 +307,14 @@ def run_checks(db_path):
     check("장기 주 열에 몇 주차 표시",
           "~8/2 · 31주" in h and "~8/9 · 32주" in h, h.count("주</span>"))
     _c, h = get("/week/2026-07-27")
-    check("주간 제목 아래 기간 옆에 몇 주차 표시",
-          '<span class="hero-wk">31주차</span>' in h)
+    # 주간 제목은 '31주차 7.27~8.2' 한 줄(요일 표기 줄은 없앴다)
+    check("주간 제목은 주차 + 기간 한 줄",
+          '<span class="hero-wk">31주차</span> 7.27~8.2' in h
+          and "월요일 주" not in h, h.count("hero-date-main"))
+    check("주간 통계는 접혀서 나간다",
+          'id="wk-stats" hidden' in h and 'id="wk-stats-toggle"' in h)
+    check("주간 리뷰는 없앴다",
+          "주간 리뷰" not in h and 'class="review-grid' not in h)
     # 막대 진하기는 기간이 아니라 계층 단계로 갈린다(최상위 0 → 하위로 갈수록 커진다)
     code, html = get("/plan?level=year&anchor=2026-01-01")
     check("기간 구분(장기·중기·단기)은 색에 쓰지 않음",
@@ -673,16 +679,13 @@ def run_checks(db_path):
     check("컨셉 3칸 저장", row and row[0]["concept"] == "몰입\n\n정리",
           row[0]["concept"] if row else None)
 
-    # 16. 수집함 표시 설정(기본 끔 → 켜면 오늘·주간 모두 다시 보인다)
+    # 16. 수집함 표시 설정(기본 끔 → 켜면 오늘 탭에 다시 보인다.
+    #     주간 탭 수집함은 주간 리뷰와 함께 없앴다)
     code, html = get("/day/2026-07-31")
-    code, wk = get("/week/2026-07-27")
-    check("기본은 수집함 숨김",
-          'id="inbox-input"' not in html and 'id="wk-inbox-input"' not in wk)
+    check("기본은 수집함 숨김", 'id="inbox-input"' not in html)
     post("/settings/save", {"show_inbox": "1"})
     code, html = get("/day/2026-07-31")
-    code, wk = get("/week/2026-07-27")
-    check("설정을 켜면 수집함이 다시 보임",
-          'id="inbox-input"' in html and 'id="wk-inbox-input"' in wk)
+    check("설정을 켜면 수집함이 다시 보임", 'id="inbox-input"' in html)
 
     # 16-2. 슬롯 '고민'·'▶' 버튼은 기본으로 감춘다(설정에서 각각 켤 수 있다)
     code, html = get("/day/2026-07-31")

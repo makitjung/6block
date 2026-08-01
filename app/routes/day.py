@@ -701,41 +701,6 @@ def inbox_delete(item_id: int):
     return JSONResponse({"ok": True})
 
 
-@router.post("/inbox/update")
-async def inbox_update(request: Request):
-    """수집함 항목 텍스트를 수정한다(오늘·주간 공용. 같은 inbox 테이블)."""
-    form = await request.form()
-    try:
-        item_id = int(form.get("item_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
-    text = (form.get("text") or "").strip()
-    if not text:
-        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
-    with get_conn() as conn:
-        conn.execute("UPDATE inbox SET text = ? WHERE id = ?", (text, item_id))
-    return JSONResponse({"ok": True})
-
-
-INBOX_STATUSES = {"", "next", "wait", "someday", "ref"}
-
-
-@router.post("/inbox/status")
-async def inbox_status(request: Request):
-    """수집함 항목의 GTD 상태(미분류/다음행동/대기/언젠가/참고)를 저장한다(주간 정리 단계)."""
-    form = await request.form()
-    try:
-        item_id = int(form.get("item_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
-    status = (form.get("status") or "").strip()
-    if status not in INBOX_STATUSES:
-        return JSONResponse({"ok": False, "error": "bad-status"}, status_code=400)
-    with get_conn() as conn:
-        conn.execute("UPDATE inbox SET status = ? WHERE id = ?", (status, item_id))
-    return JSONResponse({"ok": True})
-
-
 # -- 오늘 외부 입력: Things3 할일 / 구글 일정 쓰기 -------------------------
 
 

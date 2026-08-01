@@ -2,7 +2,6 @@
 {% set active = 'week' %}
 {% block title %}{{ week_start }} 주 | 6block{% endblock %}
 {% block content %}
-{% set st = get_settings() %}
 <form method="post" action="/week/save/{{ week_start }}" class="week-form" accept-charset="UTF-8">
     <section class="hero">
         <div class="hero-nav">

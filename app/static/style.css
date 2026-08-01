@@ -555,6 +555,14 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .kpi-fold .kpi-row { margin: 10px 0 0; }
 .kpi-fold .kpi-row[hidden] { display: none; }
 .kpi-toggle { font-size: 12px; }
+/* 주간 탭 통계: 위 지표 3개 + 그 아래 카테고리별 시간 분포. 기본은 접힘 */
+.wk-stats { margin-bottom: 14px; }
+.wk-stats[hidden] { display: none; }
+.wk-stats .kpi-row { margin-bottom: 10px; }
+.wk-stats .cat-bars {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); padding: 12px 15px;
+}
 .kpi {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
     padding: 13px 15px; display: flex; flex-direction: column; gap: 6px;
