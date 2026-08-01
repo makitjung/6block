@@ -1,4 +1,4 @@
-# 주간 화면(주간 목표·블록 테마·통계·주간 리뷰)과 그 저장을 담당하는 라우터
+# 주간 화면(주간 목표·블록 테마·통계·7일 보기)과 그 저장을 담당하는 라우터
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Request
@@ -116,30 +116,6 @@ def _week_view(request: Request, monday: date):
                 (week_start_str,),
             )
         }
-        # 주간 리뷰(GTD 검토): 미처리 수집함 + 계획만 하고 실행 흔적 없는 코어 블록
-        review_inbox = conn.execute(
-            "SELECT id, text, status FROM inbox WHERE done = 0 ORDER BY id DESC"
-        ).fetchall()
-        missed_blocks = conn.execute(
-            f"""
-            SELECT b.date, b.block_label, b.block_order, b.name, b.plan_text
-            FROM blocks b
-            WHERE b.date IN ({placeholders}) AND b.is_core = 1
-              AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
-              AND NOT EXISTS (
-                  SELECT 1 FROM slots s WHERE s.block_id = b.id
-                    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '') OR s.done = 1)
-              )
-            ORDER BY b.date, b.block_order
-            """,
-            dates,
-        ).fetchall()
-        # 주간 검토: 이번 주에 기록한 고결감(고민·결정·감사)을 한 자리에서 회고
-        week_reflections = conn.execute(
-            "SELECT kind, title, text, event_date FROM reflection "
-            "WHERE event_date BETWEEN ? AND ? ORDER BY event_date DESC, id DESC LIMIT 50",
-            (dates[0], dates[6]),
-        ).fetchall()
 
     blocks_by_date: dict[str, list] = {d: [] for d in dates}
     for r in rows:
@@ -236,9 +212,6 @@ def _week_view(request: Request, monday: date):
             "week_allday": week_allday,
             "cal_enabled": gcal.enabled(),
             "today": today_str(),
-            "review_inbox": review_inbox,
-            "missed_blocks": missed_blocks,
-            "week_reflections": [dict(r) for r in week_reflections],
         },
     )
 

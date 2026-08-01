@@ -9,32 +9,50 @@
             <a href="/week/{{ prev_week }}" class="icon-btn" aria-label="지난 주">‹</a>
             <a href="/week/{{ next_week }}" class="icon-btn" aria-label="다음 주">›</a>
         </div>
+        {# 제목은 '31주차 7.27~8.2' 한 줄. 같은 주를 두 가지로 적을 까닭이 없다 #}
         <div class="hero-date">
-            <div class="hero-date-main">{{ week_start | pretty_date }} 주</div>
-            <div class="hero-date-sub mono">{{ dates[0] | short_date }} – {{ dates[6] | short_date }} <span class="hero-wk">{{ week_no }}주차</span></div>
+            <div class="hero-date-main"><span class="hero-wk">{{ week_no }}주차</span> {{ dates[0] | short_date }}~{{ dates[6] | short_date }}</div>
         </div>
         <div class="hero-actions">
+            <button type="button" class="ghost-btn" id="wk-stats-toggle"
+                    aria-expanded="false" aria-controls="wk-stats">통계</button>
             <button type="submit" class="primary-btn">저장</button>
         </div>
     </section>
 
-    <section class="kpi-row">
-        <div class="kpi">
-            <span class="kpi-label">코어 PLAN 사용</span>
-            <span class="kpi-value mono"><strong>{{ used_core }}</strong>/{{ total_core }}</span>
-            <div class="kpi-bar"><span style="width: {{ (used_core / total_core * 100) | round(0) }}%"></span></div>
+    {# 통계는 평소에 접어 두고 위 '통계' 버튼으로만 편다 #}
+    <section class="wk-stats" id="wk-stats" hidden>
+        <div class="kpi-row">
+            <div class="kpi">
+                <span class="kpi-label">코어</span>
+                <span class="kpi-value mono"><strong>{{ used_core }}</strong>/{{ total_core }}</span>
+                <div class="kpi-bar"><span style="width: {{ (used_core / total_core * 100) | round(0) }}%"></span></div>
+            </div>
+            <div class="kpi">
+                <span class="kpi-label">PLAN → DO 달성률</span>
+                <span class="kpi-value mono"><strong>{{ achieve_pct }}</strong>%</span>
+                <div class="kpi-bar"><span style="width: {{ achieve_pct }}%"></span></div>
+            </div>
+            <div class="kpi">
+                <span class="kpi-label">기록된 시간</span>
+                {% set total_h = (cat_summary | sum(attribute='hours')) %}
+                <span class="kpi-value mono"><strong>{{ '%.1f' % total_h }}</strong>h</span>
+                <div class="kpi-bar"><span style="width: {{ ((total_h / week_total_hours) * 100) | round(0) }}%"></span></div>
+            </div>
         </div>
-        <div class="kpi">
-            <span class="kpi-label">PLAN → DO 달성률</span>
-            <span class="kpi-value mono"><strong>{{ achieve_pct }}</strong>%</span>
-            <div class="kpi-bar"><span style="width: {{ achieve_pct }}%"></span></div>
+        {% if cat_summary %}
+        <div class="cat-bars">
+            {% for c in cat_summary %}
+            <div class="cat-bar-row">
+                <span class="cat-bar-name"><span class="dot" style="background: var(--tone-{{ c.tone }})"></span>{{ c.name }}</span>
+                <div class="cat-bar-track">
+                    <span class="cat-bar-fill" style="width: {{ c.pct }}%; background: var(--tone-{{ c.tone }});"></span>
+                </div>
+                <span class="cat-bar-val mono">{{ '%.1f' % c.hours }}h <span class="muted">{{ c.pct }}%</span></span>
+            </div>
+            {% endfor %}
         </div>
-        <div class="kpi">
-            <span class="kpi-label">기록된 시간</span>
-            {% set total_h = (cat_summary | sum(attribute='hours')) %}
-            <span class="kpi-value mono"><strong>{{ '%.1f' % total_h }}</strong>h</span>
-            <div class="kpi-bar"><span style="width: {{ ((total_h / week_total_hours) * 100) | round(0) }}%"></span></div>
-        </div>
+        {% endif %}
     </section>
 
     <section class="meta-card">
@@ -116,100 +134,6 @@
             {% endfor %}
         </div>
     </details>
-
-    {% if cat_summary %}
-    <section class="card">
-        <h2 class="card-title">카테고리별 시간 분포</h2>
-        <div class="cat-bars">
-            {% for c in cat_summary %}
-            <div class="cat-bar-row">
-                <span class="cat-bar-name"><span class="dot" style="background: var(--tone-{{ c.tone }})"></span>{{ c.name }}</span>
-                <div class="cat-bar-track">
-                    <span class="cat-bar-fill" style="width: {{ c.pct }}%; background: var(--tone-{{ c.tone }});"></span>
-                </div>
-                <span class="cat-bar-val mono">{{ '%.1f' % c.hours }}h <span class="muted">{{ c.pct }}%</span></span>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    <section class="card review-card">
-        <h2 class="card-title">주간 리뷰
-            <button type="button" class="hint" data-hint="계획만 적고 실행 기록이 없는 코어 블록과 미처리 수집함을 모아 주말에 한 번에 검토합니다." aria-label="설명">?</button></h2>
-        <div class="review-grid{% if st.show_inbox == '0' %} no-inbox{% endif %}">
-            {% if st.show_inbox != '0' %}
-            <div class="review-col">
-                <div class="review-head">미처리 수집함 <span class="count" id="wk-inbox-count">{{ review_inbox | length }}</span>
-                    <button type="button" class="hint" data-hint="오늘 탭 빠른 수집함과 같은 목록입니다. 상태를 정해 두면 다음 행동이 분명해집니다." aria-label="설명">?</button>
-                </div>
-                <div class="inbox-form wk-inbox-form">
-                    <input type="text" id="wk-inbox-input" placeholder="여기서도 바로 수집 (Enter)" autocomplete="off" enterkeyhint="done">
-                    <button type="button" class="inbox-add" id="wk-inbox-add" aria-label="수집함에 추가">+</button>
-                </div>
-                <div class="wk-inbox-filter" id="wk-inbox-filter">
-                    <button type="button" class="wk-if is-active" data-status="all">전체</button>
-                    <button type="button" class="wk-if" data-status="">미분류</button>
-                    <button type="button" class="wk-if" data-status="next">다음행동</button>
-                    <button type="button" class="wk-if" data-status="wait">대기</button>
-                    <button type="button" class="wk-if" data-status="someday">언젠가</button>
-                    <button type="button" class="wk-if" data-status="ref">참고</button>
-                </div>
-                <div class="wk-inbox-list" id="wk-inbox-list">
-                    {% for it in review_inbox %}
-                    <div class="wk-inbox-item" data-id="{{ it.id }}" data-status="{{ it.status or '' }}">
-                        <input type="text" class="wk-inbox-text" value="{{ it.text }}" data-id="{{ it.id }}" autocomplete="off">
-                        <select class="wk-inbox-status" data-id="{{ it.id }}" aria-label="상태">
-                            <option value="" {% if not it.status %}selected{% endif %}>미분류</option>
-                            <option value="next" {% if it.status == 'next' %}selected{% endif %}>다음행동</option>
-                            <option value="wait" {% if it.status == 'wait' %}selected{% endif %}>대기</option>
-                            <option value="someday" {% if it.status == 'someday' %}selected{% endif %}>언젠가</option>
-                            <option value="ref" {% if it.status == 'ref' %}selected{% endif %}>참고</option>
-                        </select>
-                        <button type="button" class="inbox-del wk-inbox-del" data-id="{{ it.id }}" title="삭제">✕</button>
-                    </div>
-                    {% endfor %}
-                </div>
-                <div class="ctx-empty" id="wk-inbox-empty"{% if review_inbox %} hidden{% endif %}>정리할 항목이 없습니다.</div>
-            </div>
-            {% endif %}
-            <div class="review-col">
-                <div class="review-head">흘려보낸 코어 블록 <span class="count">{{ missed_blocks | length }}</span></div>
-                {% if missed_blocks %}
-                <ul class="review-list">
-                    {% for m in missed_blocks %}
-                    {% set mname = (m.name or '').strip() or themes_by_label.get(m.block_label) or '' %}
-                    <li class="rv-missed">
-                        <a href="/day/{{ m.date }}#blk-{{ m.block_order }}">
-                            <span class="rv-date mono">{{ m.date | short_date }}({{ m.date | ko_weekday }})</span>
-                            <span class="rv-blk">{{ m.block_label }}{% if mname %} · {{ mname }}{% endif %}</span>
-                        </a>
-                        <span class="rv-plan">{{ m.plan_text }}</span>
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <div class="ctx-empty">계획만 하고 지나친 코어 블록이 없습니다.</div>
-                {% endif %}
-            </div>
-        </div>
-        <div class="review-reflect">
-            <div class="review-head">이번 주 고결감 <span class="count">{{ week_reflections | length }}</span> <span class="card-sub"><a href="/reflect">고결감 탭</a></span></div>
-            {% if week_reflections %}
-            <ul class="review-list rv-reflect-list">
-                {% for r in week_reflections %}
-                <li class="rv-reflect">
-                    <span class="rf-badge" data-kind="{{ r.kind }}">{{ r.kind }}</span>
-                    <span class="rv-date mono">{{ r.event_date | short_date }}</span>
-                    <span class="rv-plan">{% if r.title %}{{ r.title }}{% if r.text %} · {{ r.text }}{% endif %}{% else %}{{ r.text }}{% endif %}</span>
-                </li>
-                {% endfor %}
-            </ul>
-            {% else %}
-            <div class="ctx-empty">이번 주에 기록한 고결감이 없습니다.</div>
-            {% endif %}
-        </div>
-    </section>
 
     <section class="card">
         <div class="wk7-head">

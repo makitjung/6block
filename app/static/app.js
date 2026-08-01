@@ -3108,135 +3108,6 @@
         });
     }
 
-    // ---- 주간 미처리 수집함 (오늘 빠른수집함과 같은 inbox 테이블, 추가·수정·삭제) ----
-    function bindWeekInbox() {
-        const list = document.getElementById('wk-inbox-list');
-        const input = document.getElementById('wk-inbox-input');
-        const addBtn = document.getElementById('wk-inbox-add');
-        if (!list && !input) return;
-        const countEl = document.getElementById('wk-inbox-count');
-        const empty = document.getElementById('wk-inbox-empty');
-        const bump = (d) => { if (countEl) countEl.textContent = Math.max(0, (parseInt(countEl.textContent, 10) || 0) + d); };
-        const refreshEmpty = () => { if (empty) empty.hidden = !!(list && list.querySelector('.wk-inbox-item')); };
-        const bindEdit = (ti) => {
-            let last = ti.value;
-            const save = () => {
-                const v = (ti.value || '').trim();
-                const id = ti.dataset.id;
-                if (String(id).indexOf('tmp-') === 0) return;   // 아직 미동기화 항목
-                if (v === last || !v) return;
-                last = v;
-                sendOrQueue(
-                    { id: genId(), kind: 'inbox-edit', url: '/inbox/update', headers: FORM_HEADERS,
-                      body: new URLSearchParams({ item_id: id, text: v }).toString(),
-                      dedupe: 'inbox-edit:' + id },
-                    () => autosaveToast(),
-                    () => toast('저장 대기 · 자동 재시도'),
-                );
-            };
-            ti.addEventListener('change', save);
-            ti.addEventListener('blur', save);
-            ti.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); ti.blur(); }
-            });
-        };
-        const remove = (row) => {
-            const id = row.dataset.id;
-            row.remove(); bump(-1); refreshEmpty();
-            if (String(id).indexOf('tmp-') === 0) { cancelQueued(row.dataset.op); return; }
-            sendOrQueue(
-                { id: genId(), kind: 'inbox-op', url: '/inbox/delete/' + id, headers: {}, body: '' },
-                null, () => toast('전송 대기 · 자동 재시도'),
-            );
-        };
-        // GTD 상태(미분류/다음행동/대기/언젠가/참고) 자동저장
-        const STATUS_OPTS = [['', '미분류'], ['next', '다음행동'], ['wait', '대기'], ['someday', '언젠가'], ['ref', '참고']];
-        const bindStatus = (sel) => {
-            sel.addEventListener('change', () => {
-                const id = sel.dataset.id;
-                const row = sel.closest('.wk-inbox-item');
-                if (row) { row.dataset.status = sel.value; applyInboxFilter(); }
-                if (String(id).indexOf('tmp-') === 0) return;   // 아직 미동기화
-                sendOrQueue(
-                    { id: genId(), kind: 'inbox-status', url: '/inbox/status', headers: FORM_HEADERS,
-                      body: new URLSearchParams({ item_id: id, status: sel.value }).toString(),
-                      dedupe: 'inbox-status:' + id },
-                    () => autosaveToast(),
-                    () => toast('저장 대기 · 자동 재시도'),
-                );
-            });
-        };
-        const makeStatusSelect = (id, cur) => {
-            const sel = document.createElement('select');
-            sel.className = 'wk-inbox-status'; sel.dataset.id = id;
-            STATUS_OPTS.forEach(([v, t]) => {
-                const o = document.createElement('option');
-                o.value = v; o.textContent = t;
-                if (v === (cur || '')) o.selected = true;
-                sel.appendChild(o);
-            });
-            bindStatus(sel);
-            return sel;
-        };
-        const addRow = (id, text, opId) => {
-            const row = el('div', 'wk-inbox-item');
-            row.dataset.id = id; row.dataset.status = ''; if (opId) row.dataset.op = opId;
-            const ti = document.createElement('input');
-            ti.type = 'text'; ti.className = 'wk-inbox-text'; ti.value = text; ti.dataset.id = id;
-            bindEdit(ti);
-            const del = document.createElement('button');
-            del.type = 'button'; del.className = 'inbox-del wk-inbox-del'; del.title = '삭제'; del.textContent = '✕';
-            del.addEventListener('click', () => remove(row));
-            row.appendChild(ti); row.appendChild(makeStatusSelect(id, '')); row.appendChild(del);
-            list.insertBefore(row, list.firstChild);
-            refreshEmpty();
-        };
-        let inflight = false;
-        const add = () => {
-            if (!input || inflight) return;
-            const text = input.value.trim();
-            if (!text) return;
-            inflight = true;
-            const op = { id: genId(), kind: 'inbox-add', url: '/inbox/add', headers: FORM_HEADERS,
-                         body: new URLSearchParams({ text: text }).toString() };
-            fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
-                .then((r) => r.json())
-                .then((d) => {
-                    if (!d.ok) return;
-                    addRow(d.id, d.text); input.value = ''; bump(1); toast('수집함에 추가');
-                })
-                .catch(() => {
-                    enqueue(op); addRow('tmp-' + op.id, text, op.id);
-                    input.value = ''; bump(1); toast('수집함 대기 · 연결되면 전송');
-                })
-                .finally(() => { inflight = false; });
-        };
-        const filterBox = document.getElementById('wk-inbox-filter');
-        let curFilter = 'all';
-        function applyInboxFilter() {
-            list?.querySelectorAll('.wk-inbox-item').forEach((row) => {
-                row.hidden = curFilter !== 'all' && (row.dataset.status || '') !== curFilter;
-            });
-        }
-        filterBox?.querySelectorAll('.wk-if').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                curFilter = btn.dataset.status;
-                filterBox.querySelectorAll('.wk-if').forEach((b) =>
-                    b.classList.toggle('is-active', b === btn));
-                applyInboxFilter();
-            });
-        });
-
-        list?.querySelectorAll('.wk-inbox-text').forEach(bindEdit);
-        list?.querySelectorAll('.wk-inbox-status').forEach(bindStatus);
-        list?.querySelectorAll('.wk-inbox-del').forEach((b) =>
-            b.addEventListener('click', () => remove(b.closest('.wk-inbox-item'))));
-        addBtn?.addEventListener('click', add);
-        input?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); add(); }
-        });
-    }
-
     // ---- 오늘 외부 입력: 일정→구글 / 할일→Things3 (입력 즉시 낙관적 표시) ----
     function bindTodayExternal() {
         const form = document.querySelector('.day-form');
@@ -3513,6 +3384,17 @@
             kpiBtn.textContent = show ? '하루 진행 접기' : '하루 진행';
         });
 
+        // 주간 탭 '통계'(코어·PLAN→DO 달성률·기록된 시간 + 카테고리별 시간 분포). 기본은 접힘.
+        const wkStatsBtn = document.getElementById('wk-stats-toggle');
+        wkStatsBtn?.addEventListener('click', () => {
+            const box = document.getElementById('wk-stats');
+            if (!box) return;
+            const show = box.hidden;
+            box.hidden = !show;
+            wkStatsBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+            wkStatsBtn.textContent = show ? '통계 접기' : '통계';
+        });
+
         // 빠른 수집함. 한글 IME 조합 Enter(229/isComposing)는 무시해 2회 추가를 막는다.
         document.getElementById('inbox-add')?.addEventListener('click', inboxAdd);
         document.getElementById('inbox-input')?.addEventListener('keydown', (e) => {
@@ -3576,7 +3458,6 @@
         bindPlanAreas();
         bindReflect();
         bindReflectModal();
-        bindWeekInbox();
         bindTodayExternal();
         bindRollover();
         bindShutdown();

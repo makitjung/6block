@@ -16,16 +16,17 @@
 <script>window.__wkTodos = {{ wk_todos | tojson }};</script>
 <form method="post" action="/save/day/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}" data-date="{{ date_str }}">
     <section class="hero">
-        {# 날짜 이동 화살표는 날짜·요일 두 줄 높이에 맞춰 위아래로 쌓는다(위=이전 날, 아래=다음 날) #}
         <div class="hero-nav">
-            <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날" title="이전 날">▴</a>
-            <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날" title="다음 날">▾</a>
+            <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날" title="이전 날">‹</a>
+            <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날" title="다음 날">›</a>
         </div>
         {# 날짜·요일 / 그 옆에 구글 일정(여러 개면 번갈아). 오늘 컨셉은 아래 목표 3열 위로 옮겼다 #}
         <div class="hero-main">
             <div class="hero-date">
                 <div class="hero-date-main">{{ date_str | pretty_date }}{% if weekday_concept %} <span class="hero-wdc">({{ weekday_concept }})</span>{% endif %}</div>
-                <div class="hero-date-sub mono">{{ date_str }}{% if not is_today %} · <a href="/today">오늘로</a>{% endif %}</div>
+                {# 날짜(2026-08-01)는 바로 위 '8월 1일 토요일'과 같은 정보라 적지 않는다.
+                   지난 날짜를 볼 때 돌아올 길만 남긴다. #}
+                {% if not is_today %}<div class="hero-date-sub mono"><a href="/today">오늘로</a></div>{% endif %}
             </div>
             {# 일정 제목은 app.js 가 번갈아 갈아 끼운다. 첫 화면이 비어 보이지 않게 첫 건만 미리 그린다 #}
             <div class="hero-cal" id="hero-cal"{% if not cal_events %} hidden{% endif %}>
@@ -86,8 +87,7 @@
             <div class="concept-grid">
                 {% for i in range(3) %}
                 <input type="text" name="concept{{ i + 1 }}" value="{{ concepts[i] }}"
-                       placeholder="컨셉 {{ i + 1 }}" autocomplete="off"
-                       aria-label="오늘 컨셉 {{ i + 1 }}">
+                       autocomplete="off" aria-label="오늘 컨셉 {{ i + 1 }}">
                 {% endfor %}
             </div>
         </div>
@@ -98,7 +98,7 @@
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
                     {{ wk_link('goallink' ~ (i + 1), goal_links[i]) }}
-                    <textarea name="goal{{ i + 1 }}" rows="1" class="gp-input" placeholder="목표 {{ i + 1 }}" autocomplete="off">{{ goals[i] }}</textarea>
+                    <textarea name="goal{{ i + 1 }}" rows="1" class="gp-input" autocomplete="off" aria-label="목표 {{ i + 1 }}">{{ goals[i] }}</textarea>
                     <input type="hidden" name="goaltag{{ i + 1 }}" value="{{ goal_tags[i] }}">
                     <button type="button" class="gp-tag-btn{% if goal_tags[i] %} has-tag{% endif %}" data-group="goaltag" data-idx="{{ i + 1 }}" aria-label="목표 {{ i + 1 }} 태그">{{ goal_tags[i] if goal_tags[i] else '＃' }}</button>
                 </div>
@@ -109,7 +109,7 @@
                 {% for i in range(3) %}
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
-                    <textarea name="dplan{{ i + 1 }}" rows="1" class="gp-input" placeholder="달성 {{ i + 1 }}" autocomplete="off">{{ plans[i] }}</textarea>
+                    <textarea name="dplan{{ i + 1 }}" rows="1" class="gp-input" autocomplete="off" aria-label="달성 {{ i + 1 }}">{{ plans[i] }}</textarea>
                     <input type="hidden" name="plantag{{ i + 1 }}" value="{{ plan_tags[i] }}">
                     <button type="button" class="gp-tag-btn{% if plan_tags[i] %} has-tag{% endif %}" data-group="plantag" data-idx="{{ i + 1 }}" aria-label="달성 {{ i + 1 }} 태그">{{ plan_tags[i] if plan_tags[i] else '＃' }}</button>
                 </div>
@@ -120,7 +120,7 @@
                 {% for i in range(3) %}
                 <div class="gp-row">
                     <span class="gp-no">{{ i + 1 }}</span>
-                    <textarea name="grat{{ i + 1 }}" rows="1" class="gp-input" placeholder="감사 · 반성 {{ i + 1 }}" autocomplete="off">{{ grats[i] }}</textarea>
+                    <textarea name="grat{{ i + 1 }}" rows="1" class="gp-input" autocomplete="off" aria-label="감사 · 반성 {{ i + 1 }}">{{ grats[i] }}</textarea>
                     <input type="hidden" name="grattag{{ i + 1 }}" value="{{ grat_tags[i] }}">
                     <button type="button" class="gp-tag-btn{% if grat_tags[i] %} has-tag{% endif %}" data-group="grattag" data-idx="{{ i + 1 }}" aria-label="감사 · 반성 {{ i + 1 }} 태그">{{ grat_tags[i] if grat_tags[i] else '＃' }}</button>
                 </div>
@@ -172,7 +172,7 @@
                 </div>
                 {% if gcal_events_on %}
                 <div class="agenda-add">
-                    <input type="text" id="ev-input" placeholder="일정 추가 → 구글 캘린더" autocomplete="off" enterkeyhint="done">
+                    <input type="text" id="ev-input" autocomplete="off" enterkeyhint="done" aria-label="일정 추가">
                     <input type="date" id="ev-date" aria-label="날짜(기본: 오늘)">
                     <button type="button" class="inbox-add" id="ev-add" aria-label="일정 추가">+</button>
                 </div>
@@ -196,10 +196,11 @@
                 </div>
             </div>
             <div class="agenda-col">
-                <div class="ctx-head">Things3 할 일</div>
+                <div class="ctx-head">Things3 할 일
+                    <button type="button" class="hint" data-hint="Inbox로 이동" aria-label="설명">?</button></div>
                 {% if things_write_on %}
                 <div class="agenda-add">
-                    <input type="text" id="task-input" placeholder="할일 추가 → Things3 수집함" autocomplete="off" enterkeyhint="done">
+                    <input type="text" id="task-input" autocomplete="off" enterkeyhint="done" aria-label="할일 추가">
                     <button type="button" class="inbox-add" id="task-add" aria-label="할일 추가">+</button>
                 </div>
                 {% endif %}
@@ -348,11 +349,11 @@
                 </div>
                 <label class="field ps-plan">
                     <span class="field-label">PLAN</span>
-                    <textarea name="plan_{{ b.id }}" rows="2" placeholder="이 블록에서 하려는 것">{{ b.plan_text or '' }}</textarea>
+                    <textarea name="plan_{{ b.id }}" rows="2">{{ b.plan_text or '' }}</textarea>
                 </label>
                 <label class="field ps-see">
                     <span class="field-label">SEE</span>
-                    <textarea name="see_{{ b.id }}" rows="2" placeholder="끝내고 돌아보기">{{ b.see_text or '' }}</textarea>
+                    <textarea name="see_{{ b.id }}" rows="2">{{ b.see_text or '' }}</textarea>
                 </label>
             </div>
             {% endif %}
@@ -405,9 +406,8 @@
         {# 위는 2열(왼쪽 하루 평가 · 오른쪽 내일 가장 중요한 일), 아래는 한 열로 빈 슬롯 #}
         <div class="sd-2col">
             <div class="field">
-                <span class="field-label">하루 평가
-                    <button type="button" class="hint" data-hint="오늘 하루가 어땠는지 적습니다. 목록 줄(1. · -)에서 Enter 를 누르면 다음 항목이 이어지고, Tab 으로 한 단계 들여씁니다." aria-label="설명">?</button></span>
-                <textarea name="day_review" rows="4" placeholder="오늘 하루를 어떻게 보냈는지">{{ (meta.day_review if meta else '') or '' }}</textarea>
+                <span class="field-label">하루 평가</span>
+                <textarea name="day_review" rows="4">{{ (meta.day_review if meta else '') or '' }}</textarea>
             </div>
             <div class="field">
                 <span class="field-label">내일 가장 중요한 일
