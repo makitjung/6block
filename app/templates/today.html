@@ -23,10 +23,12 @@
         {# 날짜·요일 / 그 옆에 구글 일정(여러 개면 번갈아). 오늘 컨셉은 아래 목표 3열 위로 옮겼다 #}
         <div class="hero-main">
             <div class="hero-date">
-                <div class="hero-date-main">{{ date_str | pretty_date }}{% if weekday_concept %} <span class="hero-wdc">({{ weekday_concept }})</span>{% endif %}</div>
-                {# 날짜(2026-08-01)는 바로 위 '8월 1일 토요일'과 같은 정보라 적지 않는다.
-                   지난 날짜를 볼 때 돌아올 길만 남긴다. #}
-                {% if not is_today %}<div class="hero-date-sub mono"><a href="/today">오늘로</a></div>{% endif %}
+                <div class="hero-date-main">{{ date_str | pretty_date }}</div>
+                {# 그 요일의 컨셉은 날짜 아래 한 줄. 지난 날짜면 돌아올 길만 덧붙인다
+                   (날짜 2026-08-01 은 바로 위 '8월 1일 토요일'과 같은 정보라 적지 않는다) #}
+                {% if weekday_concept or not is_today %}
+                <div class="hero-date-sub">{% if weekday_concept %}<span class="hero-wdc">{{ weekday_concept }}</span>{% endif %}{% if not is_today %}{% if weekday_concept %} · {% endif %}<a href="/today">오늘로</a>{% endif %}</div>
+                {% endif %}
             </div>
             {# 일정 제목은 app.js 가 번갈아 갈아 끼운다. 첫 화면이 비어 보이지 않게 첫 건만 미리 그린다 #}
             <div class="hero-cal" id="hero-cal"{% if not cal_events %} hidden{% endif %}>
@@ -34,9 +36,30 @@
                 <span class="hero-cal-x">{% if cal_events %}{{ cal_events[0].title }}{% endif %}</span>
             </div>
         </div>
+        {# 저장 버튼은 없앴다. 모든 칸이 손을 떼는 즉시 저장된다(bindAutosaveAll).
+           새로고침은 맨 위 막대(시계·테마 옆) 아이콘으로 옮겼다. #}
         <div class="hero-actions">
-            <a href="/day/{{ date_str }}" class="ghost-btn">새로고침</a>
-            <button type="submit" class="primary-btn">저장</button>
+            <button type="button" id="kpi-toggle" class="ghost-btn"
+                    aria-expanded="false" aria-controls="kpi-row">평가</button>
+        </div>
+    </section>
+
+    {# 하루 평가 지표. 평소에는 접어 두고 위 '평가' 버튼으로만 편다 #}
+    <section class="kpi-row" id="kpi-row" hidden>
+        <div class="kpi">
+            <span class="kpi-label">코어 실행</span>
+            <span class="kpi-value mono"><strong>{{ day_stats.core_achieved }}</strong>/{{ day_stats.core_planned }}</span>
+            <div class="kpi-bar"><span style="width: {{ (day_stats.core_achieved / day_stats.core_planned * 100) | round(0) if day_stats.core_planned else 0 }}%"></span></div>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">완료 슬롯</span>
+            <span class="kpi-value mono"><strong>{{ day_stats.done }}</strong>/{{ day_stats.total }}</span>
+            <div class="kpi-bar"><span style="width: {{ (day_stats.done / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">기록 슬롯</span>
+            <span class="kpi-value mono"><strong>{{ day_stats.recorded }}</strong>/{{ day_stats.total }}</span>
+            <div class="kpi-bar"><span style="width: {{ (day_stats.recorded / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
         </div>
     </section>
 
@@ -449,32 +472,6 @@
     </details>
     {% endif %}
 
-    {# 하루 진행 지표. 평소에는 볼 일이 없어 맨 아래에 접어 두고 버튼으로만 편다. #}
-    <div class="kpi-fold">
-        <button type="button" id="kpi-toggle" class="ghost-btn kpi-toggle" aria-expanded="false"
-                aria-controls="kpi-row">하루 진행</button>
-        <section class="kpi-row" id="kpi-row" hidden>
-            <div class="kpi">
-                <span class="kpi-label">코어 실행</span>
-                <span class="kpi-value mono"><strong>{{ day_stats.core_achieved }}</strong>/{{ day_stats.core_planned }}</span>
-                <div class="kpi-bar"><span style="width: {{ (day_stats.core_achieved / day_stats.core_planned * 100) | round(0) if day_stats.core_planned else 0 }}%"></span></div>
-            </div>
-            <div class="kpi">
-                <span class="kpi-label">완료 슬롯</span>
-                <span class="kpi-value mono"><strong>{{ day_stats.done }}</strong>/{{ day_stats.total }}</span>
-                <div class="kpi-bar"><span style="width: {{ (day_stats.done / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
-            </div>
-            <div class="kpi">
-                <span class="kpi-label">기록 슬롯</span>
-                <span class="kpi-value mono"><strong>{{ day_stats.recorded }}</strong>/{{ day_stats.total }}</span>
-                <div class="kpi-bar"><span style="width: {{ (day_stats.recorded / day_stats.total * 100) | round(0) if day_stats.total else 0 }}%"></span></div>
-            </div>
-        </section>
-    </div>
-
-    <div class="actions-sticky">
-        <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
-    </div>
 </form>
 
 <!-- 슬롯 DO 옆 '고민' 버튼으로 여는 공용 작성창 -->

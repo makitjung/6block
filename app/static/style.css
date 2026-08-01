@@ -249,8 +249,11 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     display: grid; grid-template-columns: auto 1fr auto;
     align-items: center; gap: 14px; margin-bottom: 16px;
 }
-/* 날짜 이동 화살표는 날짜 왼쪽에 좌우로(주간·장기 탭과 같게) */
-.hero-nav { display: flex; gap: 8px; }
+/* 날짜·주 이동 화살표(‹ ›)는 위아래로 쌓아 가로 폭을 아낀다. 오늘·주간·장기 공통 */
+.hero-nav { display: flex; flex-direction: column; gap: 2px; }
+.hero-nav .icon-btn {
+    width: 26px; height: 25px; border-radius: var(--r-sm); font-size: 16px;
+}
 .hero-date { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .hero-date-main { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
 .hero-date-sub { color: var(--text-muted); font-size: 12px; }
@@ -550,11 +553,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .inbox-block-chip:hover { border-color: var(--accent); background: var(--surface); color: var(--accent); }
 /* === KPI === */
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
-/* 오늘 탭에서는 맨 아래에 접어 두고 버튼으로만 편다 */
-.kpi-fold { margin: 18px 0 8px; }
-.kpi-fold .kpi-row { margin: 10px 0 0; }
-.kpi-fold .kpi-row[hidden] { display: none; }
-.kpi-toggle { font-size: 12px; }
+/* 오늘 탭 '평가'는 날짜 줄 버튼으로 편다(기본은 접힘) */
+.kpi-row[hidden] { display: none; }
 /* 주간 탭 통계: 위 지표 3개 + 그 아래 카테고리별 시간 분포. 기본은 접힘 */
 .wk-stats { margin-bottom: 14px; }
 .wk-stats[hidden] { display: none; }
@@ -859,10 +859,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: var(--text-soft); background: var(--surface);
 }
 
-/* === Sticky save === */
-.actions-sticky { position: fixed; bottom: 16px; right: 16px; z-index: 30; display: flex; gap: 10px; }
-.save-btn { box-shadow: var(--sh-3); }
-
 /* === Pomodoro floating dial === */
 .pomo { position: fixed; left: 16px; bottom: 16px; z-index: 40; }
 .pomo-dial {
@@ -943,7 +939,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .cat-bar-row { grid-template-columns: 80px 1fr 90px; gap: 10px; }
     .hero-date-main { font-size: 20px; }
     .pomo { bottom: 72px; }
-    .actions-sticky { bottom: 12px; right: 12px; }
 }
 /* 폰에서는 hero 가운데 칸이 너무 좁다. 날짜·일정을 한 줄 통째로 내려 폭을 다 쓰게 하고,
    이전·다음과 새로고침·저장만 윗줄에 남긴다(안 그러면 날짜가 네 줄로 접힌다).
@@ -1527,8 +1522,7 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .wk7-head .card-title { margin: 0; }
 .wk-tpl-inline { display: flex; align-items: center; gap: 6px; }
 .wk-tpl-inline select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; max-width: 44vw; }
-.wk-tpl-inline .wk-tpl-apply { padding: 5px 12px; font-size: 13px; }
-.wk-tpl-edit { color: var(--text-muted); text-decoration: none; font-size: 12px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; }
+.wk-tpl-inline .ghost-btn { padding: 5px 12px; font-size: 13px; white-space: nowrap; }
 
 /* 분석 탭: 개선점 카드 */
 .insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -1560,8 +1554,10 @@ button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border);
 .funnel-note { margin: 14px 0 0; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
 @media (max-width: 560px) { .funnel-head { grid-template-columns: 1fr; } .fn-score-val { font-size: 26px; } }
 
-/* 주간 탭: 블록 테마 자동 채우기 도구 줄 */
-.theme-tools { margin: 2px 0 10px; }
+/* 주간 탭 '블록이름'(B1~B6 이번 주 이름). 7일 보기 머리글 버튼으로 편다 */
+.wk-names { margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.wk-names[hidden] { display: none; }
+.wk-names #wk-fill-themes { margin-top: 8px; font-size: 12px; padding: 5px 12px; }
 
 /* ===== 설정 탭: 기능별 그룹 배치 ===== */
 .set-status { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 10px; }

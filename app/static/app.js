@@ -646,10 +646,15 @@
             });
     }
     function bindForm() {
-        const dayForm = document.querySelector('form.day-form');
-        if (dayForm) {
-            dayForm.addEventListener('submit', (e) => { e.preventDefault(); saveDayForm(dayForm); });
-        }
+        // 저장 버튼을 없앤 뒤로 폼이 스스로 전송되는 길은 '칸에서 Enter' 하나뿐이다.
+        // 값은 칸마다 이미 자동저장되므로 화면을 새로 띄우지 않고, 그 칸만 확정(blur)해
+        // 곧바로 저장되게 한다. ⌘S 는 아래에서 그대로 전체 저장을 맡는다.
+        document.querySelectorAll('form.day-form, form.week-form').forEach((f) => {
+            f.addEventListener('submit', (e) => {
+                e.preventDefault();
+                document.activeElement?.blur();
+            });
+        });
         document.addEventListener('keydown', (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                 e.preventDefault();
@@ -3310,18 +3315,31 @@
         // 주간 탭: 이번 주 장기 항목(장기 탭 계획 막대) 연동
         bindWeekLtItems();
 
-        // 주간 탭: 구분 템플릿 일괄 적용
-        const wkApplyBtn = document.getElementById('wk-apply-tpl-btn');
-        wkApplyBtn?.addEventListener('click', () => {
-            const sel = document.getElementById('wk-apply-tpl-sel');
-            const tid = sel && sel.value;
-            if (!tid) { toast('템플릿을 고르세요'); return; }
-            if (!confirm('이 주 전체 코어 블록 구분을 선택한 템플릿으로 채웁니다. 계속할까요?')) return;
-            postForm('/week/apply-template', { week_start: wkApplyBtn.dataset.week, template_id: tid })
+        // 주간 탭: 구분 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다)
+        const wkTplSel = document.getElementById('wk-apply-tpl-sel');
+        wkTplSel?.addEventListener('change', () => {
+            const tid = wkTplSel.value;
+            if (!tid) return;
+            postForm('/week/apply-template',
+                     { week_start: wkTplSel.dataset.week, template_id: tid })
                 .then((d) => {
                     if (d && d.ok) location.reload();
-                    else toast((d && d.error === 'empty-template') ? '템플릿이 비어 있습니다' : '적용 실패');
+                    else {
+                        wkTplSel.value = '';
+                        toast((d && d.error === 'empty-template') ? '템플릿이 비어 있습니다' : '적용 실패');
+                    }
                 });
+        });
+
+        // 주간 탭: '블록이름'(B1~B6 이번 주 이름). 기본은 접힘.
+        const wkNamesBtn = document.getElementById('wk-names-toggle');
+        wkNamesBtn?.addEventListener('click', () => {
+            const box = document.getElementById('wk-names');
+            if (!box) return;
+            const show = box.hidden;
+            box.hidden = !show;
+            wkNamesBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+            if (show) box.querySelector('input')?.focus();
         });
 
         // 주간 탭: 이번 주 계획으로 블록 테마(B1~B6) 자동 채우기(빈 칸만)
@@ -3373,7 +3391,7 @@
         // 테마 토글
         document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
 
-        // 맨 아래 '하루 진행'(코어 실행·완료 슬롯·기록 슬롯). 기본은 접힘.
+        // 오늘 탭 '평가'(코어 실행·완료 슬롯·기록 슬롯). 날짜 줄 오른쪽 버튼으로 그 자리에서 편다.
         const kpiBtn = document.getElementById('kpi-toggle');
         kpiBtn?.addEventListener('click', () => {
             const row = document.getElementById('kpi-row');
@@ -3381,7 +3399,21 @@
             const show = row.hidden;
             row.hidden = !show;
             kpiBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
-            kpiBtn.textContent = show ? '하루 진행 접기' : '하루 진행';
+            kpiBtn.textContent = show ? '평가 접기' : '평가';
+        });
+
+        // 맨 위 막대: 새로고침 아이콘(지금 화면을 서버에서 다시 받는다)
+        document.getElementById('page-refresh')?.addEventListener('click', () => {
+            location.reload();
+        });
+
+        // 로고를 누르면 오늘 탭 지금 블록으로. 이미 오늘 탭이면 새로 받지 않고 그 자리로 옮긴다.
+        document.getElementById('logo-now')?.addEventListener('click', (e) => {
+            if (!document.querySelector('.day-form') || !isDeviceToday()) return;
+            e.preventDefault();
+            const target = document.querySelector('.slot.is-now')
+                || document.querySelector('.block.is-focus');
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
 
         // 주간 탭 '통계'(코어·PLAN→DO 달성률·기록된 시간 + 카테고리별 시간 분포). 기본은 접힘.

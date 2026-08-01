@@ -698,15 +698,34 @@ def run_checks(db_path):
     post("/settings/save", {"show_reflect": "0", "show_slot_play": "0"})
     post("/settings/save", {"show_inbox": "0"})
 
-    # 17. 요일 컨셉(설정 7칸 → 오늘 탭 날짜 옆 괄호)
+    # 17. 요일 컨셉(설정 7칸 → 오늘 탭 날짜 아래 줄)
     code, out = post("/settings/weekday-concepts",
                      {f"wd{i}": ("금요일컨셉" if i == 4 else "") for i in range(7)})
     check("요일 컨셉 저장", code == 200 and out.get("ok"), out)
     code, html = get("/day/2026-07-31")          # 2026-07-31은 금요일
-    check("오늘 탭 날짜 옆에 그 요일 컨셉",
-          '<span class="hero-wdc">(금요일컨셉)</span>' in html)
-    code, html = get("/day/2026-07-30")          # 목요일은 비어 있어 괄호도 없음
-    check("컨셉이 비면 괄호도 없음", "hero-wdc" not in html)
+    check("오늘 탭 날짜 아래에 그 요일 컨셉",
+          '<span class="hero-wdc">금요일컨셉</span>' in html
+          and html.find("hero-date-main") < html.find("hero-wdc"))
+    code, html = get("/day/2026-07-30")          # 목요일은 비어 있어 그 줄도 없음
+    check("컨셉이 비면 그 줄도 없음", "hero-wdc" not in html)
+
+    # 17-2. 저장 버튼은 없앴다(모든 칸이 자동저장). 새로고침은 맨 위 막대 아이콘으로 옮겼다.
+    code, wk = get("/week/2026-07-27")
+    # (칸별 '저장'인 내일 가장 중요한 일·태그 창은 그대로다. 폼 전체 저장만 없앴다)
+    check("오늘·주간에 폼 저장 버튼 없음",
+          "actions-sticky" not in html and "actions-sticky" not in wk
+          and 'type="submit"' not in html and 'type="submit"' not in wk)
+    check("맨 위 막대에 새로고침 아이콘", 'id="page-refresh"' in html and 'id="page-refresh"' in wk)
+    check("로고는 오늘 탭 지금 블록으로", 'id="logo-now"' in html and 'href="/today"' in html)
+    check("오늘 탭 지표는 '평가' 버튼으로", 'id="kpi-toggle"' in html and ">평가<" in html
+          and 'id="kpi-row" hidden' in html)
+    # 17-3. 주간 7일 보기: 물음표 없음 · 템플릿은 고르면 바로 적용 · 블록이름은 버튼으로 편다
+    check("7일 보기 물음표 없음", "7일 보기\n" in wk or "7일 보기</h2>" in wk)
+    check("템플릿 적용·편집 버튼 없음",
+          'id="wk-apply-tpl-btn"' not in wk and "wk-tpl-edit" not in wk)
+    check("블록이름 버튼이 그 자리에",
+          'id="wk-names-toggle"' in wk and 'id="wk-names" hidden' in wk
+          and 'name="theme_B1"' in wk and "theme-fold" not in wk)
 
     # 22. 아이콘: 아이폰 홈화면은 뿌리의 PNG 를 찾는다(SVG 는 무시한다)
     for path, ctype in (("/favicon.ico", "image/x-icon"),
@@ -757,6 +776,20 @@ def run_checks(db_path):
             "category_id": "",
         })
         check("템플릿 칸 저장(미지정)", code == 200 and out.get("ok"), out)
+        # 주간 탭에서 템플릿을 고르면(선택 즉시) 이 주소로 바로 적용된다.
+        cat_id = db_query(db_path, "SELECT id FROM categories LIMIT 1")[0]["id"]
+        post("/settings/template/cell", {
+            "template_id": tpl_id, "weekday": "0", "block_label": "B1",
+            "category_id": str(cat_id),
+        })
+        code, out = post("/week/apply-template",
+                         {"week_start": "2026-07-27", "template_id": str(tpl_id)})
+        check("템플릿을 고르면 그 주에 바로 적용", code == 200 and out.get("ok"), out)
+        row = db_query(db_path,
+                       "SELECT category_id FROM blocks "
+                       "WHERE date='2026-07-27' AND block_label='B1'")
+        check("월요일 B1 구분이 템플릿대로",
+              row and row[0]["category_id"] == cat_id, row and row[0]["category_id"])
         post("/settings/template/delete", {"id": tpl_id})
 
     # 26. 하루 마감 · 기록이 빈 슬롯 모으기

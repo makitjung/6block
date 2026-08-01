@@ -12,10 +12,10 @@
         <div class="hero-date">
             <div class="hero-date-main"><span class="hero-wk">{{ week_no }}주차</span> {{ dates[0] | short_date }}~{{ dates[6] | short_date }}</div>
         </div>
+        {# 저장 버튼은 없앴다. 모든 칸이 손을 떼는 즉시 저장된다(bindAutosaveAll) #}
         <div class="hero-actions">
             <button type="button" class="ghost-btn" id="wk-stats-toggle"
                     aria-expanded="false" aria-controls="wk-stats">통계</button>
-            <button type="submit" class="primary-btn">저장</button>
         </div>
     </section>
 
@@ -110,49 +110,49 @@
         </div>
     </section>
 
-    <details class="card theme-fold">
-        <summary class="card-title">이번 주 블록 이름
-            <button type="button" class="hint" data-hint="여기서 정한 이름이 그 주 내내 그 블록에 쓰입니다. 특정 요일만 다르게 하려면 아래 7일 격자에서 그 날 칸에 직접 적으세요(비우면 여기 이름을 따릅니다)." aria-label="설명">?</button>
-        </summary>
-        <div class="theme-tools">
-            <button type="button" class="ghost-btn" id="wk-fill-themes" data-week="{{ week_start }}" title="주간 목표·이 주 장기 항목을 B1~B6 테마로 나눠 빈 칸만 채웁니다">이번 주 계획으로 자동 채우기</button>
-        </div>
-        <div class="theme-list">
-            {% for lbl in core_labels %}
-            {% set cells = name_cells.get(lbl, []) %}
-            {% set over = cells | selectattr('name') | list | length %}
-            <div class="theme-item" data-label="{{ lbl }}">
-                <div class="theme-row">
-                    <span class="theme-label">{{ lbl }}</span>
-                    <input type="text" name="theme_{{ lbl }}" value="{{ themes_by_label.get(lbl, '') or '' }}" placeholder="{{ lbl }}에 무엇을 할지" autocomplete="off" aria-label="{{ lbl }} 이번 주 이름">
-                    {% if over %}<span class="theme-over" title="아래 7일 격자에서 이 블록의 이름을 따로 정한 날 수">요일별 {{ over }}</span>{% endif %}
-                </div>
-                {# 요일별 이름은 아래 7일 격자에서 바로 고친다(한 칸을 두 곳에서 고치면
-                   저장할 때 서로 덮어쓴다). 여기서는 몇 개나 따로 정했는지만 알려 준다. #}
-            </div>
-            {% endfor %}
-        </div>
-    </details>
-
     <section class="card">
         <div class="wk7-head">
-            <h2 class="card-title">7일 보기
-            <button type="button" class="hint" data-hint="칸에서 구분을 바로 고를 수 있고, 시간을 누르면 그 날짜의 그 블록으로 갑니다. 이름을 고치려면 위 '이번 주 블록 이름' 카드를 쓰세요." aria-label="설명">?</button></h2>
+            <h2 class="card-title">7일 보기</h2>
             {% if cat_templates %}
+            {# 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다) #}
             <div class="wk-tpl-inline">
-                <select id="wk-apply-tpl-sel" aria-label="적용할 구분 템플릿">
+                <select id="wk-apply-tpl-sel" data-week="{{ week_start }}" aria-label="적용할 구분 템플릿">
                     <option value="">구분 템플릿</option>
                     {% for t in cat_templates %}
                     <option value="{{ t.id }}">{{ t.name }}</option>
                     {% endfor %}
                 </select>
-                <button type="button" class="ghost-btn wk-tpl-apply" id="wk-apply-tpl-btn" data-week="{{ week_start }}">적용</button>
-                <a class="wk-tpl-edit" href="/settings#set-tpl-list" title="설정 탭에서 템플릿 편집">편집</a>
+                <button type="button" class="ghost-btn" id="wk-names-toggle"
+                        aria-expanded="false" aria-controls="wk-names">블록이름</button>
             </div>
             {% else %}
-            <a class="ghost-btn" href="/settings#set-tpl-list">구분 템플릿 만들기</a>
+            <div class="wk-tpl-inline">
+                <a class="ghost-btn" href="/settings#set-tpl-list">구분 템플릿 만들기</a>
+                <button type="button" class="ghost-btn" id="wk-names-toggle"
+                        aria-expanded="false" aria-controls="wk-names">블록이름</button>
+            </div>
             {% endif %}
         </div>
+
+        {# 이번 주 블록 이름(B1~B6). 위 '블록이름' 버튼으로 펴서 그 자리에서 고친다.
+           요일마다 다르게 하려면 아래 7일 격자의 그 날 칸에 적는다(비우면 이 이름을 따른다). #}
+        <div class="wk-names" id="wk-names" hidden>
+            <div class="theme-list">
+                {% for lbl in core_labels %}
+                {% set cells = name_cells.get(lbl, []) %}
+                {% set over = cells | selectattr('name') | list | length %}
+                <div class="theme-item" data-label="{{ lbl }}">
+                    <div class="theme-row">
+                        <span class="theme-label">{{ lbl }}</span>
+                        <input type="text" name="theme_{{ lbl }}" value="{{ themes_by_label.get(lbl, '') or '' }}" autocomplete="off" aria-label="{{ lbl }} 이번 주 이름">
+                        {% if over %}<span class="theme-over" title="아래 7일 격자에서 이 블록의 이름을 따로 정한 날 수">요일별 {{ over }}</span>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="button" class="ghost-btn" id="wk-fill-themes" data-week="{{ week_start }}" title="주간 목표·이 주 장기 항목을 B1~B6 이름으로 나눠 빈 칸만 채웁니다">이번 주 계획으로 자동 채우기</button>
+        </div>
+
         <div class="week-grid">
             {% for d in dates %}
             <article class="day-col">
@@ -204,8 +204,5 @@
         </div>
     </section>
 
-    <div class="actions-sticky">
-        <button type="submit" class="primary-btn save-btn">저장 (⌘S)</button>
-    </div>
 </form>
 {% endblock %}
