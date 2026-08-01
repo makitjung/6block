@@ -657,9 +657,16 @@ def run_checks(db_path):
     check("감사·반성 3칸 저장", row and row[0]["gratitude"] == "가\n나\n",
           row[0]["gratitude"] if row else None)
 
-    # 15. 오늘 컨셉 3칸(빠른 수집함 자리)
+    # 15. 오늘 컨셉 3칸(목표·달성·감사반성 세 열 바로 위, 같은 격자)
     code, html = get("/day/2026-07-31")
     check("오늘 탭에 컨셉 3칸", html.count('name="concept') == 3, html.count('name="concept'))
+    check("컨셉은 목표 3열 바로 위",
+          0 < html.find('class="concept-row"') < html.find('class="goal-plan"'))
+    check("컨셉은 날짜 줄에서 빠졌다", "hero-concept" not in html)
+    # 주간 띠: Things3 할 일은 장기 목록 아래에 온다(띠가 그려질 때만 본다)
+    check("주간 띠는 장기 목록 다음에 할 일",
+          'class="lt-strip"' not in html
+          or html.find('class="lt-strip-cols"') < html.find('id="wk-tasks"'))
     post("/save/field", {"entity": "meta", "id": "2026-07-31", "field": "concept1",
                          "concept1": "몰입", "concept2": "", "concept3": "정리"})
     row = db_query(db_path, "SELECT concept FROM daily_meta WHERE date='2026-07-31'")
@@ -771,10 +778,38 @@ def run_checks(db_path):
         post("/save/field", {"entity": "slot", "id": sid,
                              "field": "did_text", "value": ""})
 
-    # 27. 하루 마감의 '감사 한 줄'은 고결감 작성창 하나로 합쳐졌다
+    # 27. 하루 마감은 위 2열(하루 평가 · 내일 가장 중요한 일) + 아래 빈 슬롯 한 열.
+    #     '감사 한 줄'도 '고결감 기록' 버튼도 여기서는 뺐다(고결감은 슬롯의 '고민' 버튼으로 연다).
     code, html = get("/today")
     check("감사 한 줄 칸은 사라졌다", 'id="sd-thanks"' not in html)
-    check("고결감 작성창을 여는 버튼이 있다", 'class="ghost-btn open-reflect"' in html)
+    check("고결감 버튼은 마감 카드에서 빠졌다", 'class="ghost-btn open-reflect"' not in html)
+    check("마감 카드 위는 2열", 'class="sd-2col"' in html)
+    # 목록 편집(Enter 로 항목 잇기·Tab 들여쓰기)은 gp-input 을 뺀 모든 textarea 에 이미 걸린다.
+    check("하루 평가 칸이 있다", 'name="day_review"' in html and 'class="gp-input"' not in
+          html.split('name="day_review"')[0].rsplit("<textarea", 1)[-1])
+    check("내일 가장 중요한 일이 2열 안에 있다",
+          html.find('class="sd-2col"') < html.find('id="sd-tomorrow"'))
+    check("빈 슬롯은 2열 아래에 온다",
+          'id="cu-list"' not in html or html.find('id="sd-tomorrow"') < html.find('id="cu-list"'))
+    # 하루 평가 저장(한 칸 자동저장 → daily_meta.day_review). 날짜는 서버가 그려 준 값(KST)을 쓴다.
+    today_str = re.search(r'class="day-form"[^>]*data-date="(\d{4}-\d\d-\d\d)"', html)
+    today_str = today_str.group(1) if today_str else ""
+    post("/save/field", {"entity": "meta", "id": today_str,
+                         "field": "day_review", "value": "- 잘한 것\n- 아쉬운 것"})
+    row = db_query(db_path, "SELECT day_review FROM daily_meta WHERE date = ?", (today_str,))
+    check("하루 평가 저장", row and row[0]["day_review"] == "- 잘한 것\n- 아쉬운 것",
+          row[0]["day_review"] if row else None)
+    # 저장 버튼(폼 전체)으로도 저장된다
+    post(f"/save/day/{today_str}", {"day_review": "폼으로 저장"})
+    row = db_query(db_path, "SELECT day_review FROM daily_meta WHERE date = ?", (today_str,))
+    check("하루 평가 폼 저장", row and row[0]["day_review"] == "폼으로 저장",
+          row[0]["day_review"] if row else None)
+    # 지난 날짜에는 이 칸이 화면에 없다. 그 폼을 저장해도 이미 적어 둔 평가가 지워지면 안 된다.
+    post("/save/day/2026-07-30", {"memo": "지난날 저장"})
+    post(f"/save/day/{today_str}", {"memo": ""})
+    row = db_query(db_path, "SELECT day_review FROM daily_meta WHERE date = ?", (today_str,))
+    check("칸이 없는 저장은 하루 평가를 지우지 않는다",
+          row and row[0]["day_review"] == "폼으로 저장", row[0]["day_review"] if row else None)
 
     # 28. Things3 목록을 블록마다 다시 싣지 않는다
     check("블록 할일 팝오버는 비어서 나간다",

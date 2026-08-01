@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def uid_from_created(created: str | None) -> str:
@@ -132,6 +132,9 @@ def _migrate(conn: sqlite3.Connection):
     # 오늘 컨셉 3줄(줄바꿈으로 합쳐 저장). 없으면 추가.
     if "concept" not in meta_cols:
         conn.execute("ALTER TABLE daily_meta ADD COLUMN concept TEXT")
+    # 하루 마감의 '하루 평가'(그날 총평 한 칸, 줄바꿈·목록 그대로). 없으면 추가.
+    if "day_review" not in meta_cols:
+        conn.execute("ALTER TABLE daily_meta ADD COLUMN day_review TEXT")
     # 슬롯 실행 체크박스(DO 완료 여부)
     slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)").fetchall()}
     if "done" not in slot_cols:

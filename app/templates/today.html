@@ -16,23 +16,16 @@
 <script>window.__wkTodos = {{ wk_todos | tojson }};</script>
 <form method="post" action="/save/day/{{ date_str }}" class="day-form" accept-charset="UTF-8" data-today="{{ '1' if is_today else '0' }}" data-date="{{ date_str }}">
     <section class="hero">
+        {# 날짜 이동 화살표는 날짜·요일 두 줄 높이에 맞춰 위아래로 쌓는다(위=이전 날, 아래=다음 날) #}
         <div class="hero-nav">
-            <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날">‹</a>
-            <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날">›</a>
+            <a href="/day/{{ prev_date }}" class="icon-btn" aria-label="이전 날" title="이전 날">▴</a>
+            <a href="/day/{{ next_date }}" class="icon-btn" aria-label="다음 날" title="다음 날">▾</a>
         </div>
-        {# 날짜·요일 / 그 아래 오늘 컨셉 / 그 옆에 구글 일정(여러 개면 번갈아) #}
+        {# 날짜·요일 / 그 옆에 구글 일정(여러 개면 번갈아). 오늘 컨셉은 아래 목표 3열 위로 옮겼다 #}
         <div class="hero-main">
             <div class="hero-date">
                 <div class="hero-date-main">{{ date_str | pretty_date }}{% if weekday_concept %} <span class="hero-wdc">({{ weekday_concept }})</span>{% endif %}</div>
                 <div class="hero-date-sub mono">{{ date_str }}{% if not is_today %} · <a href="/today">오늘로</a>{% endif %}</div>
-            </div>
-            <div class="hero-concept">
-                <span class="hc-label">오늘 컨셉</span>
-                {% for i in range(3) %}
-                <input type="text" name="concept{{ i + 1 }}" value="{{ concepts[i] }}"
-                       placeholder="컨셉 {{ i + 1 }}" autocomplete="off"
-                       aria-label="오늘 컨셉 {{ i + 1 }}">
-                {% endfor %}
             </div>
             {# 일정 제목은 app.js 가 번갈아 갈아 끼운다. 첫 화면이 비어 보이지 않게 첫 건만 미리 그린다 #}
             <div class="hero-cal" id="hero-cal"{% if not cal_events %} hidden{% endif %}>
@@ -51,18 +44,6 @@
     <section class="lt-strip" aria-label="이번 주 계획과 오늘 할 일">
         <span class="lt-strip-label">주간</span>
         <div class="lt-strip-body">
-            {# Things3 Today 할 일. 한 줄에 세 개씩, 누르면 Things3 가 그 할일을 연다.
-               설정 '숨길 할일 제목'에 적은 것은 서버에서 이미 빠진 채로 온다.
-               폴링(60초)이 app.js 에서 이 자리를 통째로 다시 그린다. #}
-            <div class="wk-tasks" id="wk-tasks"{% if not task_list %} hidden{% endif %}>
-                {% for t in task_list %}
-                {% if t.id %}
-                <a class="wk-task" href="things:///show?id={{ t.id }}" title="{{ t.title }}">{{ t.title }}</a>
-                {% else %}
-                <span class="wk-task" title="{{ t.title }}">{{ t.title }}</span>
-                {% endif %}
-                {% endfor %}
-            </div>
             {# 같은 영역은 같은 열에 모으고 최대 세 열까지만 쓴다 #}
             <div class="lt-strip-cols" style="--lt-cols: {{ lt_today_cols | length }}">
                 {% for col in lt_today_cols %}
@@ -81,12 +62,35 @@
                 </div>
                 {% endfor %}
             </div>
+            {# Things3 Today 할 일. 장기 목록 아래에 한 줄에 세 개씩, 누르면 Things3 가 그 할일을 연다.
+               설정 '숨길 할일 제목'에 적은 것은 서버에서 이미 빠진 채로 온다.
+               폴링(60초)이 app.js 에서 이 자리를 통째로 다시 그린다. #}
+            <div class="wk-tasks" id="wk-tasks"{% if not task_list %} hidden{% endif %}>
+                {% for t in task_list %}
+                {% if t.id %}
+                <a class="wk-task" href="things:///show?id={{ t.id }}" title="{{ t.title }}">{{ t.title }}</a>
+                {% else %}
+                <span class="wk-task" title="{{ t.title }}">{{ t.title }}</span>
+                {% endif %}
+                {% endfor %}
+            </div>
         </div>
     </section>
     {% endif %}
 
     <!-- 오늘 컨텍스트: 목표 3 · 계획 3 + 외부 일정·할 일(최상단 1회) + 빠른 수집함 -->
     <section class="context-card">
+        {# 오늘 컨셉 3칸. 바로 아래 목표·달성·감사반성 세 열과 같은 격자를 써 폭을 맞춘다 #}
+        <div class="concept-row">
+            <span class="field-label">오늘 컨셉</span>
+            <div class="concept-grid">
+                {% for i in range(3) %}
+                <input type="text" name="concept{{ i + 1 }}" value="{{ concepts[i] }}"
+                       placeholder="컨셉 {{ i + 1 }}" autocomplete="off"
+                       aria-label="오늘 컨셉 {{ i + 1 }}">
+                {% endfor %}
+            </div>
+        </div>
         <div class="goal-plan">
             <div class="gp-col">
                 <span class="field-label">목표</span>
@@ -137,8 +141,6 @@
                 </label>
             </div>
         </details>
-
-        {# 오늘 컨셉은 화면 맨 위 날짜 바로 아래(hero-concept)로 옮겼다 #}
 
         {% if st.show_inbox != '0' %}
         <div class="ctx-section">
@@ -400,6 +402,23 @@
     <details class="card shutdown-card">
         <summary class="card-title">오늘 마감{% if catchup %} <span class="count">{{ catchup | length }}</span>{% endif %}</summary>
 
+        {# 위는 2열(왼쪽 하루 평가 · 오른쪽 내일 가장 중요한 일), 아래는 한 열로 빈 슬롯 #}
+        <div class="sd-2col">
+            <div class="field">
+                <span class="field-label">하루 평가
+                    <button type="button" class="hint" data-hint="오늘 하루가 어땠는지 적습니다. 목록 줄(1. · -)에서 Enter 를 누르면 다음 항목이 이어지고, Tab 으로 한 단계 들여씁니다." aria-label="설명">?</button></span>
+                <textarea name="day_review" rows="4" placeholder="오늘 하루를 어떻게 보냈는지">{{ (meta.day_review if meta else '') or '' }}</textarea>
+            </div>
+            <div class="field">
+                <span class="field-label">내일 가장 중요한 일
+                    <button type="button" class="hint" data-hint="저장하면 내일 날짜의 목표 1번 칸에 들어갑니다." aria-label="설명">?</button></span>
+                <div class="sd-row">
+                    <input type="text" id="sd-tomorrow" placeholder="내일 꼭 할 한 가지" autocomplete="off">
+                    <button type="button" class="ghost-btn" id="sd-tomorrow-btn">저장</button>
+                </div>
+            </div>
+        </div>
+
         {% if catchup %}
         {# 실행 퍼널이 낮게 나오는 까닭은 계획을 안 세워서가 아니라 하고도 안 남겨서다.
            지나갔는데 기록이 비어 있는 코어 슬롯만 모아 여기서 한 번에 메운다.
@@ -427,26 +446,6 @@
             <div class="ctx-empty" id="cu-empty" hidden>빈 슬롯을 모두 메웠습니다.</div>
         </div>
         {% endif %}
-
-        <div class="field">
-            {# 예전에는 여기에 '감사 한 줄' 칸이 따로 있었다. 바로 위 '감사 · 반성' 3줄과
-               묻는 것이 같은데 저장되는 곳만 달라(그쪽은 daily_meta, 이쪽은 고결감)
-               같은 내용을 두 번 적게 됐다. 칸을 없애고, 고결감에 남길 것이 있을 때만
-               쓰던 그 작성창을 여는 버튼 하나로 합친다(종류도 골라 적을 수 있다). #}
-            <span class="field-label">고결감 기록
-                <button type="button" class="hint" data-hint="오늘 남길 고민·결정·감사를 고결감 탭에 한 건 기록합니다. 매일 적는 감사·반성은 위 3줄에 그대로 쓰세요." aria-label="설명">?</button></span>
-            <div class="sd-row">
-                <button type="button" class="ghost-btn open-reflect">고결감에 기록하기</button>
-            </div>
-        </div>
-        <div class="field">
-            <span class="field-label">내일 가장 중요한 일
-                <button type="button" class="hint" data-hint="저장하면 내일 날짜의 목표 1번 칸에 들어갑니다." aria-label="설명">?</button></span>
-            <div class="sd-row">
-                <input type="text" id="sd-tomorrow" placeholder="내일 꼭 할 한 가지" autocomplete="off">
-                <button type="button" class="ghost-btn" id="sd-tomorrow-btn">저장</button>
-            </div>
-        </div>
     </details>
     {% endif %}
 

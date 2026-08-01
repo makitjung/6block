@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS daily_meta (
     memo TEXT,
     vow TEXT,
     gratitude TEXT,
+    day_review TEXT,        -- 하루 마감의 '하루 평가'(그날 총평, 마크다운 목록 그대로)
     goal_tags TEXT,         -- 오늘 목표 3줄의 자유 태그(직접 입력)를 줄바꿈으로 저장
     plan_tags TEXT,         -- 오늘 달성 3줄의 자유 태그
     grat_tags TEXT,         -- 감사·반성 3줄의 자유 태그

@@ -435,6 +435,13 @@ async def save_day(date_str: str, request: Request):
                 _join3(form, "goallink"),
             ),
         )
+        # 하루 평가는 '오늘' 화면(하루 마감 카드)에만 있는 칸이라, 지난 날짜를 저장할 때는
+        # 폼에 아예 오지 않는다. 왔을 때만 덮어써야 옛 기록이 빈 값으로 지워지지 않는다.
+        if "day_review" in form:
+            conn.execute(
+                "UPDATE daily_meta SET day_review = ? WHERE date = ?",
+                (form.get("day_review", ""), date_str),
+            )
     # 저장 후: 오늘 달성 3줄을 '성과' 캘린더에 종일 이벤트로 자동 반영(설명란 1. 2. 3.).
     # 캘린더 I/O는 DB 잠금 밖에서 하고, 실패해도 저장은 그대로 둔다.
     if gcal_write.write_enabled("achieve"):
@@ -474,7 +481,7 @@ _META_TRIPLES = (
     ("grat", "gratitude"), ("concept", "concept"),
 )
 # 3칸이 아니라 통째로 한 칸인 필드.
-_META_SINGLES = ("memo", "vow")
+_META_SINGLES = ("memo", "vow", "day_review")
 
 
 def _merge3(conn, date_str: str, prefix: str, col: str, form) -> None:
@@ -571,7 +578,7 @@ async def save_field(request: Request):
                 )
         elif entity == "meta":
             # id 자리에 날짜(문자열)가 온다.
-            # field: goal1~3|dplan1~3|grat1~3|concept1~3|각 태그·연결 3칸|memo|vow
+            # field: goal1~3|dplan1~3|grat1~3|concept1~3|각 태그·연결 3칸|memo|vow|day_review
             date_str = form.get("id") or ""
             if not _parse_date(date_str):
                 return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)

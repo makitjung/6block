@@ -249,35 +249,23 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     display: grid; grid-template-columns: auto 1fr auto;
     align-items: center; gap: 14px; margin-bottom: 16px;
 }
-.hero-nav { display: flex; gap: 8px; }
+/* 날짜 이동 화살표: 옆에 있는 날짜·요일 두 줄 높이(24px + 12px)에 맞춰 위아래로 쌓는다 */
+.hero-nav { display: flex; flex-direction: column; gap: 2px; }
+.hero-nav .icon-btn {
+    width: 26px; height: 27px; border-radius: var(--r-sm); font-size: 15px;
+}
 .hero-date { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .hero-date-main { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
 .hero-date-sub { color: var(--text-muted); font-size: 12px; }
 .hero-actions { display: flex; gap: 8px; align-items: center; }
 
-/* 날짜·요일은 왼쪽 위, 오늘 컨셉은 그 바로 아래, 구글 일정은 그 둘 옆. */
+/* 날짜·요일은 왼쪽, 구글 일정은 그 옆. 오늘 컨셉은 아래 목표 3열 위로 옮겼다. */
 .hero-main {
     display: grid; grid-template-columns: auto minmax(0, 1fr);
     align-items: center; gap: 4px 16px; min-width: 0;
 }
 .hero-date { grid-column: 1; grid-row: 1; }
-.hero-concept { grid-column: 1; grid-row: 2; }
-.hero-cal { grid-column: 2; grid-row: 1 / span 2; }
-
-/* 오늘 컨셉 3칸. 날짜 아래 한 줄로 좁게 붙인다. */
-.hero-concept { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.hc-label {
-    font-size: 11px; font-weight: 800; color: var(--text-subtle);
-    letter-spacing: .04em; white-space: nowrap;
-}
-.hero-concept input {
-    width: 104px; min-width: 0; padding: 4px 8px; font-size: 12px;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    background: var(--surface-2); color: var(--text); font-family: inherit;
-}
-.hero-concept input:focus {
-    outline: none; background: var(--surface); border-color: var(--border-focus);
-}
+.hero-cal { grid-column: 2; grid-row: 1; }
 
 /* 구글 일정 한 건씩 번갈아. 길면 뒤를 …로 자른다. */
 .hero-cal {
@@ -370,6 +358,11 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .ctx-head .count { color: var(--accent); font-weight: 700; }
 .ctx-empty { font-size: 12px; color: var(--text-subtle); }
 
+/* 오늘 컨셉 3칸: 바로 아래 목표·달성·감사반성 세 열과 같은 격자라 폭이 딱 맞는다 */
+.concept-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.concept-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .concept-grid { gap: 9px; } }
+
 /* 목표 3 · 계획 3 */
 .goal-plan { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 @media (max-width: 560px) { .goal-plan { gap: 9px; } }
@@ -438,6 +431,9 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 오늘: 구글 일정 / Things3 할일 2열 분리 + 빠른 추가 */
 .agenda-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .agenda-2 .agenda { grid-template-columns: 1fr; }
+/* 왼쪽 머리글에만 동기화 버튼이 있어 두 열의 입력줄이 어긋난다. 머리글 높이를 같게
+   고정해(버튼도 그 안에 들어가는 크기로 줄여) 두 열의 입력칸이 같은 줄에 오게 한다. */
+.agenda-2 .ctx-head { min-height: 20px; margin-bottom: 6px; }
 .agenda-add { display: flex; gap: 6px; margin: 6px 0; }
 .agenda-add input[type="text"] { flex: 1; min-width: 0; }
 .agenda-add input[type="date"] { flex: 0 0 auto; width: 130px; }
@@ -461,6 +457,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 하루 마감 카드 */
 .shutdown-card { margin-top: 14px; }
 .shutdown-card > summary { cursor: pointer; }
+/* 마감 카드 위쪽 2열(왼쪽 하루 평가 · 오른쪽 내일 가장 중요한 일). 빈 슬롯은 그 아래 한 열. */
+.sd-2col {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    align-items: start; margin-bottom: 14px;
+}
+@media (max-width: 720px) { .sd-2col { grid-template-columns: 1fr; } }
 .sd-row { display: flex; gap: 8px; margin-top: 4px; }
 .sd-row input { flex: 1; min-width: 0; }
 .agenda-row .x::before {
@@ -766,8 +768,8 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 오늘 일정·할 일 수동 새로고침 버튼 */
 .agenda-refresh {
     border: 1px solid var(--border); background: var(--surface);
-    color: var(--text-muted); width: 24px; height: 24px; border-radius: 50%;
-    font-size: 13px; line-height: 1; padding: 0;
+    color: var(--text-muted); width: 18px; height: 18px; border-radius: 50%;
+    font-size: 11px; line-height: 1; padding: 0;
     display: inline-flex; align-items: center; justify-content: center;
     transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
@@ -982,22 +984,19 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     .pomo { bottom: 72px; }
     .actions-sticky { bottom: 12px; right: 12px; }
 }
-/* 폰에서는 hero 가운데 칸이 너무 좁다. 날짜·컨셉·일정을 한 줄 통째로 내려 폭을 다 쓰게 하고,
+/* 폰에서는 hero 가운데 칸이 너무 좁다. 날짜·일정을 한 줄 통째로 내려 폭을 다 쓰게 하고,
    이전·다음과 새로고침·저장만 윗줄에 남긴다(안 그러면 날짜가 네 줄로 접힌다).
    위 900px 묶음의 .hero 규칙을 덮어야 해서 반드시 그 뒤에 둔다. */
 @media (max-width: 760px) {
     .hero { grid-template-columns: auto minmax(0, 1fr); row-gap: 10px; }
-    .hero-nav { grid-column: 1; grid-row: 1; }
+    .hero-nav { grid-column: 1; grid-row: 1; flex-direction: row; gap: 8px; }
     .hero-actions { grid-column: 2; grid-row: 1; justify-content: flex-end; }
     .hero-main { grid-column: 1 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr); }
-    .hero-date, .hero-concept, .hero-cal { grid-column: 1; }
+    .hero-date, .hero-cal { grid-column: 1; }
     .hero-date { grid-row: 1; }
-    .hero-concept { grid-row: 2; }
-    .hero-cal { grid-row: 3; }
-    /* 컨셉 3칸은 좁은 화면에서도 한 줄에 셋. 이름표만 위로 올린다. */
-    .hero-concept { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 6px; }
-    .hc-label { grid-column: 1 / -1; }
-    .hero-concept input { width: auto; }
+    .hero-cal { grid-row: 2; }
+    /* 컨셉 3칸은 좁은 화면에서도 한 줄에 셋(아래 목표 3열과 같은 폭) */
+    .concept-grid { gap: 6px; }
 }
 /* 가로 회전(landscape) - 주간 7열 유지, 좁은 높이에서 포모도로 축소 */
 @media (max-width: 900px) and (orientation: landscape) {

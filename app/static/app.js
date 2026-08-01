@@ -700,6 +700,7 @@
                     bindAutoSave(el, 'meta', dateStr, 'concept' + m[1], { groupPrefix: 'concept' });
                 } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
                 else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
+                else if (name === 'day_review') bindAutoSave(el, 'meta', dateStr, 'day_review');
             });
             // 카테고리 셀렉트(change 로 즉시 저장)
             each('select[name]', (el, name) => {
@@ -3320,7 +3321,7 @@
         });
     }
 
-    // ---- 하루 마감(오늘 감사 한 줄 → 고결감 / 내일 가장 중요한 일 → 내일 목표) ----
+    // ---- 하루 마감(하루 평가 · 내일 가장 중요한 일 → 내일 목표) ----
     // 하루 마감 '기록이 빈 슬롯'. 여기서 적으면 곧바로 저장하고 위 블록의 같은 슬롯에도 옮긴다.
     // 위 슬롯 줄과 이름(name)이 겹치면 폼 저장 때 서로 덮어써서, 이 칸들은 이름 없이 두고
     // data-slot 으로 직접 저장한다.
@@ -3400,7 +3401,8 @@
     function bindShutdown() {
         const form = document.querySelector('.day-form');
         const date = form ? form.dataset.date : '';
-        // '감사 한 줄' 칸은 없앴다. 고결감 기록은 bindReflectModal 의 작성창 하나로 모았다.
+        // 하루 평가는 name="day_review" 로 자동저장에 걸려 있다(bindAutosaveAll).
+        // 고결감 기록은 슬롯의 '고민' 버튼이 여는 작성창(bindReflectModal) 하나로 모았다.
         const tom = document.getElementById('sd-tomorrow');
         const saveTom = () => {
             const t = (tom?.value || '').trim();
