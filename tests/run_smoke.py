@@ -307,9 +307,11 @@ def run_checks(db_path):
     check("장기 주 열에 몇 주차 표시",
           "~8/2 · 31주" in h and "~8/9 · 32주" in h, h.count("주</span>"))
     _c, h = get("/week/2026-07-27")
-    # 주간 제목은 '31주차 7.27~8.2' 한 줄(요일 표기 줄은 없앴다)
-    check("주간 제목은 주차 + 기간 한 줄",
-          '<span class="hero-wk">31주차</span> 7.27~8.2' in h
+    # 주간 제목은 두 줄(위 주차 · 아래 기간). 요일 표기 줄은 없앴다.
+    check("주간 제목은 주차 위 · 기간 아래",
+          '<span class="hero-wk">31주차</span>' in h
+          and '<div class="hero-date-main">7.27~8.2</div>' in h
+          and h.find("hero-wk-line") < h.find("hero-date-main")
           and "월요일 주" not in h, h.count("hero-date-main"))
     check("주간 통계는 접혀서 나간다",
           'id="wk-stats" hidden' in h and 'id="wk-stats-toggle"' in h)

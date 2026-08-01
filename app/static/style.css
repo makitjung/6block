@@ -159,6 +159,9 @@ button { font: inherit; cursor: pointer; }
     background: var(--accent-soft); color: var(--accent-soft-text);
     font-size: 11px; font-weight: 700;
 }
+/* 주간 제목 윗줄: 주차만 작게 놓고, 아랫줄 기간(hero-date-main)과 왼쪽을 맞춘다 */
+.hero-wk-line { line-height: 1.2; }
+.hero-wk-line .hero-wk { margin-left: 0; }
 
 .topnav { display: flex; gap: 4px; justify-self: center; background: var(--surface-3);
     padding: 4px; border-radius: var(--r-pill); }
