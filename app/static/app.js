@@ -888,6 +888,22 @@
     }
 
     // ---- 현재/지정 블록으로 스크롤 ---------------------------------------
+    // 부드럽게 옮기되, 실제로 움직이지 않으면 곧바로 튀어 옮긴다. 기기에서 '동작 줄이기'를
+    // 켜 두면 behavior:'smooth' 가 통째로 무시되는 경우가 있어, 그대로 두면 포커싱이
+    // 조용히 실패한다(로고를 눌러도 지금 블록으로 가지 않는다).
+    function scrollToEl(el) {
+        if (!el) return;
+        const before = window.scrollY;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+            const r = el.getBoundingClientRect();
+            const off = Math.abs((r.top + r.height / 2) - window.innerHeight / 2);
+            if (window.scrollY === before && off > 80) {
+                el.scrollIntoView({ behavior: 'auto', block: 'center' });
+            }
+        }, 250);
+    }
+
     function initialScroll() {
         let target = null;
         let isSlot = false;
@@ -904,7 +920,7 @@
             }
         }
         if (target) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            scrollToEl(target);
             lastNowSlot = currentSlotKey();
             if (!isSlot) {
                 target.classList.add('flash');
@@ -922,8 +938,7 @@
         if (lastNowSlot === '') { lastNowSlot = cur; return; }   // 초기 1회는 initialScroll이 담당
         lastNowSlot = cur;
         if (Date.now() - lastUserInteract < 8000) return;        // 손으로 조작 중이면 방해 안 함
-        const slot = document.querySelector('.slot.is-now');
-        if (slot) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrollToEl(document.querySelector('.slot.is-now'));
     }
 
     // 화면 회전·리사이즈 후 현재 슬롯을 다시 중앙에 맞춤(가로 전환 등에서 어긋남 방지)
@@ -1245,7 +1260,7 @@
                 applyBlockCollapse();
                 const cur = stack.querySelector('.block.is-focus');
                 if (collapsed) {
-                    if (cur) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    scrollToEl(cur);
                 } else {
                     setTimeout(initialScroll, 60);
                 }
@@ -3380,40 +3395,34 @@
             pomo.querySelector('.pomo-auto')?.addEventListener('click', () => toggleAuto());
         }
 
-        // 로고: 보고 있던 화면 그대로 새로고침. href 는 같은 주소라 새 탭으로 열어도 그 화면이다.
-        // 같은 주소 링크는 브라우저가 이동을 건너뛰기도 해서 여기서 직접 다시 불러온다.
+        // 로고: 오늘 탭을 새로 받고, 뜬 뒤 지금 블록으로 맞춘다(load → initialScroll).
+        // 이미 오늘 탭이면 같은 주소라 브라우저가 이동을 건너뛰기도 해서 직접 다시 부른다.
         document.querySelector('a.logo')?.addEventListener('click', (e) => {
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;   // 새 탭·새 창은 그대로
             e.preventDefault();
-            location.reload();
+            if (location.pathname === '/today') location.reload();
+            else location.assign('/today');
         });
 
         // 테마 토글
         document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
 
-        // 오늘 탭 '평가'(코어 실행·완료 슬롯·기록 슬롯). 날짜 줄 오른쪽 버튼으로 그 자리에서 편다.
+        // 오늘 탭 '평가'(하루 지표 + 하루 평가·내일 한 가지 + 기록이 빈 슬롯).
+        // 날짜 줄 오른쪽 버튼으로 그 자리에서 편다. 빈 슬롯 개수 뱃지는 그대로 둔다.
         const kpiBtn = document.getElementById('kpi-toggle');
         kpiBtn?.addEventListener('click', () => {
-            const row = document.getElementById('kpi-row');
-            if (!row) return;
-            const show = row.hidden;
-            row.hidden = !show;
+            const box = document.getElementById('eval-panel');
+            if (!box) return;
+            const show = box.hidden;
+            box.hidden = !show;
             kpiBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
-            kpiBtn.textContent = show ? '평가 접기' : '평가';
+            kpiBtn.firstChild.nodeValue = (show ? '평가 접기' : '평가')
+                + (kpiBtn.querySelector('.count') ? ' ' : '');
         });
 
         // 맨 위 막대: 새로고침 아이콘(지금 화면을 서버에서 다시 받는다)
         document.getElementById('page-refresh')?.addEventListener('click', () => {
             location.reload();
-        });
-
-        // 로고를 누르면 오늘 탭 지금 블록으로. 이미 오늘 탭이면 새로 받지 않고 그 자리로 옮긴다.
-        document.getElementById('logo-now')?.addEventListener('click', (e) => {
-            if (!document.querySelector('.day-form') || !isDeviceToday()) return;
-            e.preventDefault();
-            const target = document.querySelector('.slot.is-now')
-                || document.querySelector('.block.is-focus');
-            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
 
         // 주간 탭 '통계'(코어·PLAN→DO 달성률·기록된 시간 + 카테고리별 시간 분포). 기본은 접힘.

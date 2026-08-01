@@ -717,8 +717,8 @@ def run_checks(db_path):
           and 'type="submit"' not in html and 'type="submit"' not in wk)
     check("맨 위 막대에 새로고침 아이콘", 'id="page-refresh"' in html and 'id="page-refresh"' in wk)
     check("로고는 오늘 탭 지금 블록으로", 'id="logo-now"' in html and 'href="/today"' in html)
-    check("오늘 탭 지표는 '평가' 버튼으로", 'id="kpi-toggle"' in html and ">평가<" in html
-          and 'id="kpi-row" hidden' in html)
+    check("오늘 탭 지표는 '평가' 버튼으로", 'id="kpi-toggle"' in html and "평가" in html
+          and 'id="eval-panel" hidden' in html)
     # 17-3. 주간 7일 보기: 물음표 없음 · 템플릿은 고르면 바로 적용 · 블록이름은 버튼으로 편다
     check("7일 보기 물음표 없음", "7일 보기\n" in wk or "7일 보기</h2>" in wk)
     check("템플릿 적용·편집 버튼 없음",
@@ -814,12 +814,17 @@ def run_checks(db_path):
         post("/save/field", {"entity": "slot", "id": sid,
                              "field": "did_text", "value": ""})
 
-    # 27. 하루 마감은 위 2열(하루 평가 · 내일 가장 중요한 일) + 아래 빈 슬롯 한 열.
-    #     '감사 한 줄'도 '고결감 기록' 버튼도 여기서는 뺐다(고결감은 슬롯의 '고민' 버튼으로 연다).
+    # 27. 마감(하루 평가 · 내일 가장 중요한 일 · 빈 슬롯)은 '평가' 칸 안으로 합쳤다.
+    #     따로 있던 '오늘 마감' 카드는 없앴고, 고결감은 슬롯의 '고민' 버튼으로 연다.
     code, html = get("/today")
     check("감사 한 줄 칸은 사라졌다", 'id="sd-thanks"' not in html)
-    check("고결감 버튼은 마감 카드에서 빠졌다", 'class="ghost-btn open-reflect"' not in html)
-    check("마감 카드 위는 2열", 'class="sd-2col"' in html)
+    check("고결감 버튼은 평가 칸에 없다", 'class="ghost-btn open-reflect"' not in html)
+    check("오늘 마감 카드는 없앴다",
+          "shutdown-card" not in html and "오늘 마감" not in html)
+    check("마감 내용은 평가 칸 안에",
+          html.find('id="eval-panel"') < html.find('class="sd-2col"')
+          and html.find('class="sd-2col"') < html.find("</section>", html.find('id="eval-panel"')))
+    check("평가 칸 위는 2열", 'class="sd-2col"' in html)
     # 목록 편집(Enter 로 항목 잇기·Tab 들여쓰기)은 gp-input 을 뺀 모든 textarea 에 이미 걸린다.
     check("하루 평가 칸이 있다", 'name="day_review"' in html and 'class="gp-input"' not in
           html.split('name="day_review"')[0].rsplit("<textarea", 1)[-1])
