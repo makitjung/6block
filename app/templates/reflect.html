@@ -2,18 +2,8 @@
 {% set active = 'reflect' %}
 {% block title %}고결감 | 6block{% endblock %}
 {% block content %}
-<section class="hero reflect-hero">
-    <div class="hero-date">
-        <div class="hero-date-main">고결감</div>
-        <div class="hero-date-sub mono">
-            {% if gcal_write_on %}구글 캘린더 '고결감'과 양방향 동기화{% else %}로컬 저장 · 캘린더 연동 꺼짐{% endif %}
-        </div>
-    </div>
-    {% if gcal_write_on %}
-    <button type="button" id="rf-sync-now" class="rf-sync-now" title="구글 캘린더에서 지금 가져오기">⟳ 지금 동기화</button>
-    {% endif %}
-</section>
-
+{# 배치는 Record 고결감 탭과 같다(2026-08-03). 제목 행 오른쪽에 동기화·저장을 세우고
+   내용 캡션 행에 태그·다시를 얹어, 세로 칸을 줄이고 내용칸을 길게 쓴다. #}
 <div class="reflect-layout">
     <div class="reflect-left">
         <section class="card reflect-compose">
@@ -25,16 +15,24 @@
                 </label>
                 {% endfor %}
             </div>
-            <input type="text" id="rf-title" class="rf-title" placeholder="제목 (구글 캘린더 제목칸에 들어갑니다)" autocomplete="off">
-            <textarea id="rf-text" class="rf-text" rows="3" placeholder="내용 (구글 캘린더 설명칸에 들어갑니다)"></textarea>
-            <div class="rf-tags-wrap">
-                <input type="text" id="rf-tags" class="rf-tags" placeholder="#태그 (#건강 #건강/운동)" autocomplete="off">
-                <div id="rf-tag-drop" class="rf-tag-drop" hidden></div>
+            <div class="rf-line">
+                <label for="rf-title">제목</label>
+                <input type="text" id="rf-title" placeholder="구글 캘린더 제목칸에 들어갑니다" autocomplete="off">
+                <button type="button" id="rf-err" class="rf-err" hidden title="문제가 있습니다 — 누르면 내용" aria-label="문제 보기">!</button>
+                {% if gcal_write_on %}
+                <button type="button" id="rf-sync-now" class="rf-mini" title="구글 캘린더에서 지금 가져오기" aria-label="지금 동기화">⟳</button>
+                {% endif %}
+                <button type="button" id="rf-add" class="rf-mini primary-btn">저장</button>
             </div>
-            <div class="rf-row">
-                <label class="rf-review" title="비워두면 다시 볼 날짜 없이 기록됩니다">다시<input type="date" id="rf-review" value=""></label>
-                <button type="button" id="rf-add" class="primary-btn">기록</button>
+            <div class="rf-errbox" id="rf-errbox" hidden></div>
+            <div class="rf-line">
+                <span class="rf-lab">내용</span>
+                <span class="rf-lab rf-push">태그</span>
+                <input type="text" id="rf-tags" class="rf-tagin" placeholder="공백 구분 · 계층은 슬래시(건강/운동)" autocomplete="off">
+                <span class="rf-lab">다시</span>
+                <input type="date" id="rf-review" value="">
             </div>
+            <textarea id="rf-text" class="rf-text" rows="15" placeholder="구글 캘린더 설명칸에 들어갑니다"></textarea>
         </section>
 
         <section class="reflect-upcoming-wrap" id="reflect-upcoming">
@@ -45,7 +43,7 @@
     <div class="reflect-right">
         <div class="reflect-filter">
             <div class="rf-search">
-                <input type="search" id="rf-search-input" value="{{ q }}" placeholder="유사검색 (오타·부분도 찾음)" autocomplete="off">
+                <input type="search" id="rf-search-input" value="{{ q }}" placeholder="고결감 검색 (제목·내용·태그 · 오타·부분도 찾음)" autocomplete="off">
             </div>
             <nav class="rf-kinds" aria-label="종류 필터">
                 <a href="/reflect?kind=" class="{% if not kind %}is-active{% endif %}">전체</a>
@@ -53,40 +51,63 @@
                 <a href="/reflect?kind={{ k }}" class="{% if kind == k %}is-active{% endif %}">{{ k }}</a>
                 {% endfor %}
             </nav>
+            <button type="button" id="rf-tagtog" class="rf-tagtog" title="태그로 좁히기">🏷 태그</button>
         </div>
+        <div class="rf-tagchips" id="rf-tagchips" hidden></div>
 
         <div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}">
             {% include "_reflect_list.html" %}
         </div>
     </div>
 </div>
+
+{# 카드를 눌러 여는 창. 다시보기 사본도 같은 모양으로 열리고, 내용 칸에는 다시 볼
+   내용을 적는다. 저장은 원본 행으로 간다(서버가 사본 수정을 거부한다). #}
 <div id="rf-edit-modal" class="rf-modal" hidden>
     <div class="rf-modal-backdrop"></div>
-    <div class="rf-modal-box" role="dialog" aria-label="기록 전체 보기·수정">
-        <div class="rf-modal-head">
-            <div class="reflect-kind rf-modal-kinds" role="group" aria-label="종류">
-                {% for k in kinds %}
-                <label class="rk-opt">
-                    <input type="radio" name="rfmk" value="{{ k }}">
-                    <span>{{ k }}</span>
-                </label>
-                {% endfor %}
-            </div>
-            <button type="button" class="rf-modal-close" title="닫기">닫기</button>
+    <div class="rf-modal-box" role="dialog" aria-label="기록 보기·수정">
+        <div class="rf-modal-acts">
+            <button type="button" id="rf-modal-del" class="rf-modal-close">삭제</button>
+            <button type="button" class="rf-modal-close rf-modal-x">닫기</button>
         </div>
-        <input type="text" id="rf-modal-title" class="rf-modal-title" placeholder="제목" autocomplete="off">
-        <textarea id="rf-modal-text" class="rf-modal-text" placeholder="내용"></textarea>
-        <div class="rf-tags-wrap">
-            <input type="text" id="rf-modal-tags" class="rf-modal-tags rf-tags" placeholder="#태그" autocomplete="off">
+        <div class="rf-modal-headline" id="rf-modal-headline">기록 고치기</div>
+        <div class="reflect-kind rf-modal-kinds" role="group" aria-label="종류">
+            {% for k in kinds %}
+            <label class="rk-opt">
+                <input type="radio" name="rfmk" value="{{ k }}">
+                <span>{{ k }}</span>
+            </label>
+            {% endfor %}
         </div>
-        <div class="rf-modal-row">
-            <label class="rf-review" title="비워두면 다시 볼 날짜 없이 둡니다">다시<input type="date" id="rf-modal-review"></label>
-            <div class="rf-modal-actions">
-                <button type="button" id="rf-modal-del" class="ghost-btn">삭제</button>
-                <button type="button" id="rf-modal-save" class="primary-btn">저장</button>
-            </div>
+        <div class="rf-line">
+            <label for="rf-modal-title">제목</label>
+            <input type="text" id="rf-modal-title" autocomplete="off">
+            <span class="rf-lab">기록일</span>
+            <input type="date" id="rf-modal-event">
+            <button type="button" id="rf-modal-save" class="rf-mini primary-btn">저장</button>
         </div>
-        <div class="rf-modal-note" hidden>다시보기 사본은 원본 기록에서 수정하세요.</div>
+        <div class="rf-line">
+            <span class="rf-lab">내용</span>
+            <span class="rf-lab rf-push">태그</span>
+            <input type="text" id="rf-modal-tags" class="rf-tagin" autocomplete="off">
+            <span class="rf-lab">다시</span>
+            <input type="date" id="rf-modal-review">
+        </div>
+        <textarea id="rf-modal-text" class="rf-modal-text"></textarea>
+        <button type="button" id="rf-modal-src" class="rf-srcbtn" hidden></button>
+    </div>
+</div>
+
+{# 원문 창. 수정창 위에 한 겹 더 뜬다 #}
+<div id="rf-src-modal" class="rf-modal rf-src-modal" hidden>
+    <div class="rf-modal-backdrop"></div>
+    <div class="rf-modal-box rf-src-box" role="dialog" aria-label="원문">
+        <div class="rf-modal-acts">
+            <button type="button" id="rf-src-close" class="rf-modal-close">닫기</button>
+        </div>
+        <div class="rf-modal-headline" id="rf-src-title"></div>
+        <div class="rf-src-date mono" id="rf-src-date"></div>
+        <div class="rf-src-text" id="rf-src-text"></div>
     </div>
 </div>
 <script>window._rfTags = {{ all_tags | tojson }}; window._rfKinds = {{ kinds | tojson }};</script>

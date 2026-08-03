@@ -2740,6 +2740,12 @@
 
 
     // ---- 고결감 공용 태그 헬퍼 -------------------------------------------
+    // 태그를 견줄 때 쓰는 맨몸 형태. 6block 은 '#AI', Record 는 'AI' 로 적어 두므로
+    // '#' 를 떼고 견주지 않으면 같은 태그가 둘로 갈린다.
+    function bareTag(t) {
+        return String(t || '').trim().replace(/^#+/, '');
+    }
+
     function normalizeTags(val) {
         if (!val) return '';
         return val.split(/[\s,]+/).filter(Boolean)
@@ -2747,46 +2753,12 @@
             .join(' ');
     }
 
-    function bindTagAutocomplete(input) {
-        const tags = (window._rfTags || []);
-        if (!tags.length || !input) return;
-        let drop = input.parentNode.querySelector('.rf-tag-drop');
-        if (!drop) {
-            drop = document.createElement('div');
-            drop.className = 'rf-tag-drop';
-            drop.hidden = true;
-            input.parentNode.style.position = 'relative';
-            input.parentNode.appendChild(drop);
-        }
-        const show = (matches) => {
-            drop.innerHTML = '';
-            if (!matches.length) { drop.hidden = true; return; }
-            matches.slice(0, 8).forEach((t) => {
-                const btn = document.createElement('button');
-                btn.type = 'button'; btn.className = 'rf-tag-opt'; btn.textContent = t;
-                btn.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    const v = input.value;
-                    const last = v.lastIndexOf('#');
-                    input.value = (last >= 0 ? v.slice(0, last) : v) + t + ' ';
-                    drop.hidden = true; input.focus();
-                });
-                drop.appendChild(btn);
-            });
-            drop.hidden = false;
-        };
-        input.addEventListener('input', () => {
-            const v = input.value;
-            const last = v.lastIndexOf('#');
-            if (last < 0) { drop.hidden = true; return; }
-            const prefix = v.slice(last);
-            show(tags.filter((t) => t.toLowerCase().startsWith(prefix.toLowerCase())));
-        });
-        input.addEventListener('blur', () => setTimeout(() => { drop.hidden = true; }, 150));
-        input.addEventListener('keydown', (e) => { if (e.key === 'Escape') drop.hidden = true; });
-    }
 
     // ---- 고결감 (/reflect) -----------------------------------------------
+    // 화면 구성과 동작은 Record 고결감 탭과 같다(2026-08-03 사용자 결정). 카드는 크기를
+    // 맞춰 훑고, 고치는 것은 카드를 눌러 여는 창에서 한다. 다시보기 사본도 같은 창으로
+    // 열리며 내용 칸에 다시 볼 내용을 적는다 — 저장은 원본 행으로 간다(서버가 사본
+    // 수정을 거부한다). 원문은 그 아래 링크를 눌러 한 겹 더 열어 본다.
     function bindReflect() {
         const compose = document.querySelector('.reflect-compose');
         const list = document.getElementById('reflect-list');
@@ -2795,12 +2767,34 @@
         let lastSig = list ? (list.dataset.sig || null) : null;
         const curKind = () => new URLSearchParams(location.search).get('kind') || '';
 
-        // 대상 카드로 스크롤·펼침·강조(상호 이동·미도래 칩 공용)
+        // ---- 문제 알림: 잘 도는 동안은 아무 말도 하지 않는다 ----
+        // 실패했을 때만 제목 행에 빨간 느낌표가 서고, 누르면 무엇이 문제이고 무엇을
+        // 하면 되는지와 다시 시도 버튼이 나온다.
+        let problemMsg = '';
+        const errBtn = document.getElementById('rf-err');
+        const errBox = document.getElementById('rf-errbox');
+        function problem(msg) {
+            problemMsg = msg || '';
+            if (errBtn) errBtn.hidden = !problemMsg;
+            if (errBox && !problemMsg) { errBox.hidden = true; errBox.innerHTML = ''; }
+        }
+        if (errBtn && errBox) {
+            errBtn.addEventListener('click', () => {
+                if (!errBox.hidden) { errBox.hidden = true; return; }
+                errBox.textContent = problemMsg + ' ';
+                const again = document.createElement('button');
+                again.type = 'button'; again.className = 'rf-mini'; again.textContent = '다시 시도';
+                again.addEventListener('click', () => { problem(''); refreshReflect(true); });
+                errBox.appendChild(again);
+                errBox.hidden = false;
+            });
+        }
+
+        // 대상 카드로 스크롤·강조(미도래 칩이 쓴다)
         function focusCard(id) {
             if (!id || !list) return;
             const card = list.querySelector('.rf-card[data-id="' + id + '"]');
             if (!card) return;
-            card.classList.add('expanded');
             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
         }
@@ -2808,8 +2802,9 @@
         function deleteItem(id, after) {
             if (!window.confirm('이 기록을 삭제합니다. 캘린더 이벤트도 함께 지웁니다.')) return;
             postForm('/reflect/delete/' + id, {}).then((d) => {
-                if (d && d.ok) { if (after) after(); toast('삭제'); refreshReflect(true); }
-            });
+                if (d && d.ok) { if (after) after(); toast('삭제'); problem(''); refreshReflect(true); }
+                else problem('지우지 못했습니다. 잠시 뒤 다시 시도해주세요.');
+            }).catch(() => problem('지우지 못했습니다. 연결을 확인해주세요.'));
         }
 
         // ---- 부분 갱신: 목록·미도래를 서버 진실로 다시 그린다 ----
@@ -2830,10 +2825,11 @@
             }).catch(() => {});
         }
 
-        // ---- 유사검색(부분 갱신 뒤에도 다시 적용) ----
+        // ---- 유사검색(오타·부분도 찾음) + 태그 좁히기 ----
+        let tagFilter = '';
         function applySearch() {
             const searchInput = document.getElementById('rf-search-input');
-            if (!searchInput || !list) return;
+            if (!list) return;
             const items = Array.from(list.querySelectorAll('.rf-card'));
             const noMatch = list.querySelector('.rf-no-match');
             const norm = (s) => (s || '').normalize('NFC').toLowerCase();
@@ -2851,15 +2847,21 @@
                 }
                 return sc;
             };
-            const q = norm(searchInput.value.trim());
+            // 태그는 '#' 를 떼고 견준다. 6block 은 '#AI' 로, Record 는 'AI' 로 적어 두므로
+            // 그대로 견주면 같은 태그가 둘로 갈린다.
+            const inTag = (el) => !tagFilter ||
+                (el.dataset.tags || '').split(/\s+/).map(bareTag).indexOf(tagFilter) >= 0;
+            const q = norm(searchInput ? searchInput.value.trim() : '');
             const toks = q ? q.split(/\s+/).filter(Boolean) : [];
             let shown = 0;
             if (!toks.length) {
-                items.forEach((el) => { el.hidden = false; list.appendChild(el); });
-                shown = items.length;
+                items.forEach((el) => {
+                    el.hidden = !inTag(el);
+                    if (!el.hidden) { list.appendChild(el); shown += 1; }
+                });
             } else {
                 const scored = items.map((el, idx) => ({
-                    el, idx, s: score(toks, el.dataset.search || norm(el.textContent)),
+                    el, idx, s: inTag(el) ? score(toks, el.dataset.search || norm(el.textContent)) : 0,
                 }));
                 scored.forEach((o) => { o.el.hidden = o.s === 0; });
                 scored.filter((o) => o.s > 0).sort((a, b) => b.s - a.s || a.idx - b.idx)
@@ -2868,135 +2870,190 @@
             if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
         }
 
-        // ---- 카드: 종류 순환 + 미리보기 클릭으로 전체 보기·수정 별도창 ----
-        const kindOrder = () => (window._rfKinds && window._rfKinds.length
-            ? window._rfKinds : ['고민', '결정', '감사']);
-
-        // 종류만 바꿀 때도 다른 칸을 지우지 않도록 카드 데이터로 현재값을 채워 보낸다.
-        function saveCard(card, patch) {
-            const body = {
-                kind: card.dataset.kind || '',
-                title: card.dataset.title || '',
-                text: card.dataset.text || '',
-                tags: card.dataset.tags || '',
-                review_date: card.dataset.review || '',
-            };
-            Object.assign(body, patch);
-            if (!body.title && !body.text) { toast('제목이나 내용을 입력하세요'); return Promise.resolve(false); }
-            body.tags = normalizeTags(body.tags);
-            return fetch('/reflect/update/' + card.dataset.id, {
-                method: 'POST', headers: FORM_HEADERS,
-                body: new URLSearchParams(body).toString(),
-            }).then((r) => r.json()).then((d) => !!(d && d.ok)).catch(() => false);
-        }
-
-        // 미리보기가 카드를 넘치면 '더보기'를 띄운다.
-        function markClipped() {
-            if (!list) return;
-            list.querySelectorAll('.rf-preview').forEach((p) => {
-                p.classList.toggle('is-clipped', p.scrollHeight - p.clientHeight > 2);
+        // ---- 태그 칩: 평소 접혀 있다. 칩이 목록보다 길어지면 정작 목록이 밀린다 ----
+        const tagTog = document.getElementById('rf-tagtog');
+        const tagChips = document.getElementById('rf-tagchips');
+        function drawTagChips() {
+            if (!tagChips) return;
+            const seen = [];
+            (window._rfTags || []).forEach((t) => {
+                const b = bareTag(t);
+                if (b && seen.indexOf(b) < 0) seen.push(b);
+            });
+            const tags = seen.slice(0, 24);
+            tagChips.innerHTML = '';
+            if (!tags.length) return;
+            [''].concat(tags).forEach((t) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'rf-tag rf-tag-btn' + (tagFilter === t ? ' is-active' : '');
+                b.textContent = t || '태그 전체';
+                b.addEventListener('click', () => {
+                    tagFilter = (tagFilter === t) ? '' : t;
+                    drawTagChips();
+                    applySearch();
+                });
+                tagChips.appendChild(b);
             });
         }
-        window.addEventListener('resize', markClipped);
+        if (tagTog && tagChips) {
+            tagTog.addEventListener('click', () => {
+                tagChips.hidden = !tagChips.hidden;
+                tagTog.classList.toggle('is-active', !tagChips.hidden);
+                if (!tagChips.hidden) drawTagChips();
+            });
+        }
 
-        // ---- 전체 보기·수정 별도창 ----
+        // ---- 카드를 눌러 여는 창 ----
         const modal = document.getElementById('rf-edit-modal');
-        function closeModal() { if (modal) { modal.hidden = true; modal.dataset.id = ''; } }
+        const srcModal = document.getElementById('rf-src-modal');
+        // 창이 다루는 카드와, 저장이 향하는 카드(다시보기는 원본)를 따로 들고 있는다.
+        let openCard = null;
+        let saveCard = null;
+
+        function closeSrc() { if (srcModal) srcModal.hidden = true; }
+        function closeModal() {
+            closeSrc();
+            if (modal) { modal.hidden = true; modal.dataset.id = ''; }
+            const wasRevisit = !!(openCard && openCard.dataset.source);
+            openCard = null; saveCard = null;
+            // 다시 볼 내용은 창에서 고쳤어도 목록 카드에는 옛 글이 남는다. 닫을 때 맞춘다.
+            if (wasRevisit) refreshReflect(true);
+        }
+
+        // 원문 창에 세우는 것은 원본의 값이다. 원본 카드가 목록에 있으면 그 값을 쓰고,
+        // 없으면 사본이 들고 있는 원본 제목·본문으로 대신한다.
+        function srcOf(card) {
+            if (!card || !card.dataset.source) return null;
+            const origin = list
+                ? list.querySelector('.rf-card[data-id="' + card.dataset.source + '"]') : null;
+            if (origin) {
+                return {
+                    title: origin.dataset.title || '',
+                    kind: origin.dataset.kind || '',
+                    date: origin.dataset.event || '',
+                    text: origin.dataset.text || '',
+                };
+            }
+            return {
+                title: card.dataset.ptitle || '', kind: card.dataset.kind || '',
+                date: '', text: card.dataset.ptext || '',
+            };
+        }
+
+        function openSrc(card) {
+            const s = srcOf(card);
+            if (!srcModal || !s) return;
+            document.getElementById('rf-src-title').textContent = s.title;
+            document.getElementById('rf-src-date').textContent = [s.kind, s.date].join(' ').trim();
+            document.getElementById('rf-src-text').textContent = s.text;
+            srcModal.hidden = false;
+        }
+
         function openEditModal(card) {
             if (!modal || !card) return;
-            const editable = !card.hasAttribute('data-source');
-            modal.dataset.id = card.dataset.id;
-            const set = (sel, v) => { const el = modal.querySelector(sel); if (el) el.value = v; };
-            set('#rf-modal-title', card.dataset.title || '');
-            set('#rf-modal-text', card.dataset.text || '');
-            set('#rf-modal-tags', card.dataset.tags || '');
-            set('#rf-modal-review', card.dataset.review || '');
-            const kind = card.dataset.kind || '';
+            const revisit = !!card.dataset.source;
+            // 사본은 원본을 비추기만 한다. 화면에 세우는 값도, 저장이 가는 곳도 원본이다.
+            const origin = revisit && list
+                ? list.querySelector('.rf-card[data-id="' + card.dataset.source + '"]') : null;
+            openCard = card;
+            saveCard = origin || card;
+            modal.dataset.id = saveCard.dataset.id;
+            document.getElementById('rf-modal-headline').textContent = revisit ? '다시보기' : '기록 고치기';
+            // 날짜칸은 자체 위젯이 한 칸을 덧씌운다. 코드가 값을 넣었으면 그 칸도 맞춰야
+            // 화면에 보인다(syncDateParts).
+            const set = (id, v) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.value = v || '';
+                if (el.type === 'date') syncDateParts(el);
+            };
+            set('rf-modal-title', saveCard.dataset.title);
+            set('rf-modal-tags', saveCard.dataset.tags);
+            set('rf-modal-event', saveCard.dataset.event);
+            set('rf-modal-review', saveCard.dataset.review);
+            const kind = saveCard.dataset.kind || '';
             modal.querySelectorAll('input[name="rfmk"]').forEach((r) => { r.checked = (r.value === kind); });
-            // 다시보기 사본은 원본에서만 관리하므로 읽기 전용으로 연다.
-            modal.querySelectorAll('#rf-modal-title, #rf-modal-text, #rf-modal-tags, #rf-modal-review, input[name="rfmk"]')
-                .forEach((el) => { el.disabled = !editable; });
-            const save = modal.querySelector('#rf-modal-save');
-            const del = modal.querySelector('#rf-modal-del');
-            if (save) save.hidden = !editable;
-            if (del) del.hidden = !editable;
-            const note = modal.querySelector('.rf-modal-note');
-            if (note) note.hidden = editable;
+            const box = document.getElementById('rf-modal-text');
+            box.value = revisit ? (card.dataset.note || '') : (saveCard.dataset.text || '');
+            box.placeholder = revisit ? '다시 볼 내용' : '내용';
+            const srcBtn = document.getElementById('rf-modal-src');
+            srcBtn.hidden = !revisit;
+            if (revisit) {
+                const s = srcOf(card);
+                srcBtn.textContent = ('원문 · ' + s.date + ' ' + s.title).replace(/\s+/g, ' ');
+            }
             modal.hidden = false;
-            if (editable) setTimeout(() => modal.querySelector('#rf-modal-title')?.focus(), 30);
+            setTimeout(() => document.getElementById('rf-modal-title')?.focus(), 30);
         }
-        if (modal) {
-            modal.querySelector('.rf-modal-close')?.addEventListener('click', closeModal);
-            modal.querySelector('.rf-modal-backdrop')?.addEventListener('click', closeModal);
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
-            bindListEditor(modal.querySelector('#rf-modal-text'));
-            bindTagAutocomplete(modal.querySelector('#rf-modal-tags'));
-            modal.querySelector('#rf-modal-save')?.addEventListener('click', () => {
-                const id = modal.dataset.id;
-                if (!id) return;
-                const kind = (modal.querySelector('input[name="rfmk"]:checked') || {}).value || '';
-                const title = (modal.querySelector('#rf-modal-title').value || '').trim();
-                const text = (modal.querySelector('#rf-modal-text').value || '').trim();
-                const tags = normalizeTags((modal.querySelector('#rf-modal-tags').value || '').trim());
-                const review_date = modal.querySelector('#rf-modal-review').value || '';
-                if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
-                fetch('/reflect/update/' + id, {
+
+        function saveModal() {
+            if (!modal || !saveCard) return;
+            const revisit = !!(openCard && openCard.dataset.source);
+            const box = (document.getElementById('rf-modal-text').value || '').trim();
+            const kind = (modal.querySelector('input[name="rfmk"]:checked') || {}).value || '';
+            const title = (document.getElementById('rf-modal-title').value || '').trim();
+            const tags = normalizeTags((document.getElementById('rf-modal-tags').value || '').trim());
+            const event_date = document.getElementById('rf-modal-event').value || '';
+            const review_date = document.getElementById('rf-modal-review').value || '';
+            // 다시보기의 내용 칸은 다시 볼 내용이다. 본문 자리로 보내면 원본 본문을 덮어써
+            // 버리므로, 메모는 메모 길로 보내고 본문은 원본 것을 그대로 되쓴다.
+            const text = revisit ? (saveCard.dataset.text || '') : box;
+            if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
+            const note = revisit
+                ? fetch('/reflect/review-note/' + saveCard.dataset.id, {
                     method: 'POST', headers: FORM_HEADERS,
-                    body: new URLSearchParams({ kind, title, text, tags, review_date }).toString(),
-                }).then((r) => r.json()).then((d) => {
-                    if (!d || !d.ok) { toast('저장 실패'); return; }
-                    toast('저장됨'); closeModal(); refreshReflect(true);
-                }).catch(() => toast('저장 실패'));
+                    body: new URLSearchParams({ note: box }).toString(),
+                }).then((r) => r.json())
+                : Promise.resolve({ ok: true });
+            note.then(() => fetch('/reflect/update/' + saveCard.dataset.id, {
+                method: 'POST', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind, title, text, tags, review_date, event_date }).toString(),
+            })).then((r) => r.json()).then((d) => {
+                if (!d || !d.ok) { problem('고치지 못했습니다. 잠시 뒤 다시 시도해주세요.'); toast('저장 실패'); return; }
+                problem(''); toast('저장됨'); closeModal(); refreshReflect(true);
+            }).catch(() => { problem('고치지 못했습니다. 연결을 확인해주세요.'); toast('저장 실패'); });
+        }
+
+        if (modal) {
+            modal.querySelectorAll('.rf-modal-x, .rf-modal-backdrop')
+                .forEach((el) => el.addEventListener('click', closeModal));
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                if (srcModal && !srcModal.hidden) { closeSrc(); return; }
+                if (!modal.hidden) closeModal();
             });
-            modal.querySelector('#rf-modal-del')?.addEventListener('click', () => {
-                if (modal.dataset.id) deleteItem(modal.dataset.id, closeModal);
+            bindListEditor(document.getElementById('rf-modal-text'));
+            document.getElementById('rf-modal-save')?.addEventListener('click', saveModal);
+            document.getElementById('rf-modal-del')?.addEventListener('click', () => {
+                // 지우는 것은 연 카드다. 원본을 지우면 사본과 두 캘린더 일정까지 함께 사라지고,
+                // 사본을 지우면 원본의 '다시 볼 날짜'가 풀린다(서버가 그렇게 정리한다).
+                if (openCard) deleteItem(openCard.dataset.id, closeModal);
             });
+            document.getElementById('rf-modal-src')?.addEventListener('click', () => openSrc(openCard));
+        }
+        if (srcModal) {
+            srcModal.querySelector('#rf-src-close')?.addEventListener('click', closeSrc);
+            srcModal.querySelector('.rf-modal-backdrop')?.addEventListener('click', closeSrc);
         }
 
         function bindList() {
             if (!list) return;
-            list.querySelectorAll('.rf-jump').forEach((b) =>
-                b.addEventListener('click', (e) => { e.stopPropagation(); focusCard(b.dataset.target); }));
             list.querySelectorAll('.rf-del').forEach((b) =>
-                b.addEventListener('click', () => deleteItem(b.dataset.id, () => b.closest('.rf-card')?.remove())));
-            list.querySelectorAll('.rf-sync.retry').forEach((b) =>
-                b.addEventListener('click', () => {
-                    postForm('/reflect/sync/' + b.dataset.id, {}).then((d) => {
-                        if (d && d.synced) { toast('캘린더 반영'); refreshReflect(true); }
-                        else toast('캘린더 연동이 아직 설정되지 않았습니다');
-                    });
+                b.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteItem(b.dataset.id, () => b.closest('.rf-card')?.remove());
                 }));
 
-            // 종류 배지: 누를 때마다 고민→결정→감사 순환(즉시 저장)
-            list.querySelectorAll('.rf-kind-cycle').forEach((btn) =>
-                btn.addEventListener('click', () => {
-                    const card = btn.closest('.rf-card');
-                    const order = kindOrder();
-                    const next = order[(order.indexOf(card.dataset.kind) + 1) % order.length];
-                    saveCard(card, { kind: next }).then((ok) => {
-                        if (!ok) { toast('저장 실패'); return; }
-                        card.dataset.kind = next;
-                        btn.textContent = next; btn.dataset.kind = next;
-                        toast('종류 · ' + next);
-                    });
+            // 카드 아무 데나 눌러도 열린다. ✕ 와 다시 볼 내용 칸은 빼고.
+            list.querySelectorAll('.rf-card').forEach((card) =>
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.rf-del') || e.target.tagName === 'TEXTAREA') return;
+                    openEditModal(card);
                 }));
 
-            // 미리보기 클릭: 전체 보기·수정 별도창
-            list.querySelectorAll('.rf-preview').forEach((p) =>
-                p.addEventListener('click', () => openEditModal(p.closest('.rf-card'))));
-
-            // 태그 칩 클릭: 그 태그를 검색창에 넣어 같은 태그 기록만 남긴다
-            list.querySelectorAll('.rf-tag-btn').forEach((b) =>
-                b.addEventListener('click', () => {
-                    const box = document.getElementById('rf-search-input');
-                    if (!box) return;
-                    box.value = b.dataset.tag || '';
-                    applySearch();
-                    box.focus();
-                }));
-
-            // 다시보기 사본: '다시보기 내용'을 버튼 없이 자동 저장(원본 review_note + 사본 캘린더 반영)
-            list.querySelectorAll('.rf-revisit-input').forEach((ta) => {
+            // 다시 볼 내용: 버튼 없이 자동 저장(원본 review_note + 사본 캘린더 반영)
+            list.querySelectorAll('.rf-note').forEach((ta) => {
                 if (ta.dataset.rfnote) return;
                 ta.dataset.rfnote = '1';
                 let timer = null, sent = ta.value;
@@ -3008,30 +3065,29 @@
                         method: 'POST', headers: FORM_HEADERS,
                         body: new URLSearchParams({ note: ta.value }).toString(),
                     }).then((r) => r.json()).then((d) => {
-                        if (d && d.ok) { if (typeof autosaveToast === 'function') autosaveToast(); }
-                        else toast('저장 실패');
-                    }).catch(() => toast('저장 실패'));
+                        if (d && d.ok) {
+                            const card = ta.closest('.rf-card');
+                            if (card) card.dataset.note = ta.value;
+                            problem('');
+                            if (typeof autosaveToast === 'function') autosaveToast();
+                        } else problem('다시 볼 내용을 저장하지 못했습니다.');
+                    }).catch(() => problem('다시 볼 내용을 저장하지 못했습니다. 연결을 확인해주세요.'));
                 };
                 ta.addEventListener('change', flush);
                 ta.addEventListener('blur', flush);
                 ta.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(flush, 1200); });
             });
-
-            markClipped();
         }
 
-        // ---- 미도래 칩 바인딩(클릭 이동·삭제) ----
+        // ---- 미도래 칩 바인딩(클릭 이동) ----
         function bindUpcoming() {
             if (!upcoming) return;
             upcoming.querySelectorAll('.rf-chip').forEach((chip) =>
                 chip.addEventListener('click', () => focusCard(chip.dataset.target)));
-            upcoming.querySelectorAll('.rf-chip-del').forEach((b) =>
-                b.addEventListener('click', (e) => { e.stopPropagation(); deleteItem(b.dataset.id); }));
         }
 
-        // ---- 작성 바(기록 추가) ----
+        // ---- 작성칸(저장) ----
         bindListEditor(document.getElementById('rf-text'));
-        bindTagAutocomplete(document.getElementById('rf-tags'));
         document.getElementById('rf-add')?.addEventListener('click', () => {
             const ta = document.getElementById('rf-text');
             const titleEl = document.getElementById('rf-title');
@@ -3048,7 +3104,8 @@
             fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
                 .then((r) => r.json())
                 .then((d) => {
-                    if (!d.ok) { toast('저장 실패'); return; }
+                    if (!d.ok) { problem('저장하지 못했습니다. 잠시 뒤 다시 시도해주세요.'); toast('저장 실패'); return; }
+                    problem('');
                     toast(d.synced ? '기록 · 캘린더 반영' : '기록함 (캘린더 미반영)');
                     titleEl.value = ''; ta.value = '';
                     document.getElementById('rf-tags').value = '';

@@ -138,11 +138,12 @@ def _reflect_ctx(q: str = "", kind: str = "") -> dict:
                 "SELECT id, source_id FROM reflection WHERE source_id IS NOT NULL"
             )
         }
-        # 다시보기 사본 카드에 보여줄 '원본의 다시보기 내용'(원본 id → review_note).
-        parent_note_map = {
-            r["id"]: (r["review_note"] or "")
+        # 다시보기 사본 카드에 보여줄 원본의 '다시보기 내용'과 제목·본문
+        # (사본은 원본을 비추기만 하므로 원본 값을 그대로 세운다).
+        parent_map = {
+            r["id"]: (r["review_note"] or "", r["title"] or "", r["text"] or "")
             for r in conn.execute(
-                "SELECT id, review_note FROM reflection WHERE source_id IS NULL"
+                "SELECT id, review_note, title, text FROM reflection WHERE source_id IS NULL"
             )
         }
         tag_rows = conn.execute(
@@ -161,7 +162,10 @@ def _reflect_ctx(q: str = "", kind: str = "") -> dict:
         d = dict(r)
         d["review_child_id"] = child_map.get(r["id"])
         if r["source_id"]:
-            d["parent_review_note"] = parent_note_map.get(r["source_id"], "")
+            note, ptitle, ptext = parent_map.get(r["source_id"], ("", "", ""))
+            d["parent_review_note"] = note
+            d["parent_title"] = ptitle
+            d["parent_text"] = ptext
         items.append(d)
     return {
         "items": items,

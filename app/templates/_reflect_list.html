@@ -1,66 +1,47 @@
-{# 고결감 카드 목록(전체 화면과 부분 갱신이 함께 쓰는 partial) #}
+{# 고결감 카드 목록(전체 화면과 부분 갱신이 함께 쓰는 partial)
+
+   카드는 크기가 같아야 목록을 눈으로 훑을 수 있다. 머리 1줄·제목 1줄·본문 2줄·메타 1줄로
+   못 박고 넘치는 것은 카드를 눌러 여는 창에서 본다(Record 고결감과 같은 구성, 2026-08-03).
+   다시보기 사본은 본문 자리에 다시 볼 내용을 세우고, 구분선 아래 원본 제목만 남긴다. #}
 {% if items %}
 {% for it in items %}
 <article class="rf-card{% if it.source_id %} is-revisit{% endif %}" data-id="{{ it.id }}"
     {% if it.source_id %}data-source="{{ it.source_id }}"{% endif %}
-    {% if it.review_child_id %}data-child="{{ it.review_child_id }}"{% endif %}
     data-kind="{{ it.kind }}"
     data-title="{{ it.title or '' }}"
     data-text="{{ it.text or '' }}"
     data-tags="{{ it.tags or '' }}"
+    data-event="{{ it.event_date or '' }}"
     data-review="{{ it.review_date or '' }}"
-    data-search="{{ ((it.title or '') ~ ' ' ~ (it.text or '') ~ ' ' ~ (it.tags or '')) | lower }}">
-    <div class="rf-card-head">
-        <div class="rf-head-meta">
-            {% if it.source_id %}
-            <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
-            {% else %}
-            <button type="button" class="rf-badge rf-kind-cycle" data-kind="{{ it.kind }}" data-id="{{ it.id }}" title="클릭하면 종류 변경 (고민→결정→감사)">{{ it.kind }}</button>
-            {% endif %}
-            <span class="rf-date mono">{{ it.event_date }}</span>
-            {% if it.review_child_id and not it.source_id %}
-            <button type="button" class="rf-jump rf-review-badge mono" data-target="{{ it.review_child_id }}" title="다시 볼 날짜로 이동">↻ {{ it.review_date }}</button>
-            {% endif %}
-            {% if it.source_id %}
-            <button type="button" class="rf-jump rf-source-badge" data-target="{{ it.source_id }}" title="원본으로 이동">↩ 다시보기</button>
-            {% endif %}
-            {% if it.synced %}
-            <span class="rf-sync ok" title="구글 캘린더에 반영됨">✓</span>
-            {% else %}
-            <button type="button" class="rf-sync retry" data-id="{{ it.id }}" title="캘린더에 다시 반영">⟳</button>
-            {% endif %}
-        </div>
-        <div class="rf-head-actions">
-            <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
-        </div>
-    </div>
     {% if it.source_id %}
-    <div class="rf-revisit">
-        <span class="rf-revisit-label">다시보기 내용 <span class="rf-revisit-sub">자동 저장 · 원본과 별개</span></span>
-        <textarea class="rf-revisit-input" rows="2" data-target="{{ it.source_id }}" placeholder="다시 보며 드는 생각을 적어두세요">{{ it.parent_review_note or '' }}</textarea>
+    data-note="{{ it.parent_review_note or '' }}"
+    data-ptitle="{{ it.parent_title or '' }}"
+    data-ptext="{{ it.parent_text or '' }}"
+    {% endif %}
+    data-search="{{ ((it.title or '') ~ ' ' ~ (it.text or '') ~ ' ' ~ (it.tags or '') ~ ' ' ~ (it.parent_review_note or '')) | lower }}">
+    <div class="rf-card-head">
+        <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
+        {% if it.source_id %}<span class="rf-rev">다시보기</span>{% endif %}
+        <span class="rf-date mono">{{ it.event_date }}</span>
+        {# 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다 #}
+        {% if not it.synced %}<span class="rf-sync off">캘린더 안 됨</span>{% endif %}
+        <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
     </div>
-    <div class="rf-preview rf-ref" title="클릭하면 원본 전체 보기">
-        <span class="rf-ref-label">원본 내용</span>
-        {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
-        {% if it.tags %}
-        <div class="rf-tags-row">
-            {% for tg in (it.tags or '').split() %}<span class="rf-tag">{{ tg }}</span>{% endfor %}
-        </div>
-        {% endif %}
-        <span class="rf-more">원본 더보기</span>
-    </div>
+    <div class="rf-card-title">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
+    {% if it.source_id %}
+    {# 다시 볼 내용은 흰 입력칸이 아니라 본문처럼 보인다(카드에서 바로 적힌다) #}
+    <textarea class="rf-note flat" rows="2" data-target="{{ it.source_id }}"
+              placeholder="다시 볼 내용">{{ it.parent_review_note or '' }}</textarea>
+    <div class="rf-card-src">원본 · {{ it.parent_title or '' }}</div>
     {% else %}
-    <div class="rf-preview" title="클릭하면 전체 보기·수정">
-        <div class="rf-title-view">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>
-        {% if it.text %}<div class="rf-body-view">{{ it.text }}</div>{% endif %}
-        <span class="rf-more">더보기</span>
-    </div>
-    {% if it.tags %}
-    <div class="rf-tags-row">
-        {% for tg in (it.tags or '').split() %}<button type="button" class="rf-tag rf-tag-btn" data-tag="{{ tg }}" title="이 태그로 찾기">{{ tg }}</button>{% endfor %}
-    </div>
+    <div class="rf-card-text">{{ it.text or '' }}</div>
     {% endif %}
-    {% endif %}
+    <div class="rf-card-meta">
+        {% for tg in (it.tags or '').split() %}<span class="rf-tag">{{ tg }}</span>{% endfor %}
+        {% if not it.source_id and it.review_date %}
+        <span class="rf-meta-note">다시 볼 날 {{ it.review_date }}</span>
+        {% endif %}
+    </div>
 </article>
 {% endfor %}
 <div class="ctx-empty rf-no-match" hidden>검색 결과가 없습니다.</div>

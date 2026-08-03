@@ -1171,12 +1171,30 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-title { width: 100%; font-weight: 600; }
 .rf-text { width: 100%; resize: vertical; }
 .rf-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.rf-tags { flex: 1 1 200px; }
 .rf-date { flex: 0 0 auto; }
-/* 왼쪽 작성칸: 태그 입력은 크게, 다시 날짜 입력은 작게 */
-.reflect-compose .rf-tags-wrap { width: 100%; }
-.reflect-compose .rf-tags { width: 100%; min-height: 46px; padding: 12px 14px; font-size: 14px; }
-.reflect-compose .rf-review input[type="date"] { max-width: 140px; font-size: 12px; padding: 4px 6px; }
+
+/* 캡션 행에 버튼·태그·날짜를 함께 세워 세로 칸을 아낀다(Record 고결감과 같은 배치) */
+.rf-line { display: flex; align-items: center; gap: 7px; }
+.rf-line label, .rf-line .rf-lab { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+.rf-line input[type="text"] { flex: 1; min-width: 0; font-size: 13.5px; padding: 6px 10px; }
+.rf-line input[type="date"] { width: 132px; flex: none; font-size: 12.5px; padding: 5px 8px; }
+/* 태그는 몇 낱말이면 된다. 칸을 넓게 잡으면 그만큼 다시 볼 날이 밀린다 */
+.rf-line input[type="text"].rf-tagin { flex: 0 1 200px; }
+/* 뒤따르는 것들을 행 오른쪽 끝으로 민다 */
+.rf-line .rf-push { margin-left: auto; }
+/* 캡션 행 안에 선 형제 버튼은 행 높이를 넘기지 않게 같은 크기로 맞춘다 */
+.rf-mini { padding: 5px 11px; font-size: 12.5px; border-radius: var(--r-pill); line-height: 1.4;
+    flex: none; cursor: pointer; }
+#rf-sync-now { font-size: 14px; padding: 4px 9px; }   /* 글자 없는 아이콘이라 조금 크게 */
+/* 잘 도는 동안은 아무 말도 하지 않는다. 문제가 있을 때만 이 느낌표가 선다 */
+.rf-err { width: 22px; height: 22px; min-width: 22px; padding: 0; border-radius: 50%; flex: none;
+    font-size: 13px; font-weight: 700; line-height: 1; color: #fff; cursor: pointer;
+    background: var(--danger); border: 1px solid var(--danger); }
+.rf-err[hidden] { display: none; }
+.rf-errbox { font-size: 13px; line-height: 1.6; padding: 9px 11px; border-radius: var(--r-md);
+    background: var(--accent-soft); color: var(--accent-soft-text); }
+.rf-errbox[hidden] { display: none; }
+.reflect-compose .rf-text { min-height: 320px; font-size: 14px; line-height: 1.6; }
 
 .reflect-filter {
     margin: 0 0 4px; display: flex; gap: 10px; align-items: center;
@@ -1225,13 +1243,9 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-badge[data-kind="감상"] { --rf-tone: var(--tone-teal); }
 .rf-badge[data-kind="결심"] { --rf-tone: var(--tone-purple); }
 .rf-body { white-space: pre-wrap; color: var(--text); line-height: 1.5; font-size: 13px; }
-.rf-sync { font-size: 12px; background: none; border: none; }
-.rf-sync.ok { color: var(--success); font-weight: 600; }
-.rf-sync.retry { color: var(--warm); font-weight: 600; cursor: pointer; border: 1px solid var(--warm); border-radius: var(--r-pill); padding: 1px 8px; }
-/* 상호 이동 배지(버튼) */
-.rf-jump { cursor: pointer; background: none; border: 1px solid transparent; border-radius: var(--r-pill); padding: 1px 7px; font: inherit; font-size: 12px; line-height: 1.4; }
-button.rf-review-badge.rf-jump:hover { border-color: var(--warm); }
-button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
+/* 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다 */
+.rf-sync.off { font-size: 11px; padding: 1px 8px; border-radius: var(--r-pill);
+    color: var(--danger); background: var(--danger-soft); white-space: nowrap; }
 /* 이동 시 잠깐 강조 */
 .rf-card.flash { animation: rfFlash 1.2s ease; }
 @keyframes rfFlash { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: var(--sh-1); } }
@@ -1251,7 +1265,6 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .due-tags { font-size: 12px; color: var(--accent-soft-text); }
 .rf-review { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); flex: 0 0 auto; white-space: nowrap; }
 .rf-review input { width: auto; }
-.rf-review-badge { color: var(--warm); font-size: 12px; }
 
 /* PLAN·SEE는 한 행(2열)에 나란히 둔다. 블록 세로 길이를 늘리지 않기 위해서다. */
 .ps-plan, .ps-see { min-width: 0; }
@@ -1397,17 +1410,7 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
     .set-st-row { grid-template-columns: 1fr; gap: 2px; }
 }
 
-/* 고결감: 태그 자동완성 */
-.rf-tags-wrap { position: relative; flex: 1; min-width: 0; }
-.rf-tags-wrap .rf-tags { width: 100%; }
-.rf-tag-drop { position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
-    max-height: 180px; overflow-y: auto; margin-top: 2px; box-shadow: var(--sh-2); }
-.rf-tag-opt { display: block; width: 100%; text-align: left; padding: 6px 10px;
-    background: none; border: none; cursor: pointer; color: var(--text); font: inherit; font-size: 13px; }
-.rf-tag-opt:hover, .rf-tag-opt:focus { background: var(--surface-hover); outline: none; }
-
-/* 고결감: 미도래 다시보기 칩 */
+/* 고결감: 다시 볼 예정 칩 */
 .rf-upcoming-head { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .rf-upcoming-head .rf-count { background: var(--surface-hover); border-radius: 8px; padding: 0 6px; font-weight: 400; }
 .rf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1415,62 +1418,59 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 .rf-chip:hover { border-color: var(--accent); }
 .rf-chip-date { color: var(--warm); white-space: nowrap; }
 .rf-chip-title { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
-.rf-chip-del { border: none; background: none; color: var(--text-subtle); cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 4px; }
-.rf-chip-del:hover { color: var(--danger); }
-
-/* 고결감: 다시보기 원본 링크 배지 */
-.rf-source-badge { font-size: 11px; background: var(--accent-soft); border-radius: 8px;
-    padding: 1px 6px; color: var(--accent-soft-text); white-space: nowrap; }
 
 /* 고결감: 2분할 레이아웃 */
 .reflect-layout { display: flex; gap: 18px; align-items: flex-start; }
 /* 왼쪽 작성란과 오른쪽 목록을 1:1 로 나눈다(작성란이 좁으면 길게 적기가 어렵다) */
 .reflect-left { flex: 1 1 0; min-width: 0; position: sticky; top: 72px; display: flex; flex-direction: column; gap: 12px; }
 .reflect-right { flex: 1 1 0; min-width: 0; }
-/* 폭이 넓으면 열이 저절로 늘어난다(웹 3~4열, 좁으면 2열) */
-.reflect-right .reflect-grid { grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
+/* 두 열로 고정한다(Record 고결감과 같다). 격자는 기본이 늘리기라 옆에 선 다시보기
+   카드 높이에 맞춰 멀쩡한 카드까지 늘어나므로 제 높이로 세운다. */
+.reflect-right .reflect-grid { grid-template-columns: repeat(2, 1fr); align-items: start; }
 
-/* 고결감: 카드 헤더 */
-.rf-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.rf-head-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
-.rf-head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.rf-head-actions .rf-edit {
-    font-size: 12px; padding: 2px 8px; border-radius: var(--r-pill);
+/* 고결감: 카드 — 크기를 전부 같게 못 박는다. 넘치는 것은 카드를 눌러 창에서 본다
+   (Record 고결감과 같은 구성, 2026-08-03). 머리 1줄·제목 1줄·본문 2줄·메타 1줄. */
+.rf-card { cursor: pointer; }
+.reflect-right .rf-card { padding: 11px 12px 11px 16px; }
+.rf-card-head { display: flex; align-items: center; gap: 7px; margin-bottom: 4px;
+    flex-wrap: nowrap; overflow: hidden; }
+.rf-card-head > * { flex: none; }
+/* 좁아지면 접히지 않고 잘린다. 접히면 카드마다 높이가 달라진다 */
+.rf-card-head .rf-date { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 12px; }
+.rf-card-head .rf-sync.off { flex: 0 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; }
+.rf-card .rf-del {
+    font-size: 12px; width: 22px; height: 22px; padding: 0; border-radius: 50%; line-height: 1;
     border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
 }
-.rf-head-actions .rf-edit:hover { background: var(--hover); color: var(--text); }
-.rf-head-actions .rf-del {
-    font-size: 13px; padding: 2px 6px; border-radius: var(--r-pill);
-    border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
-    line-height: 1;
-}
-.rf-head-actions .rf-del:hover { background: #fee2e2; border-color: #f87171; color: #dc2626; }
+.rf-card .rf-del:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.rf-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.4;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 딱 두 줄. 줄간격의 두 배로 잡아야 셋째 줄이 반 잘려 보이지 않는다 */
+.rf-card-text { font-size: 13px; line-height: 1.6; color: var(--text-soft); white-space: pre-wrap;
+    height: 3.2em; overflow: hidden; overflow-wrap: anywhere; }
+.rf-card-meta { display: flex; align-items: center; gap: 6px; margin-top: 6px;
+    height: 1.7em; overflow: hidden; }
+.rf-meta-note { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
 
-/* 고결감: 카드 미리보기 본문(넘치면 잘림) */
-.rf-title-view { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; line-height: 1.4;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.rf-body-view { font-size: 13px; line-height: 1.6; color: var(--text-soft); white-space: pre-wrap; overflow: hidden; }
-.rf-preview:hover .rf-title-view { color: var(--accent); }
-
-/* 고결감: 카드 높이를 맞춰 격자가 들쭉날쭉하지 않게 한다(넘치면 '더보기') */
-.reflect-right .rf-card { height: 264px; }
-/* 다시보기 사본: 다시보기 내용(위)은 다 보이고 원본은 남은 높이만큼만 보인다 */
+/* 다시보기 카드는 한눈에 갈라 보여야 한다 */
 .rf-card.is-revisit { background: var(--accent-soft); border-color: var(--border-focus); }
-.rf-revisit { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
-.rf-revisit-label { font-size: 12px; font-weight: 700; color: var(--accent); }
-.rf-revisit-sub { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
-.rf-revisit-input { width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border);
-    border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; }
-.rf-revisit-input:focus { outline: none; border-color: var(--accent); }
-.rf-card.is-revisit .rf-ref { border-top: 1px dashed var(--border-strong); margin-top: 4px; padding-top: 8px; }
-/* 사본 카드는 배경이 달라 '더보기' 그라데이션도 같은 색으로 맞춘다 */
-.rf-card.is-revisit .rf-preview.is-clipped .rf-more {
-    background: linear-gradient(180deg, transparent, var(--accent-soft) 72%);
+.rf-rev { font-size: 11px; padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap;
+    background: var(--accent); color: var(--surface); font-weight: 700; }
+/* 다시 볼 내용은 흰 입력칸이 아니라 본문처럼 보인다(누르면 그 자리에서 적힌다) */
+.rf-note.flat {
+    border: 0; background: transparent; padding: 0; margin: 5px 0 0; resize: none; width: 100%;
+    font-family: inherit; font-size: 13px; line-height: 1.6; color: var(--text);
+    height: 3.2em; overflow: hidden;
 }
-.rf-ref-label { display: inline-block; margin-bottom: 3px; font-size: 11px; font-weight: 700;
-    color: var(--text-muted); letter-spacing: .02em; }
-/* 태그 칩: 누르면 그 태그로 검색된다 */
-.rf-tags-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.rf-note.flat:focus { outline: none; }
+/* 원본은 제목 한 줄만. 위에 선을 그어 다시 볼 내용과 가른다 */
+.rf-card-src { border-top: 1px solid var(--border-strong); margin-top: 8px; padding-top: 7px;
+    font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+
+/* 태그 칩(카드 안에서는 보기만, 필터 줄에서는 눌러 좁힌다) */
 .rf-tag {
     font-size: 11px; font-weight: 600; line-height: 1.5; padding: 2px 8px;
     border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-muted);
@@ -1478,40 +1478,48 @@ button.rf-source-badge.rf-jump:hover { border-color: var(--accent-soft-text); }
 }
 button.rf-tag { cursor: pointer; }
 button.rf-tag:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-button.rf-badge.rf-kind-cycle { border: none; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-button.rf-badge.rf-kind-cycle:hover { box-shadow: inset 0 0 0 1px var(--border); }
-.rf-preview { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; cursor: pointer; }
-.rf-more { display: none; }
-.rf-preview.is-clipped .rf-more { display: block; position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none;
-    text-align: right; padding: 22px 2px 2px; font-size: 11px; font-weight: 600; color: var(--accent);
-    background: linear-gradient(180deg, transparent, var(--surface) 72%); }
+button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.rf-tagtog { font-size: 12.5px; padding: 5px 12px; border-radius: var(--r-pill);
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
+.rf-tagtog.is-active { color: var(--accent); border-color: var(--accent); }
+.rf-tagchips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; }
+.rf-tagchips[hidden] { display: none; }
 
-/* 고결감: 전체 보기·수정 별도창 */
+/* 고결감: 카드를 눌러 여는 창. 고치는 창이라 다른 창보다 넓고 높다(기본의 1.5배) */
 .rf-modal { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .rf-modal[hidden] { display: none; }
 .rf-modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
-.rf-modal-box { position: relative; z-index: 1; width: min(640px, 100%); max-height: 86vh; overflow-y: auto;
+.rf-modal-box { position: relative; z-index: 1; width: min(960px, 100%); max-height: 90vh; overflow-y: auto;
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
-    box-shadow: var(--sh-2); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
-.rf-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    box-shadow: var(--sh-2); padding: 44px 18px 18px; display: flex; flex-direction: column; gap: 10px; }
+/* 창은 넓으니 삭제·닫기를 글자 버튼으로 우상단에 세운다 */
+.rf-modal-acts { position: absolute; top: 12px; right: 14px; display: flex; gap: 6px; z-index: 1; }
 .rf-modal-close {
     border: 1px solid var(--border); background: var(--surface);
     font-size: 12.5px; font-weight: 600; line-height: 1.5; padding: 5px 12px;
     border-radius: var(--r-pill); white-space: nowrap; cursor: pointer; color: var(--text-soft);
 }
 .rf-modal-close:hover { background: var(--surface-3); color: var(--text); }
-.rf-modal-title { width: 100%; font-weight: 600; font-size: 16px; }
-.rf-modal-text { width: 100%; min-height: 220px; resize: vertical; font-size: 14px; line-height: 1.6; }
-.rf-modal-tags { width: 100%; }
-.rf-modal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.rf-modal-actions { display: flex; gap: 8px; margin-left: auto; }
-.rf-modal-note { font-size: 12px; color: var(--text-muted); }
-.rf-modal-note[hidden] { display: none; }
+#rf-modal-del:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.rf-modal-headline { font-size: 17px; font-weight: 700; color: var(--text); }
+.rf-modal-text { width: 100%; min-height: 320px; resize: vertical; font-size: 14px; line-height: 1.6; }
+/* 다시보기 창의 원문 링크. 누르면 원문 창이 한 겹 더 뜬다 */
+.rf-srcbtn { display: block; width: 100%; text-align: left; font-size: 12.5px; cursor: pointer;
+    padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--accent-soft-text);
+    text-decoration: underline; text-underline-offset: 3px; }
+.rf-srcbtn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.rf-srcbtn[hidden] { display: none; }
+.rf-src-modal { z-index: 75; }
+.rf-src-modal .rf-src-box { width: min(720px, 100%); max-height: 86vh; }
+.rf-src-date { font-size: 12px; color: var(--text-muted); }
+.rf-src-text { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.7; color: var(--text); }
 
 @media (max-width: 900px) {
     .reflect-layout { flex-direction: column; }
     .reflect-left { position: static; flex: none; width: 100%; }
-    .reflect-right .reflect-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+    .reflect-right .reflect-grid { grid-template-columns: 1fr; }
+    .rf-line { flex-wrap: wrap; }
 }
 
 /* 구분 템플릿 (설정 탭) — 평일/주말 × 코어블록 그리드 */

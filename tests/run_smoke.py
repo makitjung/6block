@@ -858,6 +858,32 @@ def run_checks(db_path):
     check("블록 할일 팝오버는 비어서 나간다",
           html.count('class="hover-pop task-pop"></div>') == html.count("task-pop"))
 
+    # 29. 고결감 화면 구성(Record 고결감 탭과 같은 배치, 2026-08-03)
+    #     제목·내용 캡션 행이 버튼·태그·날짜를 품고, 카드를 눌러 여는 창에서 고친다.
+    post("/reflect/add", {"kind": "고민", "title": "스모크 원본",
+                          "text": "본문 한 줄", "tags": "#스모크",
+                          "review_date": "2026-12-24"})
+    code, html = get("/reflect")
+    check("고결감 상단 제목·설명 줄은 없앴다",
+          'class="hero reflect-hero"' not in html)
+    check("제목 행에 동기화·저장이 함께 선다",
+          html.count('class="rf-line"') >= 2 and 'id="rf-add"' in html)
+    check("문제 알림은 평소 숨어 있다", 'id="rf-err"' in html and 'id="rf-errbox"' in html)
+    check("태그로 좁히는 단추가 있다", 'id="rf-tagtog"' in html)
+    check("카드는 제목 1줄·본문 2줄 구성",
+          'class="rf-card-title"' in html and 'class="rf-card-text"' in html)
+    check("카드 아래 미리보기·더보기는 없앴다",
+          'class="rf-preview"' not in html and "rf-more" not in html)
+    check("수정창에 기록일 칸이 있다", 'id="rf-modal-event"' in html)
+    check("원문 창은 한 겹 더 뜬다",
+          'id="rf-src-modal"' in html and 'id="rf-modal-src"' in html)
+    # 다시보기 사본은 본문 자리에 다시 볼 내용을 세우고 구분선 아래 원본 제목만 남긴다.
+    rows = db_query(db_path, "SELECT id FROM reflection WHERE source_id IS NOT NULL")
+    check("다시 볼 날짜를 주면 사본이 생긴다", bool(rows), rows)
+    check("사본 카드에 다시 볼 내용 칸이 선다", 'class="rf-note flat"' in html)
+    check("사본 카드는 원본 제목만 보여 준다",
+          'class="rf-card-src"' in html and 'class="rf-ref-label"' not in html)
+
 
 def main():
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="6block-test-"))
