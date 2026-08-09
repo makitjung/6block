@@ -253,12 +253,13 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     align-items: center; gap: 14px; margin-bottom: 16px;
 }
 /* 날짜·주 이동 화살표(‹ ›)는 위아래로 쌓아 가로 폭을 아낀다. 오늘·주간·장기 공통 */
-/* 기간 이동(이전·다음)은 가장 자주 누르는 버튼이라 크고 또렷하게 둔다.
-   세로로 쌓으면 하나하나가 납작해지고 폰에서 hero 가 길어져, 가로로 나란히 놓는다. */
-.hero-nav { display: flex; flex-direction: row; gap: 6px; }
+/* 기간 이동(이전·다음)은 날짜 왼쪽에 위아래로 한 줄로 쌓는다. 두 개를 합친 높이가
+   옆 날짜 덩이(큰 글씨 + 작은 글씨)와 같아지도록 잡아 나란히 떨어진다.
+   크기는 작아도 테두리와 바탕을 줘서 단추라는 것이 보이게 한다. */
+.hero-nav { display: flex; flex-direction: column; gap: 2px; }
 .hero-nav .icon-btn {
-    width: 40px; height: 40px; border-radius: var(--r-md);
-    font-size: 24px; font-weight: 700;
+    width: 26px; height: 24px; border-radius: var(--r-sm);
+    font-size: 15px; font-weight: 700;
     color: var(--text); background: var(--surface-2); border-color: var(--border-strong);
 }
 .hero-nav .icon-btn:hover {
