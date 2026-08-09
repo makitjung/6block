@@ -1468,9 +1468,20 @@
                 saveRoutineRow(row);
             }
         });
+        // 할 일 문구는 다른 칸과 같이 손을 떼면 저장하되, 타자가 멈춰도 한 번 저장한다
+        // (칸을 벗어나지 않고 카드를 닫거나 탭을 옮겨도 글이 남게).
+        let rtTimer = null;
+        card.addEventListener('input', (e) => {
+            const row = e.target.closest('.set-rt-row');
+            if (!row || !e.target.classList.contains('set-rt-do')) return;
+            clearTimeout(rtTimer);
+            rtTimer = setTimeout(() => saveRoutineRow(row), 1200);
+        });
         card.addEventListener('blur', (e) => {
             const row = e.target.closest('.set-rt-row');
-            if (row && e.target.classList.contains('set-rt-do')) saveRoutineRow(row);
+            if (!row || !e.target.classList.contains('set-rt-do')) return;
+            clearTimeout(rtTimer);
+            saveRoutineRow(row);
         }, true);
         card.addEventListener('click', (e) => {
             const wd = e.target.closest('.set-rt-wd-btn');
@@ -3590,8 +3601,11 @@
             postForm('/week/apply-template',
                      { week_start: wkTplSel.dataset.week, template_id: tid })
                 .then((d) => {
-                    if (d && d.ok) location.reload();
-                    else {
+                    if (d && d.ok) {
+                        // 고정 할일은 주간 화면에 안 보이므로(칸은 오늘 탭에 있다) 몇 칸 들어갔는지 알린다.
+                        toast('구분 ' + d.applied + '칸, 고정 할일 ' + d.filled + '칸 적용');
+                        setTimeout(() => location.reload(), 900);
+                    } else {
                         wkTplSel.value = '';
                         toast((d && d.error === 'empty-template') ? '템플릿이 비어 있습니다' : '적용 실패');
                     }

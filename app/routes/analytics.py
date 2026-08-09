@@ -123,7 +123,8 @@ def _ai_insights(summary, weekday_data, block_pd, cats) -> str | None:
 def _exec_funnel(conn, start, end):
     """실행 퍼널: 코어 블록 계획(구분) → 슬롯 구체화(DO) → 슬롯 실행(done·한일) 3단계 비율과,
     실행 점수(3단계 곱)·실질 실행율(실행 슬롯/전체 코어 슬롯)을 [start,end] 기간으로 계산한다.
-    계획된 블록 = 구분(category_id)을 넣은 코어 블록. 실행 = done 체크 또는 '한일'(did_text) 기록."""
+    계획된 블록 = 구분(category_id)을 넣은 코어 블록. 실행 = done 체크 또는 '한일'(did_text) 기록.
+    고정 할일이 채운 칸(is_routine=1)은 사람이 세운 계획이 아니므로 구체화에서 뺀다."""
     b = conn.execute(
         "SELECT COUNT(*) AS core_blocks, "
         "SUM(CASE WHEN category_id IS NOT NULL THEN 1 ELSE 0 END) AS designed_blocks "
@@ -132,8 +133,9 @@ def _exec_funnel(conn, start, end):
     ).fetchone()
     s = conn.execute(
         "SELECT COUNT(*) AS slots_in_designed, "
-        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' THEN 1 ELSE 0 END) AS detailed_slots, "
-        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' "
+        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' AND s.is_routine = 0 "
+        "         THEN 1 ELSE 0 END) AS detailed_slots, "
+        "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' AND s.is_routine = 0 "
         "         AND (s.done = 1 OR TRIM(COALESCE(s.did_text,'')) != '') THEN 1 ELSE 0 END) AS executed_detailed "
         "FROM slots s JOIN blocks b ON b.id = s.block_id "
         "WHERE b.is_core = 1 AND b.category_id IS NOT NULL "
@@ -193,15 +195,19 @@ def _analytics_data(rng: str) -> dict:
         day_rows = conn.execute(
             "SELECT date, "
             "SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) AS done_cnt, "
-            "SUM(CASE WHEN (do_text IS NOT NULL AND TRIM(do_text) != '') "
-            "         OR category_id IS NOT NULL OR done = 1 THEN 1 ELSE 0 END) AS planned_cnt "
+            # 고정 할일 칸은 계획으로 세지 않는다. 다만 체크(done)한 칸은 실행 막대가
+            # 계획 막대를 넘지 않도록 계획에도 넣는다.
+            "SUM(CASE WHEN (is_routine = 0 AND ((do_text IS NOT NULL AND TRIM(do_text) != '') "
+            "                                   OR category_id IS NOT NULL)) "
+            "         OR done = 1 THEN 1 ELSE 0 END) AS planned_cnt "
             "FROM slots WHERE date >= ? AND date <= ? GROUP BY date ORDER BY date",
             (start, today_s),
         ).fetchall()
         pd_rows = conn.execute(
             "SELECT b.date, COUNT(*) AS planned, "
             "SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id "
-            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '') OR s.done = 1)) "
+            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '' AND s.is_routine = 0) "
+            "         OR s.done = 1)) "
             "    THEN 1 ELSE 0 END) AS achieved "
             "FROM blocks b WHERE b.is_core = 1 AND TRIM(COALESCE(b.plan_text, '')) != '' "
             "  AND b.date >= ? AND b.date <= ? GROUP BY b.date ORDER BY b.date",
@@ -211,7 +217,8 @@ def _analytics_data(rng: str) -> dict:
         block_pd_rows = conn.execute(
             "SELECT b.block_label AS lbl, MIN(b.block_order) AS ord, COUNT(*) AS planned, "
             "SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id "
-            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '') OR s.done = 1)) "
+            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '' AND s.is_routine = 0) "
+            "         OR s.done = 1)) "
             "    THEN 1 ELSE 0 END) AS achieved "
             "FROM blocks b WHERE b.is_core = 1 AND TRIM(COALESCE(b.plan_text, '')) != '' "
             "  AND b.date >= ? AND b.date <= ? GROUP BY b.block_label ORDER BY ord",
@@ -221,7 +228,8 @@ def _analytics_data(rng: str) -> dict:
             r[0]
             for r in conn.execute(
                 "SELECT DISTINCT date FROM slots "
-                "WHERE (do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1"
+                "WHERE (do_text IS NOT NULL AND TRIM(do_text) != '' AND is_routine = 0) "
+                "   OR done = 1"
             )
         }
         funnel = _exec_funnel(conn, start, today_s)

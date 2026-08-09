@@ -140,8 +140,10 @@ def _day_has_content(conn, date_str: str) -> bool:
     """
     if conn.execute(
         "SELECT 1 FROM slots WHERE date = ? AND ("
-        "TRIM(COALESCE(do_text,'')) != '' OR TRIM(COALESCE(did_text,'')) != '' "
-        "OR category_id IS NOT NULL OR done = 1 "
+        # 고정 할일만 들어 있는 칸은 사용자 입력이 아니다. 그래야 설정에서 블록 시간을
+        # 바꿨을 때 그 날이 새 시간표로 다시 만들어진다(고정 할일은 템플릿을 다시 고르면 복구).
+        "(is_routine = 0 AND (TRIM(COALESCE(do_text,'')) != '' OR category_id IS NOT NULL)) "
+        "OR TRIM(COALESCE(did_text,'')) != '' OR done = 1 "
         # 그 주 할 일에 이어 둔 슬롯도 사용자 입력이다.
         "OR TRIM(COALESCE(wk_todo,'')) != '') LIMIT 1",
         (date_str,),

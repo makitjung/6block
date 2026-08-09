@@ -306,9 +306,11 @@ async def save_week(week_start_str: str, request: Request):
 
 @router.post("/week/apply-template")
 async def week_apply_template(request: Request):
-    """선택한 구분 템플릿을 그 주 7일 코어 블록 구분에 요일별로 일괄 적용한다.
+    """선택한 구분 템플릿을 그 주 7일에 일괄 적용한다. 블록 구분 42칸 + 고정 할일 규칙.
 
     빈 셀은 건너뛰어 기존 구분을 덮지 않는다. 블록 구분은 빈 슬롯에 자동 상속된다.
+    고정 할일은 지난번에 넣어 둔 칸(is_routine=1)을 먼저 비우고 새 규칙대로 다시 채우므로,
+    규칙을 고치고 다시 골라도 옛 문구가 남지 않는다. 사람이 쓴 칸은 어느 쪽도 건드리지 않는다.
     """
     form = await request.form()
     ws = (form.get("week_start") or "").strip()
@@ -327,11 +329,21 @@ async def week_apply_template(request: Request):
         ):
             if r["category_id"] is not None:
                 cells[(r["weekday"], r["block_label"])] = r["category_id"]
-        if not cells:
+        rules = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT weekdays, start_time, span, do_text, category_id "
+                "FROM routine_rule WHERE template_id = ? ORDER BY display_order, id",
+                (tid,),
+            )
+            if (r["do_text"] or "").strip() and (r["weekdays"] or "").strip()
+        ]
+        if not cells and not rules:
             return JSONResponse(
                 {"ok": False, "error": "empty-template"}, status_code=400
             )
         applied = 0
+        filled = 0
         for i in range(7):
             d = monday + timedelta(days=i)
             ds = d.strftime("%Y-%m-%d")
@@ -346,7 +358,39 @@ async def week_apply_template(request: Request):
                     (cid, now, ds, label),
                 )
                 applied += 1
-    return JSONResponse({"ok": True, "applied": applied})
+            if not rules:
+                continue
+            conn.execute(
+                "UPDATE slots SET do_text = NULL, category_id = NULL, is_routine = 0, "
+                "updated_at = ? WHERE date = ? AND is_routine = 1",
+                (now, ds),
+            )
+            for rule in rules:
+                if d.weekday() not in {
+                    int(p) for p in rule["weekdays"].split(",") if p.strip().isdigit()
+                }:
+                    continue
+                # 요일마다 블록 시간이 다를 수 있다. 그 시각에 칸이 없는 날은 건너뛴다.
+                row = conn.execute(
+                    "SELECT slot_index FROM slots WHERE date = ? AND start_time = ?",
+                    (ds, rule["start_time"]),
+                ).fetchone()
+                if not row:
+                    continue
+                start_idx = row["slot_index"]
+                span = min(4, max(1, rule["span"] or 1))
+                cur = conn.execute(
+                    "UPDATE slots SET do_text = ?, is_routine = 1, updated_at = ?, "
+                    "category_id = COALESCE(?, category_id) "
+                    "WHERE date = ? AND slot_index >= ? AND slot_index < ? "
+                    "  AND TRIM(COALESCE(do_text, '')) = ''",
+                    (
+                        (rule["do_text"] or "").strip(), now, rule["category_id"],
+                        ds, start_idx, start_idx + span,
+                    ),
+                )
+                filled += cur.rowcount
+    return JSONResponse({"ok": True, "applied": applied, "filled": filled})
 
 
 @router.post("/week/item-to-theme")

@@ -817,6 +817,55 @@ def run_checks(db_path):
                        "WHERE date='2026-07-27' AND block_label='B1'")
         check("월요일 B1 구분이 템플릿대로",
               row and row[0]["category_id"] == cat_id, row and row[0]["category_id"])
+
+        # 25-1. 고정 할일 규칙(요일 × 시작시각 × 칸 수)으로 30분 칸을 일괄로 채운다
+        code, out = post("/settings/routine/add", {"template_id": str(tpl_id)})
+        rule_id = out.get("id") if isinstance(out, dict) else None
+        check("고정 할일 규칙 추가", code == 200 and rule_id, out)
+        # 사람이 직접 쓴 칸은 규칙이 덮지 않아야 한다(09:30 칸을 먼저 채워 둔다).
+        mine = db_query(db_path, "SELECT id FROM slots "
+                                 "WHERE date='2026-07-27' AND start_time='09:30'")
+        post("/save/field", {"entity": "slot", "id": str(mine[0]["id"]),
+                             "field": "do_text", "value": "내가 쓴 계획"})
+        for text, start in (("스모크루틴", "07:30"), ("스모크루틴2", "07:30")):
+            post("/settings/routine/save", {
+                "id": str(rule_id), "weekdays": "0", "start_time": start,
+                "span": "2", "do_text": text, "category_id": "",
+            })
+            post("/week/apply-template",
+                 {"week_start": "2026-07-27", "template_id": str(tpl_id)})
+        rows = db_query(db_path, "SELECT start_time, do_text, is_routine FROM slots "
+                                 "WHERE date='2026-07-27' AND is_routine=1 "
+                                 "ORDER BY slot_index")
+        check("규칙대로 2칸이 채워진다", len(rows) == 2, rows)
+        check("다시 적용하면 옛 고정 할일이 새 문구로 바뀐다",
+              all(r["do_text"] == "스모크루틴2" for r in rows), rows)
+        check("고정 할일은 규칙의 시작시각부터 이어서 들어간다",
+              [r["start_time"] for r in rows] == ["07:30", "08:00"], rows)
+        keep = db_query(db_path, "SELECT do_text, is_routine FROM slots "
+                                 "WHERE date='2026-07-27' AND start_time='09:30'")
+        check("사람이 쓴 칸은 고정 할일이 덮지 않는다",
+              keep and keep[0]["do_text"] == "내가 쓴 계획" and not keep[0]["is_routine"],
+              keep)
+        # 그 칸을 사람이 고치면 고정 할일 표시가 풀려 통계에 정상으로 잡힌다.
+        first = db_query(db_path, "SELECT id FROM slots "
+                                  "WHERE date='2026-07-27' AND start_time='07:30'")
+        post("/save/field", {"entity": "slot", "id": str(first[0]["id"]),
+                             "field": "do_text", "value": "스모크루틴2"})
+        same = db_query(db_path, "SELECT is_routine FROM slots WHERE id = ?",
+                        (first[0]["id"],))
+        check("같은 값으로 다시 저장되면 고정 할일 표시가 유지된다",
+              same and same[0]["is_routine"] == 1, same)
+        post("/save/field", {"entity": "slot", "id": str(first[0]["id"]),
+                             "field": "do_text", "value": "내가 고친 계획"})
+        edited = db_query(db_path, "SELECT is_routine FROM slots WHERE id = ?",
+                          (first[0]["id"],))
+        check("사람이 고치면 고정 할일 표시가 풀린다",
+              edited and edited[0]["is_routine"] == 0, edited)
+        post("/settings/routine/delete", {"id": str(rule_id)})
+        left = db_query(db_path, "SELECT COUNT(*) AS n FROM routine_rule "
+                                 "WHERE id = ?", (rule_id,))
+        check("고정 할일 규칙 삭제", left and left[0]["n"] == 0, left)
         post("/settings/template/delete", {"id": tpl_id})
 
     # 26. 하루 마감 · 기록이 빈 슬롯 모으기

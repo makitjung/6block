@@ -226,17 +226,18 @@ def _day_view(request: Request, date_str: str):
         slots_by_block.setdefault(s["block_id"], []).append(s)
 
     # 하루 마감 요약: 완료·기록 슬롯 수와 코어 블록 계획→실행 달성.
+    # 고정 할일이 채운 칸(is_routine)은 사람이 남긴 기록이 아니므로 세지 않는다.
     done_slots = sum(1 for s in slots if s["done"])
     recorded_slots = sum(
         1 for s in slots
-        if (s["do_text"] or "").strip() or (s["did_text"] or "").strip()
-        or s["category_id"] or s["done"]
+        if (s["did_text"] or "").strip() or s["done"]
+        or (not s["is_routine"] and ((s["do_text"] or "").strip() or s["category_id"]))
     )
     core_planned = core_achieved = 0
     for b in blocks:
         if b["is_core"] and (b["plan_text"] or "").strip():
             core_planned += 1
-            if any((s["do_text"] or "").strip() or s["done"]
+            if any(s["done"] or (not s["is_routine"] and (s["do_text"] or "").strip())
                    for s in slots_by_block.get(b["id"], [])):
                 core_achieved += 1
     day_stats = {
@@ -363,9 +364,12 @@ async def save_day(date_str: str, request: Request):
                     (val, now, sid),
                 )
             elif prefix == "do":
+                # 폼은 손대지 않은 칸까지 함께 보내므로, 값이 달라진 칸만 고정 할일 표시를 푼다.
                 conn.execute(
-                    "UPDATE slots SET do_text = ?, updated_at = ? WHERE id = ?",
-                    (val, now, sid),
+                    "UPDATE slots SET do_text = ?, updated_at = ?, is_routine = "
+                    "CASE WHEN TRIM(COALESCE(do_text, '')) = TRIM(?) "
+                    "     THEN is_routine ELSE 0 END WHERE id = ?",
+                    (val, now, val, sid),
                 )
             elif prefix == "did":
                 conn.execute(
@@ -567,13 +571,25 @@ async def save_field(request: Request):
         elif entity == "slot":
             if field not in _VALID_SLOT_FIELDS:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+            # 사람이 값을 바꾼 칸은 고정 할일 표시를 푼다(그때부터 계획으로 잡히고, 템플릿을
+            # 다시 적용해도 덮이지 않는다). 자동저장은 그냥 지나가기만 해도(blur) 한 번 부르므로
+            # 값이 실제로 달라졌을 때만 푼다. SQLite 는 SET 식을 옛 행 값으로 계산한다.
             if field == "cat":
                 cid = int(value) if value else None
                 conn.execute(
-                    "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
-                    (cid, now, rid),
+                    "UPDATE slots SET category_id = ?, updated_at = ?, is_routine = "
+                    "CASE WHEN COALESCE(category_id, -1) = COALESCE(?, -1) "
+                    "     THEN is_routine ELSE 0 END WHERE id = ?",
+                    (cid, now, cid, rid),
                 )
-            else:  # do_text | did_text | wk_todo
+            elif field == "do_text":
+                conn.execute(
+                    "UPDATE slots SET do_text = ?, updated_at = ?, is_routine = "
+                    "CASE WHEN TRIM(COALESCE(do_text, '')) = TRIM(?) "
+                    "     THEN is_routine ELSE 0 END WHERE id = ?",
+                    (value, now, value, rid),
+                )
+            else:  # did_text | wk_todo
                 conn.execute(
                     f"UPDATE slots SET {field} = ?, updated_at = ? WHERE id = ?",
                     ((value or None) if field == "wk_todo" else value, now, rid),
