@@ -27,8 +27,14 @@
 
 <div class="plan-bar">
     <nav class="plan-levels" aria-label="단위 선택">
+        {# 다른 단위로 갈 때는 보던 기간(anchor)을 그대로 들고 간다. 지금 단위를 한 번 더
+           누르면 anchor 를 떼어 오늘로 돌아온다(오늘이 든 기간이 두 번째 칸에 오는 기본 상태). #}
         {% for lv in levels %}
-        <a href="/plan?level={{ lv }}&anchor={{ anchor }}" class="{% if lv == level %}is-active{% endif %}">{{ level_labels[lv] }}</a>
+        {% if lv == level %}
+        <a href="/plan?level={{ lv }}" class="is-active" title="{{ level_labels[lv] }} 기본 화면으로(오늘로)">{{ level_labels[lv] }}</a>
+        {% else %}
+        <a href="/plan?level={{ lv }}&anchor={{ anchor }}">{{ level_labels[lv] }}</a>
+        {% endif %}
         {% endfor %}
     </nav>
     <span class="plan-legend">

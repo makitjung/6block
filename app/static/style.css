@@ -253,9 +253,16 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     align-items: center; gap: 14px; margin-bottom: 16px;
 }
 /* 날짜·주 이동 화살표(‹ ›)는 위아래로 쌓아 가로 폭을 아낀다. 오늘·주간·장기 공통 */
-.hero-nav { display: flex; flex-direction: column; gap: 2px; }
+/* 기간 이동(이전·다음)은 가장 자주 누르는 버튼이라 크고 또렷하게 둔다.
+   세로로 쌓으면 하나하나가 납작해지고 폰에서 hero 가 길어져, 가로로 나란히 놓는다. */
+.hero-nav { display: flex; flex-direction: row; gap: 6px; }
 .hero-nav .icon-btn {
-    width: 26px; height: 25px; border-radius: var(--r-sm); font-size: 16px;
+    width: 40px; height: 40px; border-radius: var(--r-md);
+    font-size: 24px; font-weight: 700;
+    color: var(--text); background: var(--surface-2); border-color: var(--border-strong);
+}
+.hero-nav .icon-btn:hover {
+    color: var(--accent); background: var(--accent-soft); border-color: var(--accent);
 }
 .hero-date { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .hero-date-main { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
@@ -1698,12 +1705,16 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-drill { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--border-strong); }
 .gt-drill:hover { color: var(--accent); border-bottom-color: var(--accent); }
 .gt-week { margin-left: 4px; color: var(--accent); text-decoration: none; font-weight: 700; }
-/* 첫 열 ‹ 이전 기간 · 마지막 열 › 다음 기간 */
+/* 첫 열 ‹ 이전 기간 · 마지막 열 › 다음 기간. 글자 하나뿐이라 그냥 두면 누를 자리가
+   없다시피 하므로, 눈에 보이는 네모 단추로 만들어 손끝이 닿게 한다. */
 .gt-nav {
-    color: var(--text-muted); text-decoration: none; font-weight: 700;
-    padding: 0 3px; border-radius: var(--r-sm);
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 24px; height: 24px; font-size: 17px; line-height: 1;
+    color: var(--text-soft); text-decoration: none; font-weight: 700;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--r-sm);
 }
-.gt-nav:hover { color: var(--accent); background: var(--accent-soft); }
+.gt-nav:hover { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 /* 왼쪽 줄 이름 = 코어블록 B1~B6(+ 블록을 안 정한 항목이 모이는 미지정 줄) */
 .gt-blockrow { border-top: 1px solid var(--border); border-radius: var(--r-sm); }
 .gt-blockrow:nth-of-type(odd) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
