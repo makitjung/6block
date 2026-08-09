@@ -1796,6 +1796,53 @@
     // 상위 기간 막대 안에 하위 기간 막대가 겹쳐 그려진다. 어느 막대든 누르면 그 줄 아래
     // 편집칸이 열린다. 추가·수정·삭제 후에는 상위 기간이 서버에서 다시 계산되므로
     // 화면을 새로 그린다(reload).
+    // ---- 장기: 다시 그려도 보던 자리를 지킨다 ------------------------------
+    // 항목을 더하거나 고치면 화면을 통째로 다시 그리는데(location.reload), 그러면 맨 위로
+    // 올라가 방금 적던 블록 줄을 다시 찾아 내려가야 했다. 떠나기 직전 자리를 적어 두었다가
+    // 돌아왔을 때 되돌린다. 가로 자리는 같은 기간으로 돌아왔을 때만 뜻이 있다.
+    const PLAN_SCROLL_KEY = 'plan-scroll';
+
+    function savePlanScroll() {
+        const box = document.querySelector('.plan-scroll');
+        try {
+            sessionStorage.setItem(PLAN_SCROLL_KEY, JSON.stringify({
+                y: window.scrollY, x: box ? box.scrollLeft : 0, q: location.search,
+            }));
+            // 브라우저가 제 나름대로 기억해 둔 자리를 나중에 덮어쓰지 못하게 잠근다.
+            // 안 그러면 우리가 되돌린 뒤에 브라우저 것이 한 번 더 들어와 자리가 어긋난다.
+            if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+        } catch (e) { /* 저장 못 해도 나머지는 그대로 돈다 */ }
+    }
+
+    // 자리를 적어 두고 다시 그린다. 간트에서 값을 고친 뒤에는 이걸로 새로고침한다.
+    function reloadKeepingPlace() {
+        savePlanScroll();
+        location.reload();
+    }
+
+    function restorePlanScroll() {
+        let saved = null;
+        try {
+            saved = JSON.parse(sessionStorage.getItem(PLAN_SCROLL_KEY) || 'null');
+            sessionStorage.removeItem(PLAN_SCROLL_KEY);   // 한 번 쓰고 버린다
+        } catch (e) { return; }
+        if (!saved) return;
+        const box = document.querySelector('.plan-scroll');
+        const put = () => {
+            if (box && saved.q === location.search) box.scrollLeft = saved.x || 0;
+            window.scrollTo(0, saved.y || 0);
+        };
+        // 격자를 다 그린 뒤라야 세로 길이가 정해져 원하는 만큼 내려간다. 몇 번 더 짚는다.
+        put();
+        requestAnimationFrame(put);
+        setTimeout(put, 200);
+        // 다 끝나면 브라우저에게 자리 기억을 도로 맡긴다(뒤로가기는 원래대로).
+        setTimeout(() => {
+            put();
+            if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
+        }, 600);
+    }
+
     function bindGantt() {
         const gantt = document.querySelector('.gantt');
         if (!gantt) return;
@@ -1847,7 +1894,8 @@
                     title: title, start: start, end: end,
                     parent_id: form.querySelector('.gt-f-parent').value,
                 }).then((d) => {
-                    if (d && d.ok) { location.reload(); return; }   // 성공하면 그대로 잠근다
+                    // 성공하면 그대로 잠그고, 방금 적던 블록 줄 자리를 지킨 채 다시 그린다
+                    if (d && d.ok) { reloadKeepingPlace(); return; }
                     sending = false;
                     toast((d && d.error) || '추가 실패');
                 });
@@ -1901,7 +1949,7 @@
                     : '이 항목을 삭제합니다.';
                 if (!window.confirm(msg)) return;
                 postForm('/plan/item/delete', { id: x.dataset.id }).then((d) => {
-                    if (d && d.ok) location.reload();
+                    if (d && d.ok) reloadKeepingPlace();
                     else toast('삭제 실패');
                 });
             });
@@ -1910,6 +1958,7 @@
         bindGanttDrag(gantt);
         drawGanttLinks(gantt);
         window.addEventListener('resize', () => drawGanttLinks(gantt));
+        restorePlanScroll();    // 방금 항목을 고쳐 다시 그린 것이면 보던 자리로 돌아간다
 
         gantt.querySelectorAll('.gt-edit').forEach((box) => {
             const id = box.dataset.id;
@@ -1930,14 +1979,14 @@
                 box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
                 postForm('/plan/item/update', data).then((d) => {
                     if (!d || !d.ok) { box.hidden = false; toast((d && d.error) || '저장 실패'); return; }
-                    location.reload();
+                    reloadKeepingPlace();
                 });
             });
             // 영역(막대 색)을 바꾼다. 하위 항목이면 상위에서 빠져 그 영역의 최상위가 된다.
             box.querySelector('.gt-e-area')?.addEventListener('change', (ev) => {
                 postForm('/plan/item/reparent', { id: id, area_id: ev.target.value })
                     .then((d) => {
-                        if (d && d.ok) location.reload();
+                        if (d && d.ok) reloadKeepingPlace();
                         else toast((d && d.error) || '영역을 바꾸지 못했습니다');
                     });
             });
@@ -2207,6 +2256,7 @@
     // 보이는 기간 밖으로 보내면 아예 안 그려져 막대가 사라진 것처럼 보이기 때문이다.
     // 서버가 focus 를 보고 필요하면 그 항목이 보이는 기간으로 화면을 옮기고 접힘도 풀어 준다.
     function reloadOn(id) {
+        savePlanScroll();       // 끌어 옮긴 뒤에도 보던 블록 줄에 그대로 남는다
         const u = new URL(location.href);
         u.searchParams.set('focus', id);
         location.href = u.toString();
