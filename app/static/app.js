@@ -1899,6 +1899,8 @@
                 data.block = [...box.querySelectorAll('.gt-e-blocks input:checked')]
                     .map((c) => c.value).join(',');
                 data.hidden = box.querySelector('.gt-e-hidden').checked ? '1' : '0';
+                // 가리기는 주간·오늘에서만 뺀다(간트에는 그대로 남는다).
+                data.masked = box.querySelector('.gt-e-masked').checked ? '1' : '0';
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
                 postForm('/plan/item/update', data).then((d) => {

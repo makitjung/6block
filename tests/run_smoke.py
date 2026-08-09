@@ -408,6 +408,31 @@ def run_checks(db_path):
     post("/plan/item/update", {"id": child, "hidden": "0"})
     _c, h = get("/plan?level=month&anchor=2026-08-01")
     check("숨김을 풀면 기본 화면에 돌아온다", bar_of in h)
+    # 항목 가리기. 숨김과 반대로 장기 간트에는 그대로 남고 주간·오늘 탭에서만 빠진다.
+    # 날짜를 못 박아(2026-08-05, 항목 기간 안) 실행한 날과 무관하게 같은 결과가 나오게 한다.
+    wg_of = re.compile(r'class="wg-item[^"]*" data-id="%d"' % child)
+    _c, wk = get("/week/2026-08-05")
+    _c, td = get("/day/2026-08-05")
+    check("가리기 전에는 주간·오늘에 나온다",
+          bool(wg_of.search(wk)) and "노동법 1회독" in td and f'"lt:{child}"' in td)
+    code, out = post("/plan/item/update", {"id": child, "masked": "1"})
+    check("가리기 저장", code == 200 and out.get("ok"), out)
+    _c, wk = get("/week/2026-08-05")
+    _c, td = get("/day/2026-08-05")
+    check("가린 항목은 주간 목표 열에서 빠진다", not wg_of.search(wk))
+    check("가린 항목은 오늘 띠와 할일 고르기 목록에서 빠진다",
+          "노동법 1회독" not in td and f'"lt:{child}"' not in td)
+    check("하위를 가려도 상위가 대신 올라오지 않는다", "노무사 1차 합격" not in wk)
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("가려도 장기 간트에는 그대로 남는다", bar_of in h and "is-masked-item" in h)
+    check("편집칸에 숨김·가리기와 설명(?)이 나란히 있다",
+          'class="gt-e-hidden"' in h and 'class="gt-e-masked"' in h
+          and 'class="gt-e-help"' in h)
+    post("/plan/item/update", {"id": child, "masked": "0"})
+    _c, wk = get("/week/2026-08-05")
+    _c, h = get("/plan?level=month&anchor=2026-08-01")
+    check("가리기를 풀면 주간에 돌아온다",
+          bool(wg_of.search(wk)) and "is-masked-item" not in h)
     # 오늘 세로선은 기본으로 안 그린다(체크박스로만 켠다)
     check("오늘 선은 기본으로 꺼져 있다",
           'id="pg-today-line"' in h and 'class="gantt"' in h)

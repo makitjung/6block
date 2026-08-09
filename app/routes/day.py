@@ -131,6 +131,7 @@ def _lt_items_on(conn, d) -> list[dict]:
 
     상위는 하위를 묶는 껍데기라 빼고, 대신 어느 상위에서 내려온 것인지 제목을 붙인다.
     남은 일수(D-n)와, 그 주에 따로 적어 둔 계획(goal)이 있으면 그것도 함께 준다.
+    장기 탭에서 '가리기'를 건 항목(masked)은 누른 막대 하나만 여기서 뺀다.
     """
     date_str = d.strftime("%Y-%m-%d")
     wk = week_start(d).strftime("%Y-%m-%d")
@@ -146,6 +147,7 @@ def _lt_items_on(conn, d) -> list[dict]:
         "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
         "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
         "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
+        "AND i.masked = 0 "
         "ORDER BY a.display_order, i.end_date, i.id",
         (date_str, date_str),
     ).fetchall()

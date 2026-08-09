@@ -282,7 +282,12 @@ def lt_leaves(rows) -> list[dict]:
 
 
 def week_lt_items(conn, week_start_str: str) -> list[dict]:
-    """그 주에 걸친 장기 항목(활성 영역만) 중 최하위 것만. 상위 제목을 함께 준다."""
+    """그 주에 걸친 장기 항목(활성 영역만) 중 최하위 것만. 상위 제목을 함께 준다.
+
+    장기 탭에서 '가리기'를 건 항목(masked)은 여기서 뺀다. 누른 막대 하나만 대상이라
+    하위는 그대로 남고, 상위를 가려도 has_children 판정은 원래대로여서 상위가 대신
+    올라오지 않는다.
+    """
     d0 = datetime.strptime(week_start_str, "%Y-%m-%d").date()
     sunday = (d0 + timedelta(days=6)).strftime("%Y-%m-%d")
     rows = conn.execute(
@@ -291,6 +296,7 @@ def week_lt_items(conn, week_start_str: str) -> list[dict]:
         "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
         "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
         "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
+        "AND i.masked = 0 "
         "ORDER BY a.display_order, i.start_date, i.id",
         (sunday, week_start_str),
     ).fetchall()

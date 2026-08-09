@@ -384,7 +384,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
     children: dict[int | None, list] = {}
     for r in conn.execute(
         "SELECT id, area_id, parent_id, title, start_date, end_date, progress, "
-        "       block_label, hidden FROM lt_item ORDER BY start_date, id"
+        "       block_label, hidden, masked FROM lt_item ORDER BY start_date, id"
     ):
         # 접어 둔 항목은 '숨긴 항목 보기'를 켰을 때만 끌어온다(하위도 함께 빠진다)
         if r["area_id"] in tones and (show_hidden or not r["hidden"]):
@@ -420,6 +420,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
         row["days"] = (e - s).days + 1
         row["past"] = e < today        # 종료일이 지난 항목은 화면에서 기본으로 접는다
         row["hidden"] = bool(it["hidden"])
+        row["masked"] = bool(it["masked"])   # 주간·오늘에서만 뺀 항목(간트에는 그대로 그린다)
         row["tone"] = tones.get(it["area_id"], "blue")
         row["area_name"] = names.get(it["area_id"], "")
         row["area_order"] = orders.get(it["area_id"], 999)
@@ -520,6 +521,8 @@ async def plan_item_update(request: Request):
         fields["block_label"] = _clean_blocks(form.get("block")) or None
     if form.get("hidden") is not None:
         fields["hidden"] = 1 if (form.get("hidden") or "").strip() in ("1", "on") else 0
+    if form.get("masked") is not None:
+        fields["masked"] = 1 if (form.get("masked") or "").strip() in ("1", "on") else 0
     if form.get("start") is not None and (form.get("start") or "").strip():
         d = _parse_date(form.get("start"))
         if not d:

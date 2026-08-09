@@ -1910,6 +1910,40 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     color: var(--danger); border-color: var(--danger);
     background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
+/* 가리기(주간·오늘에서만 빼기)는 숨김과 헷갈리지 않게 다른 색으로 */
+.gt-e-mask:has(input:checked) {
+    color: var(--warm); border-color: var(--warm);
+    background: color-mix(in srgb, var(--warm) 14%, transparent);
+}
+/* 주간·오늘에서 뺀 막대는 빗금으로 표시한다. 테두리는 상하위·지난 항목 표시가 이미
+   쓰고 있어 건드리지 않고, 배경에만 겹쳐 그린다(막대 높이도 그대로). */
+.gt-bar.is-masked-item {
+    background-image: repeating-linear-gradient(135deg,
+        transparent 0 6px,
+        color-mix(in srgb, var(--gt-tone) 22%, transparent) 6px 9px);
+}
+/* 숨김·가리기 설명(?). 누를 때만 펼쳐지고, 줄 높이가 늘지 않게 띄워서 그린다 */
+.gt-e-help { position: relative; flex: 0 0 auto; }
+.gt-e-help > summary {
+    list-style: none; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: var(--r-pill);
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    border: 1px solid var(--border); background: var(--surface);
+}
+.gt-e-help > summary::-webkit-details-marker { display: none; }
+.gt-e-help[open] > summary {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+}
+.gt-e-help-body {
+    position: absolute; z-index: 30; right: 0; top: 26px; width: 320px; max-width: 76vw;
+    padding: 10px 12px; font-size: 12px; line-height: 1.6; color: var(--text-muted);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: var(--sh-2);
+}
+.gt-e-help-body p { margin: 0 0 6px; }
+.gt-e-help-body p:last-child { margin: 0; }
+.gt-e-help-body b { color: var(--text); }
 /* 지난 항목(종료일이 오늘 이전)은 흐리게 해서 기본으로 보여 주고, 체크할 때만 화면에서 뺀다 */
 .gt-bar.is-past { opacity: .55; border-style: dotted; }
 .gantt.hide-past .gt-bar.is-past { display: none; }

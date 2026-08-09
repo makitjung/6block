@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def uid_from_created(created: str | None) -> str:
@@ -223,6 +223,10 @@ def _migrate(conn: sqlite3.Connection):
     if "hidden" not in item_cols:
         conn.execute(
             "ALTER TABLE lt_item ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+    # 주간·오늘 탭에서 빼는 항목. 1이어도 장기 간트에는 그대로 그린다.
+    if "masked" not in item_cols:
+        conn.execute(
+            "ALTER TABLE lt_item ADD COLUMN masked INTEGER NOT NULL DEFAULT 0")
     # 영역 색 톤(막대 색). 없으면 추가하고 기존 영역을 표시 순서대로 팔레트에 배정한다.
     area_cols = {r[1] for r in conn.execute("PRAGMA table_info(lt_area)").fetchall()}
     if "tone" not in area_cols:
