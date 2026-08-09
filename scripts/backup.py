@@ -13,6 +13,9 @@ from app.config import BACKUP_DIR, CLOUD_BACKUP_DIR, DB_PATH  # noqa: E402
 
 KEEP_DAYS = 30  # 이보다 오래된 일별 덤프는 자동 삭제(로컬·클라우드 모두). 무한 누적 방지.
 _NAME_RE = re.compile(r"^blocks-(\d{8})\.sql$")
+# 손으로 뜬 일회성 스냅샷(스키마를 건드리기 전 안전용). 이름에 붙은 날짜로 같이 걷어낸다.
+# 이게 없으면 blocks-cats-20260608-092802.db 같은 파일이 영원히 남는다.
+_SNAP_RE = re.compile(r"^blocks-.*?(\d{8})(?:-\d{6})?\.db$")
 
 # launchd 가 서버·백업 출력을 여기에 계속 덧붙인다. 놔두면 하루 2MB씩 늘어 1년에 700MB가
 # 되고, 옛 오류가 잔뜩 섞여 진짜 문제를 찾기도 어려워진다.
@@ -49,10 +52,14 @@ def _trim_logs():
 
 
 def _rotate(target: Path, now: datetime):
-    """target 폴더의 blocks-YYYYMMDD.sql 중 KEEP_DAYS보다 오래된 것을 지운다."""
+    """target 폴더에서 KEEP_DAYS보다 오래된 백업을 지운다.
+
+    일별 덤프(blocks-YYYYMMDD.sql)와 손으로 뜬 일회성 스냅샷(blocks-*-YYYYMMDD*.db)이
+    대상이다. 이름에서 날짜를 못 읽는 파일은 건드리지 않는다.
+    """
     removed = 0
-    for f in target.glob("blocks-*.sql"):
-        m = _NAME_RE.match(f.name)
+    for f in list(target.glob("blocks-*.sql")) + list(target.glob("blocks-*.db")):
+        m = _NAME_RE.match(f.name) or _SNAP_RE.match(f.name)
         if not m:
             continue
         try:
@@ -66,7 +73,7 @@ def _rotate(target: Path, now: datetime):
             except OSError:
                 pass
     if removed:
-        print(f"[rotate] removed {removed} old dump(s) in {target}")
+        print(f"[rotate] removed {removed} old backup(s) in {target}")
 
 
 def dump():

@@ -1242,7 +1242,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-badge[data-kind="감사"] { --rf-tone: var(--tone-teal); }
 .rf-badge[data-kind="감상"] { --rf-tone: var(--tone-teal); }
 .rf-badge[data-kind="결심"] { --rf-tone: var(--tone-purple); }
-.rf-body { white-space: pre-wrap; color: var(--text); line-height: 1.5; font-size: 13px; }
 /* 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다 */
 .rf-sync.off { font-size: 11px; padding: 1px 8px; border-radius: var(--r-pill);
     color: var(--danger); background: var(--danger-soft); white-space: nowrap; }
@@ -1341,7 +1340,6 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rm-close:hover { background: var(--surface-3); color: var(--text); }
 
 /* 고결감 헤더(동기화 버튼) */
-.reflect-hero { display: flex; align-items: center; gap: 12px; }
 .rf-sync-now { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--accent); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 7px 14px; cursor: pointer; white-space: nowrap; }
 .rf-sync-now:hover { border-color: var(--accent); }
 .rf-sync-now:disabled { opacity: 0.6; cursor: default; }
@@ -1754,10 +1752,9 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     box-shadow: 0 1px 2px rgba(16, 24, 40, .06);
     transition: box-shadow .12s, transform .12s;
 }
-.gt-bar:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(16, 24, 40, .14); }
+.gt-bar:hover { transform: translateY(-1px); box-shadow: var(--sh-2); }
 /* 하위를 품은 막대는 테두리를 점선으로 해 잎 항목과 구분한다(자리는 안 겹친다) */
 .gt-bar.is-parent { border-style: dashed; }
-.gt-bar:hover { box-shadow: var(--sh-2); }
 .gt-bar.clip-l { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: dotted; }
 .gt-bar.clip-r { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-style: dotted; }
 /* 진척은 막대 안쪽을 같은 색 더 진하게 채워 한눈에 얼마나 갔는지 보인다 */
@@ -1864,11 +1861,10 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     font-size: 11px; font-weight: 700; color: var(--text-muted);
     border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px 6px;
 }
-.gt-e-blk input { width: 12px; height: 12px; }
+.gt-e-blk input { width: 12px; height: 12px; margin: 0; }
 .gt-e-blk:has(input:checked) {
     color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
 }
-.gt-e-blk input { margin: 0; }
 /* 추가 폼의 기간 길이 버튼 */
 .gt-f-len { display: inline-flex; gap: 4px; }
 .gt-f-len-btn {
@@ -1922,28 +1918,6 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
         transparent 0 6px,
         color-mix(in srgb, var(--gt-tone) 22%, transparent) 6px 9px);
 }
-/* 숨김·가리기 설명(?). 누를 때만 펼쳐지고, 줄 높이가 늘지 않게 띄워서 그린다 */
-.gt-e-help { position: relative; flex: 0 0 auto; }
-.gt-e-help > summary {
-    list-style: none; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 20px; height: 20px; border-radius: var(--r-pill);
-    font-size: 11px; font-weight: 700; color: var(--text-muted);
-    border: 1px solid var(--border); background: var(--surface);
-}
-.gt-e-help > summary::-webkit-details-marker { display: none; }
-.gt-e-help[open] > summary {
-    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
-}
-.gt-e-help-body {
-    position: absolute; z-index: 30; right: 0; top: 26px; width: 320px; max-width: 76vw;
-    padding: 10px 12px; font-size: 12px; line-height: 1.6; color: var(--text-muted);
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--r-md); box-shadow: var(--sh-2);
-}
-.gt-e-help-body p { margin: 0 0 6px; }
-.gt-e-help-body p:last-child { margin: 0; }
-.gt-e-help-body b { color: var(--text); }
 /* 지난 항목(종료일이 오늘 이전)은 흐리게 해서 기본으로 보여 주고, 체크할 때만 화면에서 뺀다 */
 .gt-bar.is-past { opacity: .55; border-style: dotted; }
 .gantt.hide-past .gt-bar.is-past { display: none; }

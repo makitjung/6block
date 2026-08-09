@@ -188,15 +188,7 @@
                 </select>
                 <label class="gt-e-blk gt-e-hide"><input type="checkbox" class="gt-e-hidden" {% if b.hidden %}checked{% endif %}>숨김</label>
                 <label class="gt-e-blk gt-e-mask"><input type="checkbox" class="gt-e-masked" {% if b.masked %}checked{% endif %}>가리기</label>
-                <details class="gt-e-help">
-                    <summary aria-label="숨김·가리기 설명" title="숨김·가리기 설명">?</summary>
-                    <div class="gt-e-help-body">
-                        <p><b>숨김</b>은 이 장기 탭에서만 막대를 접습니다. 위쪽 <b>숨긴 항목 보기</b>를 켜야 다시 나오고, 주간·오늘 탭에는 그대로 나옵니다.</p>
-                        <p><b>가리기</b>는 반대입니다. 주간 탭과 오늘 탭에서만 빼고, 장기 탭 막대는 그대로 둡니다. 하던 일을 지우지 않고 잠시 눈앞에서만 치울 때 씁니다.</p>
-                        <p>둘 다 누른 막대 하나에만 걸립니다. 하위 계획은 따라오지 않으니 하위도 빼려면 그 막대에서 따로 눌러야 합니다.</p>
-                        <p>어느 쪽도 삭제가 아닙니다. 지우려면 막대 위 <b>✕</b>를 누릅니다.</p>
-                    </div>
-                </details>
+                <button type="button" class="hint" aria-label="숨김·가리기 설명" data-hint="숨김은 이 장기 탭에서만 막대를 접습니다. 위쪽 '숨긴 항목 보기'를 켜야 다시 나오고, 주간·오늘 탭에는 그대로 나옵니다. 가리기는 반대로 주간 탭과 오늘 탭에서만 빼고 장기 탭 막대는 그대로 둡니다. 둘 다 누른 막대 하나에만 걸리고 하위 계획은 따라오지 않습니다. 어느 쪽도 삭제가 아니며, 지우려면 막대 위 ✕를 누릅니다.">?</button>
                 <span class="gt-e-act">
                     <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}">하위 추가</button>
                     <button type="button" class="primary-btn gt-e-save">저장</button>

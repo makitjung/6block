@@ -427,7 +427,7 @@ def run_checks(db_path):
     check("가려도 장기 간트에는 그대로 남는다", bar_of in h and "is-masked-item" in h)
     check("편집칸에 숨김·가리기와 설명(?)이 나란히 있다",
           'class="gt-e-hidden"' in h and 'class="gt-e-masked"' in h
-          and 'class="gt-e-help"' in h)
+          and 'aria-label="숨김·가리기 설명"' in h)
     post("/plan/item/update", {"id": child, "masked": "0"})
     _c, wk = get("/week/2026-08-05")
     _c, h = get("/plan?level=month&anchor=2026-08-01")

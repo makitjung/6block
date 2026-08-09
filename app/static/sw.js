@@ -39,8 +39,10 @@ self.addEventListener('fetch', (event) => {
                 caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
                 return res;
             }).catch(() =>
-                caches.match(req, { ignoreSearch: true })
-                    .then((r) => r || caches.match('/today'))
+                // 쿼리까지 똑같은 것만 내준다. ignoreSearch 로 느슨하게 찾으면 /plan?level=year
+                // 를 눌렀는데 지난번에 담아 둔 /plan?level=week 화면이 나와, 주소만 바뀌고
+                // 화면은 그대로인 것처럼 보인다(단위 버튼이 안 먹는 증상의 원인이었다).
+                caches.match(req).then((r) => r || caches.match('/today'))
             )
         );
         return;

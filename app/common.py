@@ -53,7 +53,10 @@ templates.env.filters["short_date"] = _short_date
 # ?v= 를 붙여 내보내는 정적 파일. 이 중 하나라도 바뀌면 버전이 올라가 기기가 새로 받는다.
 # 여기 빠진 파일에 ?v= 를 달면, 파일을 고쳐도 버전이 그대로라 브라우저가 옛것을 계속 쓴다
 # (정적 파일은 ?v= 가 붙으면 1년 캐시라 더욱 그렇다).
-VERSIONED_ASSETS = ("app.js", "style.css", "icon.svg", "icon.png", "apple-touch-icon.png")
+# sw.js 도 넣는다. 서비스워커는 /sw.js?v=<이 값> 으로 등록되므로, 여기 없으면 sw.js 만
+# 고쳤을 때 등록 주소가 그대로라 새 워커가 곧바로 올라오지 않는다.
+VERSIONED_ASSETS = ("app.js", "style.css", "sw.js",
+                    "icon.svg", "icon.png", "apple-touch-icon.png")
 _ASSET_VER_TTL = 10          # 초. 한 페이지를 그리는 동안 stat 을 반복하지 않게만 잡아 둔다.
 _asset_ver_cache: tuple[float, str] | None = None
 
