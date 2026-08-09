@@ -8,10 +8,10 @@
             <a href="/week/{{ prev_week }}" class="icon-btn" aria-label="지난 주">‹</a>
             <a href="/week/{{ next_week }}" class="icon-btn" aria-label="다음 주">›</a>
         </div>
-        {# 제목은 두 줄. 위에 주차(작게), 아래에 기간(크게) #}
+        {# 제목은 두 줄. 위에 기간(크게), 아래에 주차(작게). 글자 크기는 그대로 두고 순서만 바꿨다 #}
         <div class="hero-date">
-            <div class="hero-wk-line"><span class="hero-wk">{{ week_no }}주차</span></div>
             <div class="hero-date-main">{{ dates[0] | short_date }}~{{ dates[6] | short_date }}</div>
+            <div class="hero-wk-line"><span class="hero-wk">{{ week_no }}주차</span></div>
         </div>
         {# 저장 버튼은 없앴다. 모든 칸이 손을 떼는 즉시 저장된다(bindAutosaveAll) #}
         <div class="hero-actions">
