@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS slots (
     category_id INTEGER REFERENCES categories(id),
     done INTEGER NOT NULL DEFAULT 0,
     wk_todo TEXT,
+    -- 1이면 고정 할일(routine_rule)이 채운 칸. 사람이 계획한 것이 아니므로 통계에서 빼고,
+    -- 다시 적용할 때 덮어써도 된다. 사람이 그 칸을 고치면 0으로 풀린다.
+    is_routine INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL,
     UNIQUE(date, slot_index)
 );
@@ -182,3 +185,19 @@ CREATE TABLE IF NOT EXISTS cat_template_cell (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cat_template_cell ON cat_template_cell(template_id);
+
+-- 구분 템플릿에 딸린 고정 할일 규칙. 주간 탭에서 템플릿을 고르면 이 규칙대로 30분 칸을 채운다.
+-- 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라서 스무 줄이면 한 주의 고정 일과가 다 덮인다
+-- (요일 7 × 하루 31칸 = 217칸짜리 격자를 만들지 않는 이유).
+CREATE TABLE IF NOT EXISTS routine_rule (
+    id INTEGER PRIMARY KEY,
+    template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,
+    weekdays TEXT NOT NULL DEFAULT '',   -- 적용 요일 '0,1,4' (0=월 ~ 6=일). 비면 적용하지 않는다
+    start_time TEXT NOT NULL,            -- 'HH:MM'. 그 시각에 슬롯이 없는 날은 건너뛴다
+    span INTEGER NOT NULL DEFAULT 1,     -- 시작 칸부터 이어서 채울 칸 수(1~4, 블록 경계는 넘어도 된다)
+    do_text TEXT NOT NULL DEFAULT '',
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    display_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_routine_rule ON routine_rule(template_id);

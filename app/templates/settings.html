@@ -246,12 +246,14 @@
        서버에서 미리 그리면 템플릿 하나가 40KB 넘게 붙어, 템플릿을 늘릴수록 설정 화면이
        계속 무거워진다. 뼈대와 값만 JSON 으로 보내고 카드를 펼칠 때 app.js 가 그린다. #}
     <details class="card set-template-card" id="set-tpl-card">
-        <summary class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트를 만들어 두면 주간 탭에서 한 번에 채웁니다</span></summary>
+        <summary class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트와 고정 할일을 만들어 두면 주간 탭에서 한 번에 채웁니다</span></summary>
         <script>
             window.__tplCells = {{ cat_templates | map(attribute='cells') | list | tojson }};
+            window.__tplRules = {{ cat_templates | map(attribute='rules') | list | tojson }};
             window.__tplCats = {{ active_categories | tojson }};
             window.__tplBlocks = {{ core_labels | tojson }};
             window.__tplWeekdays = {{ weekdays | tojson }};
+            window.__tplTimes = {{ routine_times | tojson }};
         </script>
         <div id="set-tpl-list">
             {% for t in cat_templates %}
@@ -261,6 +263,16 @@
                     <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
                 </div>
                 <div class="set-tpl-grid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}"></div>
+                {# 고정 할일은 격자로 만들면 요일 7 × 하루 31칸 = 217칸이 된다. 규칙 한 줄이
+                   여러 요일을 덮으므로 목록으로 둔다. 줄도 app.js 가 그린다. #}
+                <div class="set-rt" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}">
+                    <div class="set-rt-head">
+                        <span class="set-rt-title">고정 할일</span>
+                        <button type="button" class="hint" data-hint="이 템플릿을 주간 탭에서 고를 때 30분 칸에 자동으로 들어갈 일과입니다. 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라 월화수목금 07:30 두 칸이면 열 칸이 채워집니다. 비어 있는 칸과 지난번 고정 할일이 들어간 칸만 채우고 직접 쓰신 글은 건드리지 않습니다. 자동으로 들어간 칸은 달성률·구체화율 통계에서 빠지고, 그 칸을 직접 고치면 그때부터 계획으로 잡힙니다." aria-label="설명">?</button>
+                        <button type="button" class="set-mini-btn set-rt-add" data-tpl="{{ t.id }}">규칙 추가</button>
+                    </div>
+                    <div class="set-rt-list"></div>
+                </div>
             </div>
             {% endfor %}
         </div>

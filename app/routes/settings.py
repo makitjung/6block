@@ -30,6 +30,7 @@ from app.config import (
     TONE_KEYS,
     TONES,
     hhmm_to_min,
+    slots_for_day,
 )
 from app.db import (
     BLOCK_TIMES_KEY,
@@ -147,8 +148,14 @@ def _backup_status() -> list[dict]:
     return out
 
 
+def _routine_times() -> list[str]:
+    """고정 할일 규칙에서 고를 수 있는 시작시각. 요일마다 블록 시간이 다를 수 있어 7일치를 합친다."""
+    times = {s for wd in range(7) for _i, _l, s, _e in slots_for_day(get_day_blocks(wd))}
+    return sorted(times)
+
+
 def _load_cat_templates(conn) -> list[dict]:
-    """구분 템플릿 목록을 셀(요일 0~6 × 코어블록 → 구분)까지 채워 돌려준다."""
+    """구분 템플릿 목록을 셀(요일 0~6 × 코어블록 → 구분)과 고정 할일 규칙까지 채워 돌려준다."""
     templates_ = [
         dict(r)
         for r in conn.execute(
@@ -163,8 +170,15 @@ def _load_cat_templates(conn) -> list[dict]:
         cmap.setdefault(r["template_id"], {}).setdefault(r["weekday"], {})[
             r["block_label"]
         ] = r["category_id"]
+    rmap: dict[int, list] = {}
+    for r in conn.execute(
+        "SELECT id, template_id, weekdays, start_time, span, do_text, category_id "
+        "FROM routine_rule ORDER BY display_order, id"
+    ):
+        rmap.setdefault(r["template_id"], []).append(dict(r))
     for t in templates_:
         t["cells"] = cmap.get(t["id"], {})
+        t["rules"] = rmap.get(t["id"], [])
     return templates_
 
 
@@ -185,6 +199,7 @@ def settings_view(request: Request):
             "categories": [dict(c) for c in cats],
             "active_categories": active_categories,
             "cat_templates": cat_templates,
+            "routine_times": _routine_times(),
             "core_labels": CORE_LABELS,
             "weekdays": list(enumerate(KO_WEEKDAYS)),
             "tones": TONES,
@@ -575,6 +590,81 @@ async def settings_template_cell(request: Request):
             "category_id = excluded.category_id",
             (tid, weekday, label, cid),
         )
+    return JSONResponse({"ok": True})
+
+
+# -- 고정 할일 규칙 (구분 템플릿에 딸림) -------------------------------------
+
+
+def _clean_weekdays(raw) -> str:
+    """'0,1,4' 형태로 요일을 정리한다. 0~6 밖의 값과 중복은 버린다."""
+    out = sorted({int(p) for p in (raw or "").split(",") if p.strip().isdigit()
+                  and 0 <= int(p) <= 6})
+    return ",".join(str(w) for w in out)
+
+
+@router.post("/settings/routine/add")
+async def settings_routine_add(request: Request):
+    """빈 고정 할일 규칙 한 줄을 템플릿에 추가하고 생성된 id를 돌려준다."""
+    form = await request.form()
+    try:
+        tid = int(form.get("template_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    times = _routine_times()
+    with get_conn() as conn:
+        order = conn.execute(
+            "SELECT COALESCE(MAX(display_order), -1) + 1 FROM routine_rule "
+            "WHERE template_id = ?",
+            (tid,),
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO routine_rule (template_id, weekdays, start_time, span, "
+            "do_text, category_id, display_order) VALUES (?, '', ?, 1, '', NULL, ?)",
+            (tid, times[0] if times else "07:30", order),
+        )
+    return JSONResponse({"ok": True, "id": cur.lastrowid})
+
+
+@router.post("/settings/routine/save")
+async def settings_routine_save(request: Request):
+    """고정 할일 규칙 한 줄(요일·시작시각·칸 수·할일·구분)을 저장한다."""
+    form = await request.form()
+    try:
+        rid = int(form.get("id"))
+        span = int(form.get("span") or 1)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    start = (form.get("start_time") or "").strip()
+    if start not in _routine_times():
+        return JSONResponse({"ok": False, "error": "bad-time"}, status_code=400)
+    raw_cat = form.get("category_id")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE routine_rule SET weekdays = ?, start_time = ?, span = ?, "
+            "do_text = ?, category_id = ? WHERE id = ?",
+            (
+                _clean_weekdays(form.get("weekdays")),
+                start,
+                min(4, max(1, span)),
+                (form.get("do_text") or "").strip(),
+                int(raw_cat) if raw_cat else None,
+                rid,
+            ),
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.post("/settings/routine/delete")
+async def settings_routine_delete(request: Request):
+    """고정 할일 규칙 한 줄을 지운다(이미 채워 둔 칸은 그대로 남는다)."""
+    form = await request.form()
+    try:
+        rid = int(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM routine_rule WHERE id = ?", (rid,))
     return JSONResponse({"ok": True})
 
 

@@ -1440,6 +1440,11 @@
                 // 화면이 뜰 때 도는 초기 색칠(select.cat-select)은 이미 지나간 뒤라 여기서 칠한다.
                 grid.querySelectorAll('.set-tpl-cell').forEach(paintCategory);
             });
+            card.querySelectorAll('.set-rt').forEach((box) => {
+                const rules = (window.__tplRules || [])[Number(box.dataset.idx)] || [];
+                const list = box.querySelector('.set-rt-list');
+                rules.forEach((r) => list.appendChild(routineRow(r)));
+            });
         };
         // 열 때 한 번만 그린다. 이미 열린 채로 들어왔으면(브라우저가 상태를 되살릴 때) 바로.
         card.addEventListener('toggle', () => { if (card.open) build(); });
@@ -1454,6 +1459,113 @@
                 block_label: sel.dataset.label, category_id: sel.value,
             }).then(() => toast('저장'));
         });
+
+        // 고정 할일 규칙 줄: 값이 바뀌면 바로 저장, 요일 칩은 눌러서 켜고 끈다.
+        card.addEventListener('change', (e) => {
+            const row = e.target.closest('.set-rt-row');
+            if (row && e.target.closest('.set-rt-time, .set-rt-span, .set-rt-cat')) {
+                if (e.target.classList.contains('set-rt-cat')) paintCategory(e.target);
+                saveRoutineRow(row);
+            }
+        });
+        card.addEventListener('blur', (e) => {
+            const row = e.target.closest('.set-rt-row');
+            if (row && e.target.classList.contains('set-rt-do')) saveRoutineRow(row);
+        }, true);
+        card.addEventListener('click', (e) => {
+            const wd = e.target.closest('.set-rt-wd-btn');
+            if (wd) {
+                wd.classList.toggle('is-on');
+                wd.setAttribute('aria-pressed', wd.classList.contains('is-on'));
+                saveRoutineRow(wd.closest('.set-rt-row'));
+                return;
+            }
+            const del = e.target.closest('.set-rt-del');
+            if (del) {
+                const row = del.closest('.set-rt-row');
+                postForm('/settings/routine/delete', { id: row.dataset.id })
+                    .then((d) => { if (d && d.ok) { row.remove(); toast('삭제'); } });
+                return;
+            }
+            const add = e.target.closest('.set-rt-add');
+            if (!add) return;
+            postForm('/settings/routine/add', { template_id: add.dataset.tpl })
+                .then((d) => {
+                    if (!d || !d.ok) { toast('추가 실패'); return; }
+                    const list = add.closest('.set-rt').querySelector('.set-rt-list');
+                    const row = routineRow({
+                        id: d.id, weekdays: '', span: 1, do_text: '',
+                        start_time: (window.__tplTimes || [])[0] || '', category_id: null,
+                    });
+                    list.appendChild(row);
+                    row.querySelector('.set-rt-do').focus();
+                });
+        });
+    }
+
+    // 고정 할일 규칙 한 줄(요일 칩 7개 · 시작시각 · 칸 수 · 할 일 · 구분 · 삭제)을 만든다.
+    function routineRow(r) {
+        const cats = window.__tplCats || [], times = window.__tplTimes || [];
+        const weekdays = window.__tplWeekdays || [];
+        const on = new Set(String(r.weekdays || '').split(',').filter((s) => s !== ''));
+        const row = el('div', 'set-rt-row');
+        row.dataset.id = r.id;
+        const wdBox = el('div', 'set-rt-wd');
+        weekdays.forEach(([wd, label]) => {
+            const b = el('button', 'set-rt-wd-btn' + (on.has(String(wd)) ? ' is-on' : ''), label);
+            b.type = 'button';
+            b.dataset.wd = wd;
+            b.setAttribute('aria-pressed', on.has(String(wd)));
+            b.setAttribute('aria-label', label + '요일');
+            wdBox.appendChild(b);
+        });
+        row.appendChild(wdBox);
+        const time = el('select', 'set-rt-time');
+        time.setAttribute('aria-label', '시작 시각');
+        times.forEach((t) => time.appendChild(new Option(t, t, false, t === r.start_time)));
+        row.appendChild(time);
+        const span = el('select', 'set-rt-span');
+        span.setAttribute('aria-label', '칸 수');
+        [1, 2, 3, 4].forEach((n) => {
+            span.appendChild(new Option(n + '칸', n, false, n === Number(r.span)));
+        });
+        row.appendChild(span);
+        const doIn = el('input', 'set-rt-do');
+        doIn.type = 'text';
+        doIn.value = r.do_text || '';
+        doIn.placeholder = '할 일 (예: 논문 읽기)';
+        doIn.autocomplete = 'off';
+        doIn.setAttribute('aria-label', '고정 할 일');
+        row.appendChild(doIn);
+        const cat = el('select', 'set-rt-cat cat-select');
+        cat.setAttribute('aria-label', '구분');
+        cat.appendChild(new Option('구분', ''));
+        cats.forEach((c) => {
+            const o = new Option(c.name, c.id, false, c.id === r.category_id);
+            o.dataset.tone = c.tone;
+            cat.appendChild(o);
+        });
+        row.appendChild(cat);
+        paintCategory(cat);
+        const del = el('button', 'set-mini-btn set-rt-del', '✕');
+        del.type = 'button';
+        del.title = '삭제';
+        row.appendChild(del);
+        return row;
+    }
+
+    function saveRoutineRow(row) {
+        if (!row) return;
+        const wds = [...row.querySelectorAll('.set-rt-wd-btn.is-on')]
+            .map((b) => b.dataset.wd).join(',');
+        postForm('/settings/routine/save', {
+            id: row.dataset.id,
+            weekdays: wds,
+            start_time: row.querySelector('.set-rt-time').value,
+            span: row.querySelector('.set-rt-span').value,
+            do_text: row.querySelector('.set-rt-do').value,
+            category_id: row.querySelector('.set-rt-cat').value,
+        }).then((d) => toast((d && d.ok) ? '저장' : '저장 실패'));
     }
 
     function bindSettings() {

@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def uid_from_created(created: str | None) -> str:
@@ -205,6 +205,28 @@ def _migrate(conn: sqlite3.Connection):
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_weekly_lt_goal_week ON weekly_lt_goal(week_start)"
+    )
+    # 고정 할일이 채운 칸 표시(통계 제외·재적용 시 덮어쓰기 대상). 없으면 추가.
+    if "is_routine" not in slot_cols:
+        conn.execute(
+            "ALTER TABLE slots ADD COLUMN is_routine INTEGER NOT NULL DEFAULT 0")
+    # 구분 템플릿에 딸린 고정 할일 규칙. 옛 덤프 복원용으로 남겨 둔다.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS routine_rule (
+            id INTEGER PRIMARY KEY,
+            template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,
+            weekdays TEXT NOT NULL DEFAULT '',
+            start_time TEXT NOT NULL,
+            span INTEGER NOT NULL DEFAULT 1,
+            do_text TEXT NOT NULL DEFAULT '',
+            category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+            display_order INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_routine_rule ON routine_rule(template_id)"
     )
     # 오늘 탭에서 블록·슬롯을 그 주 할 일 중 어느 것에 잇는지(키만 저장, 글은 직접 입력).
     # 블록은 두 시간짜리라 여러 계획을 담을 수 있어 쉼표로 여러 개를 넣는다.

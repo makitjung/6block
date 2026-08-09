@@ -1537,6 +1537,17 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .set-tpl-blabel { font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: center; }
 .set-tpl-daytype { font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; padding-right: 6px; }
 .set-tpl-cell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
+/* 고정 할일 규칙 줄. 한 줄이 요일 여러 개를 덮으므로 격자가 아니라 목록으로 쌓는다. */
+.set-rt { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.set-rt-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.set-rt-title { font-size: 12px; font-weight: 700; color: var(--text-soft); }
+.set-rt-add { margin-left: auto; }
+.set-rt-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.set-rt-wd { display: flex; gap: 2px; }
+.set-rt-wd-btn { width: 24px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.set-rt-wd-btn.is-on { background: var(--tone-blue); border-color: var(--tone-blue); color: #fff; font-weight: 700; }
+.set-rt-time, .set-rt-span, .set-rt-cat { padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
+.set-rt-do { flex: 1; min-width: 140px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 
 /* 설정 .env 편집기: 파일 내용을 그대로 보여주는 텍스트영역 */
 .set-env-text { width: 100%; box-sizing: border-box; resize: vertical; min-height: 180px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }

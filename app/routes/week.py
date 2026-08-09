@@ -84,13 +84,16 @@ def _week_view(request: Request, monday: date):
             """,
             dates,
         ).fetchone()[0]
+        # 고정 할일이 채운 칸(is_routine=1)은 사람이 세운 계획이 아니므로 달성으로 세지 않는다.
+        # 체크(done)는 사람이 한 행동이라 그대로 센다.
         achieved = conn.execute(
             f"""
             SELECT COUNT(s.id) FROM slots s
             JOIN blocks b ON b.id = s.block_id
             WHERE b.date IN ({placeholders}) AND b.is_core = 1
               AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
-              AND (s.done = 1 OR (s.do_text IS NOT NULL AND TRIM(s.do_text) != ''))
+              AND (s.done = 1 OR (s.do_text IS NOT NULL AND TRIM(s.do_text) != ''
+                                  AND s.is_routine = 0))
             """,
             dates,
         ).fetchone()[0]
