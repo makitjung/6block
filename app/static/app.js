@@ -2124,15 +2124,21 @@
         box.append(text, native);
 
         // 한 칸 -> date 입력. 8자리를 다 쳐야 값이 선다(덜 쳤으면 빈 값).
+        // syncing 은 아래 pull 이 제 손으로 낸 change 를 되받지 않게 막는 빗장이다.
+        // 이게 없으면 첫 글자를 칠 때 값이 서 있던 칸이 빈 값으로 바뀌며 change 가 나고,
+        // pull 이 그 빈 값을 한 칸에 도로 써서 방금 친 글자가 사라진다.
+        let syncing = false;
         const push = () => {
             const v = text.value.length === 10 ? text.value : '';
             if (native.value === v) return;
+            syncing = true;
             native.value = v;
             native.dispatchEvent(new Event('input', { bubbles: true }));
             native.dispatchEvent(new Event('change', { bubbles: true }));
+            syncing = false;
         };
         // date 입력 -> 한 칸. 달력으로 고르거나 코드가 값을 넣었을 때 되돌려 받는다.
-        const pull = () => { text.value = native.value || ''; };
+        const pull = () => { if (syncing) return; text.value = native.value || ''; };
         pull();
         native.addEventListener('change', pull);
         native.dpSync = pull;
