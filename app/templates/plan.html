@@ -99,17 +99,21 @@
         <span class="gt-todayline" style="--p: {{ today_pct }}" data-label="오늘" aria-hidden="true"></span>
         {% endif %}
         <div class="gt-row gt-headrow">
-            <div class="gt-lead gt-headlead">블록</div>
+            {# 이전 기간은 '블록' 칸 오른쪽 끝에, 다음 기간은 마지막 열 오른쪽 끝에 세운다.
+               둘이 열 띠를 양쪽에서 감싸는 모양이라 날짜 글자를 밀지 않는다. #}
+            <div class="gt-lead gt-headlead">블록
+                <a class="gt-nav gt-nav-prev" href="/plan?level={{ level }}&anchor={{ prev_anchor }}"
+                   title="이전 기간 보기" aria-label="이전 기간 보기">‹</a>
+            </div>
             <div class="gt-track gt-headtrack">
                 {% for col in columns %}
                 <div class="gt-col {% if col.current %}is-now{% endif %}{% if col.brk %} is-brk{% endif %}" data-lv="{{ col.brk_level }}">
                     {% if col.brk %}<span class="gt-brk">{{ col.brk }}</span>{% endif %}
                     <span class="gt-col-label">
-                        {% if loop.first %}<a class="gt-nav" href="/plan?level={{ level }}&anchor={{ prev_anchor }}" title="이전 기간 보기" aria-label="이전 기간 보기">‹</a>{% endif %}
                         {% if col.drill_level %}<a class="gt-drill" href="/plan?level={{ col.drill_level }}&anchor={{ col.drill_anchor }}" title="{{ col.label }} 펼치기">{{ col.label }}</a>{% else %}{{ col.label }}{% endif %}
                         {% if col.week_link %}<a class="gt-week" href="/week/{{ col.week_link }}" title="이 주의 주간 화면">↗</a>{% endif %}
-                        {% if loop.last %}<a class="gt-nav" href="/plan?level={{ level }}&anchor={{ next_anchor }}" title="다음 기간 보기" aria-label="다음 기간 보기">›</a>{% endif %}
                     </span>
+                    {% if loop.last %}<a class="gt-nav gt-nav-next" href="/plan?level={{ level }}&anchor={{ next_anchor }}" title="다음 기간 보기" aria-label="다음 기간 보기">›</a>{% endif %}
                     {% if col.sub %}<span class="gt-col-sub mono">{{ col.sub }}</span>{% endif %}
                 </div>
                 {% endfor %}

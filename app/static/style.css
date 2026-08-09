@@ -1635,7 +1635,9 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 /* ===== 장기플랜 계획 막대 ===== */
 .gantt {
     --lead-w: 150px;   /* 왼쪽 줄 이름은 'B1 07:30~09:30 +' 뿐이라 넓을 필요가 없다 */
-    min-width: calc(var(--lead-w) + var(--cols) * 92px);
+    /* 한 열 최소폭. 마지막 열은 오른쪽에 다음기간 화살표가 앉으므로 날짜·주차 글자가
+       가리지 않도록 그만큼 여유를 두고 잡는다. */
+    min-width: calc(var(--lead-w) + var(--cols) * 104px);
     display: flex; flex-direction: column; gap: 2px;
     position: relative;
 }
@@ -1705,8 +1707,9 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-drill { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--border-strong); }
 .gt-drill:hover { color: var(--accent); border-bottom-color: var(--accent); }
 .gt-week { margin-left: 4px; color: var(--accent); text-decoration: none; font-weight: 700; }
-/* 첫 열 ‹ 이전 기간 · 마지막 열 › 다음 기간. 글자 하나뿐이라 그냥 두면 누를 자리가
-   없다시피 하므로, 눈에 보이는 네모 단추로 만들어 손끝이 닿게 한다. */
+/* 기간 이동 ‹ ›. 글자 하나뿐이라 그냥 두면 누를 자리가 없다시피 하므로 네모 단추로 만든다.
+   ‹ 는 '블록' 칸 오른쪽 끝, › 는 마지막 열 오른쪽 끝에 세로 가운데로 붙인다. 흐름에서
+   빼내야 날짜 글자를 옆으로 밀지 않는다. */
 .gt-nav {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 24px; height: 24px; font-size: 17px; line-height: 1;
@@ -1715,6 +1718,10 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     border-radius: var(--r-sm);
 }
 .gt-nav:hover { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.gt-headlead, .gt-headtrack .gt-col { position: relative; }
+.gt-nav-prev, .gt-nav-next {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%); z-index: 2;
+}
 /* 왼쪽 줄 이름 = 코어블록 B1~B6(+ 블록을 안 정한 항목이 모이는 미지정 줄) */
 .gt-blockrow { border-top: 1px solid var(--border); border-radius: var(--r-sm); }
 .gt-blockrow:nth-of-type(odd) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
