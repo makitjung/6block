@@ -1722,6 +1722,8 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-nav-prev, .gt-nav-next {
     position: absolute; right: 4px; top: 50%; transform: translateY(-50%); z-index: 2;
 }
+/* 화살표가 앉은 마지막 열은 그만큼 안쪽으로 밀어 날짜·주차 글자와 겹치지 않게 한다 */
+.gt-headtrack .gt-col:last-child { padding-right: 30px; }
 /* 왼쪽 줄 이름 = 코어블록 B1~B6(+ 블록을 안 정한 항목이 모이는 미지정 줄) */
 .gt-blockrow { border-top: 1px solid var(--border); border-radius: var(--r-sm); }
 .gt-blockrow:nth-of-type(odd) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
