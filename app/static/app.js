@@ -345,6 +345,7 @@
             }
         }
         checkVersion();
+        applyPendingReload();
         render(false);
     }
 
@@ -357,6 +358,31 @@
     let myVer = '';
     let lastVerCheck = 0;
     let verChecking = false;
+    // 새 버전을 봤지만 지금은 끊기 곤란해 미뤄 둔 상태. 한 번 서면 안 내린다.
+    let pendingReload = false;
+    let pendingToldAt = 0;
+    const PENDING_NAG_MS = 5 * 60 * 1000;
+
+    function busyNow() {
+        // 타이핑 중이거나 세션(집중·휴식)이 도는 중에는 새로고침으로 끊지 않는다.
+        const tag = (document.activeElement || {}).tagName || '';
+        return state.phase !== 'IDLE' || /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
+    }
+
+    // 매초 불린다. 미뤄 둔 새로고침을 손이 비는 순간 바로 처리한다.
+    // 예전에는 버전이 다를 때 busy 면 그냥 넘어가고 끝이라, 세션을 켜 두거나 입력칸에
+    // 커서가 있으면 그 탭은 영영 옛 코드로 남았다(맥에서 며칠 묵은 코드가 돌던 원인).
+    function applyPendingReload() {
+        if (!pendingReload) return;
+        if (!busyNow()) { location.reload(); return; }
+        // 세션이 몇 시간씩 이어지면 계속 못 바꾼다. 가끔 알려서 사람이 정하게 한다.
+        const now = Date.now();
+        if (now - pendingToldAt > PENDING_NAG_MS) {
+            pendingToldAt = now;
+            toast('새 버전이 있습니다. 세션을 마치거나 새로고침하면 바뀝니다.');
+        }
+    }
+
     function checkVersion(force) {
         // 안 보이는 탭도 확인한다. 오히려 그때 새로고침하는 것이 가장 방해가 적다.
         if (!myVer || verChecking) return;
@@ -367,9 +393,8 @@
             .then((r) => r.json())
             .then((d) => {
                 if (!d.v || d.v === myVer) return;
-                const tag = (document.activeElement || {}).tagName || '';
-                const busy = state.phase !== 'IDLE' || /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
-                if (!busy) location.reload();
+                pendingReload = true;
+                applyPendingReload();
             })
             .catch(() => {})
             .then(() => { verChecking = false; });
