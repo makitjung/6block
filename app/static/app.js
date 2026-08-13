@@ -1937,12 +1937,6 @@
         } catch (e) { /* 저장 못 해도 나머지는 그대로 돈다 */ }
     }
 
-    // 자리를 적어 두고 다시 그린다. 간트에서 값을 고친 뒤에는 이걸로 새로고침한다.
-    function reloadKeepingPlace() {
-        savePlanScroll();
-        location.reload();
-    }
-
     function restorePlanScroll() {
         let saved = null;
         try {
@@ -1979,9 +1973,9 @@
         const u = new URL(location.href);
         if (focusId) u.searchParams.set('focus', focusId);
         else u.searchParams.delete('focus');
-        if (!box || ganttBusy) { location.href = u.toString(); return; }
+        if (!box || ganttBusy) { savePlanScroll(); location.href = u.toString(); return; }
         ganttBusy = true;
-        fetch(u.toString(), { credentials: 'same-origin' })
+        fetch(u.toString(), { credentials: 'same-origin', cache: 'no-store' })
             .then((r) => r.text())
             .then((html) => {
                 const fresh = new DOMParser().parseFromString(html, 'text/html')
@@ -2000,26 +1994,24 @@
                 bindDateParts();        // 새로 온 날짜 칸도 한 칸 입력으로 감싼다
                 if (after) after();
             })
-            .catch(() => { ganttBusy = false; location.href = u.toString(); });
+            .catch(() => {
+                ganttBusy = false;
+                savePlanScroll();       // 못 받아 왔으면 통째로 다시 그리되 자리는 지킨다
+                location.href = u.toString();
+            });
     }
 
-    // 그 막대가 속한 계획 묶음(상위 사슬 + 그 아래 전부)의 항목 id 들
+    // 그 막대가 속한 계획 묶음 전체(뿌리와 그 아래 전부)의 항목 id 들. 형제까지 함께
+    // 밝혀야 '이것들이 한 계획'이라는 것이 보인다.
     function ganttFamily(gantt, bar) {
-        const byId = new Map();
         const kids = new Map();
         gantt.querySelectorAll('.gt-bar').forEach((b) => {
-            byId.set(b.dataset.id, b);
             const p = b.dataset.parent || '';
             if (!kids.has(p)) kids.set(p, []);
             kids.get(p).push(b);
         });
-        const out = new Set();
-        let cur = bar;
-        while (cur && !out.has(cur.dataset.id)) {      // 위로: 상위 사슬
-            out.add(cur.dataset.id);
-            cur = byId.get(cur.dataset.parent || '');
-        }
-        const stack = [bar.dataset.id];                // 아래로: 하위 전부
+        const out = new Set([bar.dataset.root]);
+        const stack = [bar.dataset.root];
         while (stack.length) {
             (kids.get(stack.pop()) || []).forEach((b) => {
                 if (out.has(b.dataset.id)) return;
@@ -2346,6 +2338,7 @@
             // 숨긴 항목은 서버에서 아예 빼고 그리므로 화면을 다시 불러 온다(칸 배치가 달라진다).
             document.getElementById('pg-show-hidden')?.addEventListener('change', (e) => {
                 const u = e.target.dataset.url;
+                savePlanScroll();       // 통째로 다시 그리므로 보던 자리를 적어 둔다
                 location.href = u + (e.target.checked ? '&show_hidden=1' : '');
             });
             const pastBox = document.getElementById('pg-past-hide');
@@ -2599,13 +2592,6 @@
     // 옮긴 뒤에는 그 항목을 짚어 다시 그린다. 끌어서 과거로 보내면 '지난 항목'이 되어 접히고,
     // 보이는 기간 밖으로 보내면 아예 안 그려져 막대가 사라진 것처럼 보이기 때문이다.
     // 서버가 focus 를 보고 필요하면 그 항목이 보이는 기간으로 화면을 옮기고 접힘도 풀어 준다.
-    function reloadOn(id) {
-        savePlanScroll();       // 끌어 옮긴 뒤에도 보던 블록 줄에 그대로 남는다
-        const u = new URL(location.href);
-        u.searchParams.set('focus', id);
-        location.href = u.toString();
-    }
-
     // 막대끼리의 관계를 격자 위에 겹친 SVG 한 장에 그린다. 두 가지다.
     //  1) 상위–하위: 옅은 실선 갈고리(상위 왼쪽에서 내려와 하위 왼쪽으로 붙는다)
     //  2) 한 항목이 여러 블록에 걸린 것: 최상위 항목만 옅은 점선 곡선으로 잇는다
@@ -2627,14 +2613,28 @@
                      t: r.top - base.top, b: r.bottom - base.top,
                      cy: r.top - base.top + r.height / 2 };
         };
-        const draw = (d, cls, from) => {
+        // 선·점에 양 끝 항목 id 를 적어 둔다. 한 묶음을 밝힐 때 그 선만 골라 켜려는 것이다.
+        const tint = (el, from, ids) => {
             const st = getComputedStyle(from);
+            el.style.setProperty('--gt-tone', st.getPropertyValue('--gt-tone'));
+            el.style.setProperty('--gt-hue', st.getPropertyValue('--gt-hue'));
+            el.dataset.from = ids[0];
+            el.dataset.to = ids[1];
+            svg.appendChild(el);
+        };
+        const draw = (d, cls, from, ids) => {
             const p = document.createElementNS(SVG_NS, 'path');
             p.setAttribute('d', d);
             p.setAttribute('class', cls);
-            p.style.setProperty('--gt-tone', st.getPropertyValue('--gt-tone'));
-            p.style.setProperty('--gt-hue', st.getPropertyValue('--gt-hue'));
-            svg.appendChild(p);
+            tint(p, from, ids);
+        };
+        const dot = (x, y, from, ids) => {
+            const c = document.createElementNS(SVG_NS, 'circle');
+            c.setAttribute('cx', x);
+            c.setAttribute('cy', y);
+            c.setAttribute('r', 3);
+            c.setAttribute('class', 'gt-linkdot');
+            tint(c, from, ids);
         };
 
         const byId = new Map();
@@ -2654,7 +2654,9 @@
             const cb = box(b);
             const cx = cb.l + cb.w / 2;
             const px = Math.max(pb.l, Math.min(cx, pb.l + pb.w));
-            draw(`M ${cx} ${cb.cy} V ${pb.cy} H ${px}`, 'gt-link', b);
+            const ids = [b.dataset.parent, b.dataset.id];
+            draw(`M ${cx} ${cb.cy} V ${pb.cy} H ${px}`, 'gt-link', b, ids);
+            dot(px, pb.cy, b, ids);      // 상위 쪽 끝에 점을 찍어 어디에 붙는지 보이게
         });
 
         // 2) 같은 항목이 여러 블록에 걸린 것. 최상위만 이어 화면이 복잡해지지 않게 한다.
@@ -2670,7 +2672,8 @@
                 const bow = Math.min(Math.max(18, Math.min(46, (c.t - a.b) * 0.32)),
                                      Math.max(8, gantt.scrollWidth - x - 4));
                 draw(`M ${x} ${a.b} C ${x + bow} ${a.b + 8}, ${x + bow} ${c.t - 8}, ${x} ${c.t}`,
-                     'gt-span-link', sorted[i]);
+                     'gt-span-link', sorted[i],
+                     [sorted[i].dataset.id, sorted[i].dataset.id]);
             }
         });
         gantt.appendChild(svg);
@@ -2698,8 +2701,9 @@
             if (drag) {
                 clearTimeout(drag.holdT);
                 tip.hidden = true;
+                line.hidden = true;
                 drag.bar.classList.remove('is-dragging', 'is-resizing',
-                                          'is-nesting', 'is-detaching');
+                                          'is-nesting', 'is-reordering');
                 drag.bar.style.transform = '';
                 drag.bar.style.left = drag.css.left;
                 drag.bar.style.width = drag.css.width;
@@ -2709,9 +2713,12 @@
         };
         const HOLD = 350;   // 다른 막대 위에서 이만큼 멈춰 있으면 '하위로 넣기'로 잡는다
         const REARM = 25;   // 그만큼 움직이면 멈춤 판정을 처음부터 다시 센다
-        const DETACH = 20;  // 하위 막대를 이만큼 곧장 아래로 끌면 상위에서 뗀다
+        const LANE = 15;    // 이만큼 세로로(가로보다 많이) 움직이면 순서 바꾸기로 본다
         const DAY = 86400000;
         const iso = (s) => new Date(s + 'T00:00:00');
+        // 분기·연 화면에서는 하루가 1px도 안 돼 손끝으로 겨눌 수 없다. 그 두 화면에서만
+        // 주 경계에 붙이고, 주·월 화면에서는 끈 그대로 하루 단위로 옮긴다.
+        const snapWeek = gantt.dataset.level === 'year' || gantt.dataset.level === 'quarter';
         // 그 날짜에서 가장 가까운 '그 요일'로 옮긴다(0=월 … 6=일)
         const toWd = (d, want) => {
             const wd = (d.getDay() + 6) % 7;
@@ -2721,15 +2728,17 @@
             out.setDate(out.getDate() + (fwd <= back ? fwd : -back));
             return out;
         };
-        // 끈 픽셀을 날수로. 옮긴 자리에서 시작은 월요일, 종료는 일요일에 맞춘다.
-        // (7일씩 끊는 게 아니라 주의 경계에 붙는다. 원래 요일이 어중간해도 주에 맞춰진다.)
+        // 끈 픽셀을 날수로. 주 단위로 붙이는 화면에서는 옮긴 자리에서 시작은 월요일,
+        // 종료는 일요일에 맞춘다(7일씩 끊는 게 아니라 주의 경계에 붙는다).
         const dragDays = (dx) => {
             const edge = drag.edge === 'end' ? 'end' : 'start';
             const src = drag.bar.dataset[edge];
             if (!src) return 0;
+            const raw = Math.round(dx * daysPerPx(drag.track));
+            if (!snapWeek) return raw;
             const from = iso(src);
             const moved = new Date(from);      // 자정끼리 재야 시각 잔여분에 하루가 안 밀린다
-            moved.setDate(moved.getDate() + Math.round(dx * daysPerPx(drag.track)));
+            moved.setDate(moved.getDate() + raw);
             return Math.round((toWd(moved, edge === 'end' ? 6 : 0) - from) / DAY);
         };
         // 그 날수를 다시 픽셀로. 끄는 동안 막대를 이 값만큼만 움직여야 "보이는 자리 = 놓일 자리"다.
@@ -2765,8 +2774,46 @@
             tip.style.top = (top < 30 ? top + drag.bar.offsetHeight + 4 : top - 22) + 'px';
             tip.hidden = false;
         };
-        // 아래로 곧장 끌어 빈 자리에 놓았는가(상위에서 떼는 몸짓)
-        const wantsDetach = (dx, dy) => !!drag.parent && dy > DETACH && dy > Math.abs(dx);
+        // 놓일 자리를 미리 보여 주는 가로선(순서 바꾸기)
+        const line = document.createElement('span');
+        line.className = 'gt-dropline';
+        line.hidden = true;
+        gantt.appendChild(line);
+        const showLine = (peer) => {
+            if (!peer) { line.hidden = true; return; }
+            const base = gantt.getBoundingClientRect();
+            const r = peer.el.getBoundingClientRect();
+            const track = drag.track.getBoundingClientRect();
+            line.style.left = (track.left - base.left) + 'px';
+            line.style.width = track.width + 'px';
+            line.style.top = ((peer.place === 'before' ? r.top - 3 : r.bottom + 1)
+                              - base.top) + 'px';
+            line.hidden = false;
+        };
+        // 세로로 끌어 순서를 바꾸려는 것인가. 같은 줄 안에서 세로로 뚜렷하게 움직였을 때만
+        // 본다(가로로 미는 김에 조금 흔들린 것까지 순서 바꾸기로 잡으면 날짜가 안 옮겨진다).
+        const reorderPeerAt = (x, y) => {
+            if (!drag.row) return null;
+            const dx = x - drag.x0;
+            const dy = y - drag.y0;
+            if (Math.abs(dy) < LANE || Math.abs(dy) <= Math.abs(dx)) return null;
+            const u = under(x, y);
+            if (u.row && u.row !== drag.row) return null;   // 다른 줄이면 블록 이동이다
+            let best = null;
+            let bestD = Infinity;
+            drag.row.querySelectorAll('.gt-bar').forEach((o) => {
+                if (o === drag.bar || o.dataset.root === drag.bar.dataset.root
+                    || !o.offsetParent) return;
+                const r = o.getBoundingClientRect();
+                const cy = r.top + r.height / 2;
+                // 가장 가까운 칸을 먼저, 그 칸 안에서는 가로로 가까운 막대를 고른다
+                const d = Math.abs(cy - y) * 10000 + Math.abs((r.left + r.width / 2) - x);
+                if (d < bestD) { bestD = d; best = { el: o, cy: cy }; }
+            });
+            if (!best) return null;
+            return { el: best.el, id: best.el.dataset.id,
+                     place: y < best.cy ? 'before' : 'after' };
+        };
         // 포인터 아래에 무엇이 있는지(끌고 있는 막대는 잠시 통과시켜 밑을 본다)
         const under = (x, y) => {
             drag.bar.style.pointerEvents = 'none';
@@ -2820,7 +2867,6 @@
                     bar, id: bar.dataset.id, x0: e.clientX, y0: e.clientY, moved: false,
                     edge, nest: null, hover: null, holdT: 0,
                     armX: e.clientX, armY: e.clientY,
-                    parent: bar.dataset.parent || '',
                     track: bar.closest('.gt-track'), row: bar.closest('.gt-blockrow'),
                     css: { left: bar.style.left, width: bar.style.width },
                     px: { left: r.left, width: r.width, top: r.top },
@@ -2865,7 +2911,13 @@
                     const t = dropTargetAt(e.clientX, e.clientY);
                     if (t) t.el.classList.add('is-drop-target');
                     bar.classList.toggle('is-nesting', !!(t && t.kind === 'bar'));
-                    bar.classList.toggle('is-detaching', !t && wantsDetach(dx, dy));
+                    const peer = t ? null : reorderPeerAt(e.clientX, e.clientY);
+                    bar.classList.toggle('is-reordering', !!peer);
+                    showLine(peer);
+                    // 순서를 바꾸는 중에는 기간이 안 바뀌므로 날짜 안내도 그렇게 적는다
+                    if (peer) tip.textContent = '순서 바꾸기';
+                } else {
+                    showLine(null);
                 }
             });
             bar.addEventListener('pointerup', (e) => {
@@ -2873,9 +2925,7 @@
                 if (!drag.moved) { reset(); return; }
                 bar.dataset.dragged = '1';           // 이어서 오는 click(편집창 열기)은 무시
                 const dx = e.clientX - drag.x0;
-                const dy = e.clientY - drag.y0;
-                const days = dragDays(dx);           // 끈 만큼을 주 단위 날수로
-                const detach = wantsDetach(dx, dy);
+                const days = dragDays(dx);           // 끈 만큼을 날수로
                 const id = drag.id;
                 const from = drag.row ? (drag.row.dataset.block || '') : '';
                 const blocks = (bar.dataset.blocks || '').split(',').filter(Boolean);
@@ -2885,17 +2935,22 @@
                     if (days === 0) return;
                     postForm('/plan/item/resize',
                              { id: id, edge: edge, days: days }).then((d) => {
-                        if (d && d.ok) reloadOn(id);
+                        if (d && d.ok) refreshGantt(id);
                         else toast((d && d.error) || '기간을 바꾸지 못했습니다');
                     });
                     return;
                 }
                 const target = dropTargetAt(e.clientX, e.clientY);
+                const peer = target ? null : reorderPeerAt(e.clientX, e.clientY);
                 reset();
                 if (target && target.kind === 'bar') {
+                    // 하위로 넣기는 되돌리기 번거로워 한 번 묻는다(스쳐 지나 붙는 일을 막는다)
+                    const to = target.el.dataset.title || '그 항목';
+                    if (!window.confirm('「' + (bar.dataset.title || '이 항목')
+                                        + '」를 「' + to + '」의 하위로 넣습니까?')) return;
                     postForm('/plan/item/reparent',
                              { id: id, parent_id: target.el.dataset.id }).then((d) => {
-                        if (d && d.ok) reloadOn(id);
+                        if (d && d.ok) refreshGantt(id);
                         else toast((d && d.error) || '하위로 넣지 못했습니다');
                     });
                 } else if (target && target.kind === 'block') {
@@ -2904,20 +2959,20 @@
                     if (target.block && !next.includes(target.block)) next.push(target.block);
                     postForm('/plan/item/update',
                              { id: id, block: next.join(',') }).then((d) => {
-                        if (d && d.ok) reloadOn(id);
+                        if (d && d.ok) refreshGantt(id);
                         else toast((d && d.error) || '옮기지 못했습니다');
                     });
-                } else if (detach) {
-                    // 하위 막대를 곧장 아래로 끌면 상위에서 떼어 그 영역의 최상위로 뺀다
-                    postForm('/plan/item/reparent',
-                             { id: id, area_id: bar.dataset.area }).then((d) => {
-                        if (d && d.ok) reloadOn(id);
-                        else toast((d && d.error) || '떼어내지 못했습니다');
+                } else if (peer) {
+                    // 같은 줄에서 위아래로 끌었다. 그 자리로 계획 묶음째 옮긴다.
+                    postForm('/plan/item/order',
+                             { id: id, peer: peer.id, place: peer.place }).then((d) => {
+                        if (d && d.ok) refreshGantt(id);
+                        else toast((d && d.error) || '순서를 바꾸지 못했습니다');
                     });
                 } else if (days !== 0) {
                     // 하위가 있으면 서버가 하위 사슬까지 같은 날수만큼 함께 민다
                     postForm('/plan/item/shift', { id: id, days: days }).then((d) => {
-                        if (d && d.ok) reloadOn(id);
+                        if (d && d.ok) refreshGantt(id);
                         else toast((d && d.error) || '옮기지 못했습니다');
                     });
                 }

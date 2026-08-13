@@ -90,7 +90,8 @@
 
 {% else %}
 <div class="plan-scroll">
-    <div class="gantt" data-level="{{ level }}" data-days="{{ span_days }}" style="--cols: {{ columns | length }}">
+    <div class="gantt" data-level="{{ level }}" data-days="{{ span_days }}"
+         data-start="{{ span_start }}" data-anchor="{{ anchor }}" style="--cols: {{ columns | length }}">
         {# 해·분기·달이 바뀌는 자리에 세로선 하나. 격자 위에 겹쳐 그려 줄이 늘지 않는다. #}
         {% for col in columns %}{% if col.brk %}
         <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
