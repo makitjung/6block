@@ -2220,7 +2220,9 @@
             let best = null;
             let bestD = Infinity;
             row.querySelectorAll('.gt-bar').forEach((o) => {
-                if (o === bar || o.dataset.root === bar.dataset.root || !o.offsetParent) return;
+                // 순서는 같은 영역 안에서만 매긴다(영역끼리의 위아래는 영역 관리가 정한다)
+                if (o === bar || o.dataset.root === bar.dataset.root
+                    || o.dataset.area !== bar.dataset.area || !o.offsetParent) return;
                 const r = o.getBoundingClientRect();
                 const dy = dir === 'up' ? me.top - r.top : r.top - me.top;
                 if (dy <= 1) return;                    // 같은 칸이거나 반대쪽
@@ -2827,7 +2829,7 @@
             let bestD = Infinity;
             drag.row.querySelectorAll('.gt-bar').forEach((o) => {
                 if (o === drag.bar || o.dataset.root === drag.bar.dataset.root
-                    || !o.offsetParent) return;
+                    || o.dataset.area !== drag.bar.dataset.area || !o.offsetParent) return;
                 const r = o.getBoundingClientRect();
                 const cy = r.top + r.height / 2;
                 // 가장 가까운 칸을 먼저, 그 칸 안에서는 가로로 가까운 막대를 고른다
