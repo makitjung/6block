@@ -6,10 +6,12 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.common import (
     CORE_LABELS,
+    KO_WEEKDAYS,
     KST,
     _ai_split,
     _name_override,
     _off_loop,
+    _parse_date,
     _rule_distribute,
     _short_date,
     _join3,
@@ -25,6 +27,47 @@ from app.db import get_conn, get_day_blocks
 from app.integrations import ai, gcal
 
 router = APIRouter()
+
+
+def _week_lt_rows(rows, goals, monday: date) -> list[dict]:
+    """주간 목표 열에 세울 장기 항목을 상위별로 묶는다.
+
+    같은 상위에서 내려온 것끼리 한 묶음이 되어, 그냥 늘어놓았을 때 안 보이던
+    '이것들이 한 계획'이 드러난다. 묶음이 둘 이상일 때만 상위 제목을 머리줄로 세우고
+    하나뿐이면 예전처럼 줄 앞에 붙인다(줄만 늘어나지 않게).
+
+    그 주를 다 덮지 않고 일부만 걸치는 항목에는 걸친 요일과 날짜를 붙인다.
+    """
+    sunday = monday + timedelta(days=6)
+    groups: list[dict] = []
+    for r in rows:
+        s = _parse_date(r["start_date"]) or monday
+        e = _parse_date(r["end_date"]) or sunday
+        vs, ve = max(s, monday), min(e, sunday)
+        part = (s > monday or e < sunday) and vs <= ve
+        blocks = [b for b in (r["block_label"] or "").split(",") if b]
+        item = {
+            "id": r["id"], "title": r["title"], "area_name": r["area_name"],
+            "progress": r["progress"], "parent_title": r["parent_title"],
+            "goal": goals.get(r["id"], ""),
+            "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
+            # 장기 탭에서 정해 둔 코어블록. 첫 번째를 '블록으로'의 기본값으로 쓴다.
+            "blocks": ",".join(blocks),
+            "block": blocks[0] if blocks else "",
+            "part": ("" if not part else
+                     KO_WEEKDAYS[vs.weekday()] if vs == ve else
+                     f"{KO_WEEKDAYS[vs.weekday()]}~{KO_WEEKDAYS[ve.weekday()]}"),
+            "part_date": f"{vs.month}/{vs.day}~{ve.month}/{ve.day}" if part else "",
+        }
+        key = r["parent_id"] if r["parent_title"] else None
+        if key is not None and groups and groups[-1]["key"] == key:
+            groups[-1]["items"].append(item)
+        else:
+            groups.append({"key": key, "title": r["parent_title"] if key else "",
+                           "items": [item]})
+    for g in groups:
+        g["grouped"] = bool(g["key"]) and len(g["items"]) > 1
+    return groups
 
 
 @router.get("/week")
@@ -160,15 +203,7 @@ def _week_view(request: Request, monday: date):
 
     themes_by_label = {r["block_label"]: r["theme_text"] for r in theme_rows}
     # 최하위 항목만 내려오고, 어느 상위에서 나온 것인지 제목을 함께 붙인다.
-    week_items = [
-        {
-            "id": r["id"], "title": r["title"], "area_name": r["area_name"],
-            "progress": r["progress"], "parent_title": r["parent_title"],
-            "goal": lt_goal_by_item.get(r["id"], ""),
-            "range": f"{_short_date(r['start_date'])}~{_short_date(r['end_date'])}",
-        }
-        for r in wk_items
-    ]
+    week_groups = _week_lt_rows(wk_items, lt_goal_by_item, monday)
     achieve_pct = round(achieved / plan_total * 100) if plan_total else 0
     used_core_total = WEEK_CORE_BLOCKS
 
@@ -209,7 +244,7 @@ def _week_view(request: Request, monday: date):
             "themes_by_label": themes_by_label,
             "name_cells": name_cells,
             "cat_templates": [dict(t) for t in wk_templates],
-            "week_items": week_items,
+            "week_groups": week_groups,
             "core_labels": CORE_LABELS,
             "week_block_events": week_block_events,
             "week_allday": week_allday,

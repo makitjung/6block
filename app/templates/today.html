@@ -4,10 +4,12 @@
 {% block content %}
 {% set st = get_settings() %}
 {# 이번 주 계획 연결 고르기. 값(키)만 숨은 칸에 담고 목록은 JS가 그린다.
-   multi 면 여러 개를 쉼표로 잇는다(블록은 두 시간이라 여러 일을 담을 수 있다). #}
-{% macro wk_link(name, value, multi=false) %}
+   multi 면 여러 개를 쉼표로 잇는다(블록은 두 시간이라 여러 일을 담을 수 있다).
+   block 을 주면 장기 탭에서 그 블록에 배정해 둔 계획이 목록 맨 위로 올라온다. #}
+{% macro wk_link(name, value, multi=false, block='') %}
 {% if wk_todos %}
-<span class="wl{% if value %} is-linked{% endif %}" data-multi="{{ '1' if multi else '0' }}">
+<span class="wl{% if value %} is-linked{% endif %}" data-multi="{{ '1' if multi else '0' }}"
+      data-block="{{ block }}">
     <button type="button" class="wl-btn" aria-label="이번 주 계획 연결" title="이번 주 계획 연결">🔗</button>
     <input type="hidden" name="{{ name }}" value="{{ value or '' }}">
 </span>
@@ -358,7 +360,7 @@
                         {% endfor %}
                     </select>
                     <span class="block-label">{{ b.block_label }}</span>
-                    {{ wk_link('wtb_' ~ b.id, b.wk_todo, true) }}
+                    {{ wk_link('wtb_' ~ b.id, b.wk_todo, true, b.block_label) }}
                     <input type="text" class="block-name-input" name="bname_{{ b.id }}" value="{{ block_name_by_id[b.id] }}" placeholder="이 블록 이름" autocomplete="off" aria-label="블록 이름">
                     {% else %}
                     <span class="block-label">{{ b.block_label }}</span>
@@ -445,7 +447,7 @@
                         </select>
                     </div>
                     <div class="slot-do-wrap">
-                        {{ wk_link('wts_' ~ s.id, s.wk_todo) }}
+                        {{ wk_link('wts_' ~ s.id, s.wk_todo, false, b.block_label) }}
                         <input type="text" name="do_{{ s.id }}" value="{{ s.do_text or '' }}" placeholder="DO" class="slot-do">
                     </div>
                     <div class="slot-actions">

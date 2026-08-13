@@ -345,6 +345,29 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .wg-goal[hidden] { display: none; }
 .wg-head .wk-lt-prog-input { width: 50px; }
 .wg-head .ghost-btn { font-size: 12px; padding: 3px 9px; white-space: nowrap; }
+/* 그 주의 일부만 걸치는 항목: 걸친 요일과 날짜를 이름 옆에 적는다 */
+.wg-part {
+    flex: 0 0 auto; font-size: 10px; font-weight: 800; white-space: nowrap;
+    padding: 2px 7px; border-radius: var(--r-pill);
+    color: var(--warm); background: color-mix(in srgb, var(--warm) 14%, transparent);
+}
+.wg-part .mono { font-weight: 600; opacity: .8; }
+/* 같은 상위에서 내려온 항목 묶음. 머리줄 하나에 세로선으로 하위를 잇는다. */
+.wg-group { display: flex; flex-direction: column; gap: 4px; }
+.wg-gtitle {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 800; color: var(--text-muted);
+}
+.wg-gcount {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: var(--r-pill);
+    font-size: 10px; font-weight: 800;
+    color: var(--accent); background: var(--accent-soft);
+}
+.wg-gbody {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-left: 7px; padding-left: 9px; border-left: 2px solid var(--border-strong);
+}
 .wg-row {
     display: grid; grid-template-columns: 22px minmax(0, 1fr);
     align-items: center; gap: 8px;
@@ -2052,6 +2075,17 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 }
 .wl-opt:hover { background: var(--surface-2); }
 .wl-opt input { flex: 0 0 auto; width: auto; margin: 0; }
+/* 장기 탭에서 정해 둔 블록. 이 블록 것이 위에 서고 나머지는 구분선 아래로 간다. */
+.wl-blk {
+    margin-left: auto; flex: 0 0 auto;
+    font-size: 10px; font-weight: 800; letter-spacing: .02em;
+    padding: 1px 6px; border-radius: var(--r-pill);
+    color: var(--accent); background: var(--accent-soft);
+}
+.wl-sep {
+    margin: 6px 2px 3px; padding-top: 6px; border-top: 1px solid var(--border);
+    font-size: 10px; font-weight: 800; color: var(--text-subtle);
+}
 
 /* 오늘 탭: 그 날짜에 걸친 장기 최하위 항목 띠(읽기 전용 · 누르면 장기 탭) */
 .lt-strip {

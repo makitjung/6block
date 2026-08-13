@@ -2466,8 +2466,26 @@
                 if (!multi) {
                     pop.append(mkOpt('', '연결 안 함', !cur.length, false));
                 }
+                // 장기 탭에서 이 블록에 배정해 둔 계획을 맨 위로 올린다. 나머지도 구분선
+                // 아래에 그대로 남겨, 급히 다른 블록 일을 잡는 날도 연결할 수 있게 한다.
+                const mine = box.dataset.block || '';
+                const here = [];
+                const rest = [];
                 todos.forEach((t) => {
-                    pop.append(mkOpt(t.key, t.label, cur.indexOf(t.key) >= 0, multi));
+                    const on = mine && (t.blocks || '').split(',').indexOf(mine) >= 0;
+                    (on ? here : rest).push(t);
+                });
+                here.forEach((t) => {
+                    pop.append(mkOpt(t.key, t.label, cur.indexOf(t.key) >= 0, multi, t.blocks));
+                });
+                if (here.length && rest.length) {
+                    const sep = document.createElement('div');
+                    sep.className = 'wl-sep';
+                    sep.textContent = '다른 블록';
+                    pop.append(sep);
+                }
+                rest.forEach((t) => {
+                    pop.append(mkOpt(t.key, t.label, cur.indexOf(t.key) >= 0, multi, t.blocks));
                 });
                 pop.addEventListener('change', (e) => {
                     const inp = e.target;
@@ -2487,7 +2505,7 @@
             });
         });
 
-        function mkOpt(value, label, checked, multi) {
+        function mkOpt(value, label, checked, multi, blocks) {
             const l = document.createElement('label');
             l.className = 'wl-opt';
             const i = document.createElement('input');
@@ -2496,6 +2514,12 @@
             i.checked = checked;
             if (!multi) i.name = 'wl-pick';
             l.append(i, document.createTextNode(label));
+            if (blocks) {       // 장기 탭에서 정한 블록(여러 개면 다 적는다)
+                const chip = document.createElement('span');
+                chip.className = 'wl-blk';
+                chip.textContent = blocks;
+                l.append(chip);
+            }
             return l;
         }
     }

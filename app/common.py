@@ -297,7 +297,7 @@ def week_lt_items(conn, week_start_str: str) -> list[dict]:
     sunday = (d0 + timedelta(days=6)).strftime("%Y-%m-%d")
     rows = conn.execute(
         "SELECT i.id, i.parent_id, i.title, i.start_date, i.end_date, i.progress, "
-        "       a.name AS area_name, "
+        "       i.block_label, a.name AS area_name, "
         "       EXISTS(SELECT 1 FROM lt_item c WHERE c.parent_id = i.id) AS has_children "
         "FROM lt_item i JOIN lt_area a ON a.id = i.area_id "
         "WHERE i.start_date <= ? AND i.end_date >= ? AND a.is_active = 1 "
@@ -325,7 +325,10 @@ def week_todos(conn, week_start_str: str) -> list[dict]:
     for it in week_lt_items(conn, week_start_str):
         name = f"{it['parent_title']} › {it['title']}" if it["parent_title"] else it["title"]
         g = goals.get(it["id"])
-        out.append({"key": f"lt:{it['id']}", "label": f"{name} · {g}" if g else name})
+        out.append({"key": f"lt:{it['id']}",
+                    "label": f"{name} · {g}" if g else name,
+                    # 장기 탭에서 정해 둔 코어블록. 그 블록의 연결 목록에서 위로 올린다.
+                    "blocks": (it["block_label"] or "").strip()})
     row = conn.execute(
         "SELECT weekly_goal FROM weekly_meta WHERE week_start = ?", (week_start_str,)
     ).fetchone()
