@@ -3059,6 +3059,7 @@
         };
         addBtn?.addEventListener('click', addArea);
         document.getElementById('pg-area-new')?.addEventListener('keydown', (e) => {
+            if (e.isComposing || e.keyCode === 229) return;   // 한글 조합 중 엔터는 조합 확정이다
             if (e.key === 'Enter') { e.preventDefault(); addArea(); }
         });
         document.querySelectorAll('.pg-area-name').forEach((inp) => {
