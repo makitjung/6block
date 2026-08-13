@@ -1818,7 +1818,7 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
    마우스를 올리면 잡을 자리에 세로 손잡이가 보여 이동과 헷갈리지 않게 한다. */
 .gt-handle {
     position: absolute; top: 0; bottom: 0; z-index: 3; cursor: ew-resize;
-    width: min(16px, 33%);
+    width: min(22px, 33%);
 }
 .gt-handle.l { left: 0; }
 .gt-handle.r { right: 0; }
@@ -1833,8 +1833,7 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-bar.is-drop-target { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* 하위로 들어갈 자리에 왔을 때 끌고 있는 막대도 함께 표시한다 */
 .gt-bar.is-nesting { outline: 2px dashed var(--accent); outline-offset: 2px; }
-/* 곧장 아래로 끌어 상위에서 뗄 참이라는 표시 */
-.gt-bar.is-detaching { outline: 2px dotted var(--danger); outline-offset: 2px; }
+/* 상위에서 떼기는 편집칸 버튼으로 옮겼다(세로 끌기는 이제 순서 바꾸기다) */
 /* 끄는 동안 뜨는 기간 안내(몇 주 · 며칠~며칠) */
 .gt-tip {
     position: absolute; z-index: 10; pointer-events: none;
@@ -1858,13 +1857,38 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     fill: none; stroke-linecap: round; stroke-linejoin: round;
     stroke-width: 1.5; filter: hue-rotate(var(--gt-hue, 0deg));
 }
-/* 상위–하위: 옅은 실선 갈고리 */
-.gt-link { stroke: color-mix(in srgb, var(--gt-tone) 50%, transparent); }
+/* 상위–하위: 실선 갈고리. 어디에 붙는지 보이도록 상위 쪽 끝에 점을 찍는다 */
+.gt-link {
+    stroke: color-mix(in srgb, var(--gt-tone) 70%, transparent);
+    stroke-width: 2;
+}
+.gt-linkdot {
+    fill: color-mix(in srgb, var(--gt-tone) 78%, transparent);
+    filter: hue-rotate(var(--gt-hue, 0deg));
+}
 /* 같은 항목이 여러 블록에 걸린 것: 더 희미한 점선 곡선 */
 .gt-span-link {
     stroke: color-mix(in srgb, var(--gt-tone) 32%, transparent);
     stroke-dasharray: 3 4;
 }
+/* 한 막대에 손을 얹으면 그 계획 묶음(상위 사슬·하위 전체)만 남기고 나머지를 흐린다.
+   상하위 관계를 색 진하기만으로 읽어내기 어려워, 짚어 볼 수 있게 한 것이다. */
+.gantt.is-lit .gt-bar { opacity: .28; }
+.gantt.is-lit .gt-bar.is-lit { opacity: 1; }
+.gantt.is-lit .gt-bar.is-lit.is-past { opacity: .8; }
+.gantt.is-lit .gt-link, .gantt.is-lit .gt-span-link, .gantt.is-lit .gt-linkdot { opacity: .2; }
+.gantt.is-lit .gt-link.is-lit, .gantt.is-lit .gt-span-link.is-lit,
+.gantt.is-lit .gt-linkdot.is-lit { opacity: 1; }
+.gt-link.is-lit { stroke-width: 2.5; stroke: var(--gt-tone); }
+/* 편집칸을 열어 둔 막대. 아래 편집칸이 어느 막대의 것인지 눈으로 잇는다 */
+.gt-bar.is-editing { outline: 2px solid var(--accent); outline-offset: 2px; z-index: 8; }
+/* 세로로 끌어 순서를 바꾸는 중. 놓일 자리를 가로선으로 미리 보여 준다 */
+.gt-bar.is-reordering { z-index: 9; box-shadow: var(--sh-3); }
+.gt-dropline {
+    position: absolute; z-index: 10; height: 2px; pointer-events: none;
+    background: var(--accent); border-radius: 2px;
+}
+.gt-dropline[hidden] { display: none; }
 /* 다른 블록 줄 위에 놓으면 그 블록으로 옮겨진다 */
 .gt-blockrow.is-drop-target { background: var(--accent-soft); border-radius: var(--r-sm); }
 /* 막대 위 삭제(✕): 마우스를 올렸을 때만 오른쪽 끝에 나타난다 */
@@ -1913,10 +1937,26 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     border: 1px solid var(--border); border-radius: var(--r-md, 12px);
     box-shadow: var(--sh-2);
 }
-/* 편집칸은 두 줄로만 나눈다. 날짜는 한 덩이라 절대 갈라지지 않는다. */
+/* 편집칸은 머리줄(경로·순서·저장) + 두 줄로 나눈다. 날짜는 한 덩이라 절대 갈라지지 않는다. */
 .gt-edit { flex-direction: column; align-items: stretch; gap: 8px; }
 .gt-e-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.gt-e-row .gt-e-title { flex: 1 1 200px; min-width: 160px; }
+.gt-e-row .gt-e-title { flex: 1 1 240px; min-width: 180px; font-size: 15px; font-weight: 600; }
+/* 머리줄: 어느 막대를 고치는 중인지 영역 › 상위 › 제목으로 밝힌다 */
+.gt-e-head {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.gt-e-crumb {
+    flex: 1 1 200px; min-width: 0; font-size: 12px; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gt-e-crumb b { color: var(--text); font-size: 13px; }
+.gt-e-sep { color: var(--text-subtle); }
+.gt-e-move { display: inline-flex; gap: 4px; flex: 0 0 auto; }
+.gt-e-move .ghost-btn { min-width: 30px; padding: 4px 8px; }
+/* 형제 버튼끼리 크기를 맞춘다(저장만 주 동작이라 색으로 구분한다) */
+.gt-e-act .ghost-btn, .gt-e-act .primary-btn { padding: 5px 12px; font-size: 12px; }
+.gt-e-del { color: var(--danger); }
 .gt-e-dates {
     display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
     padding: 2px 8px 2px 4px; border-radius: var(--r-pill);

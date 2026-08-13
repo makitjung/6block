@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS lt_item (
     block_label TEXT,                    -- 간트 행이 될 코어블록(B1~B6). 쉼표로 여러 개, 비면 미지정
     hidden INTEGER NOT NULL DEFAULT 0,   -- 1이면 간트에서 접어 둔다('숨긴 항목 보기'로 다시 꺼낸다)
     masked INTEGER NOT NULL DEFAULT 0,   -- 1이면 주간·오늘 탭에서 뺀다(장기 간트에는 그대로 그린다)
+    sort_order INTEGER,                  -- 간트 세로 순서(손으로 정한 값). NULL이면 자동 배치
     updated_at TEXT NOT NULL
 );
 

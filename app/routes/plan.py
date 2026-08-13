@@ -234,12 +234,13 @@ def _assign_lanes(bars: list[dict]) -> int:
         lanes[i].append((b["vs"], b["ve"]))
         b["lane"] = i
 
-    # 영역 표시 순서대로 위에서 아래로 놓는다. 같은 영역 안에서는 기간이 안 겹치면 칸을
-    # 나눠 쓰고, 영역이 바뀌면 지금까지 쓴 칸 아래로 내려 영역끼리 섞이지 않게 한다.
+    # 영역 표시 순서대로 위에서 아래로 놓는다. 같은 영역 안에서는 손으로 정한 순서(rank)를
+    # 먼저 따르고, 정한 적이 없으면 예전처럼 일찍 시작하는 것부터 놓는다. 기간이 안 겹치면
+    # 칸을 나눠 쓰고, 영역이 바뀌면 지금까지 쓴 칸 아래로 내려 영역끼리 섞이지 않게 한다.
     # 묶음(상위+하위)은 연속한 칸 범위를 통째로 잡아 사이에 남이 못 끼게 한다.
     ordered = sorted(fams.values(),
-                     key=lambda f: (f[0]["area_order"], min(b["vs"] for b in f),
-                                    f[0]["id"]))
+                     key=lambda f: (f[0]["area_order"], f[0]["rank"],
+                                    min(b["vs"] for b in f), f[0]["id"]))
     floor, seen_area = 0, None
     for fam in ordered:
         if seen_area is not None and fam[0]["area_order"] != seen_area:
@@ -281,8 +282,10 @@ def _assign_lanes(bars: list[dict]) -> int:
 def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):
     """상위 기간이 움직인 만큼 하위 사슬의 시작·종료도 같이 민다.
 
-    시작을 ds일, 종료를 de일 옮긴다(각각 0이면 그쪽은 그대로). 상위 시작이 뒤로 가면
-    하위 시작도 그만큼 뒤로 간다. 하위가 뒤집히면 시작에 붙여 0일짜리로 둔다.
+    시작을 ds일, 종료를 de일 옮긴다. 한쪽만 움직였으면 반대쪽 날짜는 건드리지 않는다
+    (상위 시작만 미뤘는데 하위 종료일까지 따라 밀리면 적어 둔 마감이 말없이 바뀐다).
+    기간이 뒤집히는 경우에만 움직이는 쪽을 반대쪽 끝에 붙여 세운다. 즉 안 움직이기로 한
+    날짜는 어떤 경우에도 그대로 남는다.
     """
     if not ds and not de:
         return
@@ -293,8 +296,14 @@ def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):
         s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
         if not s or not e:
             continue
-        s2 = s + timedelta(days=ds)
-        e2 = max(e + timedelta(days=de), s2)
+        s2, e2 = s, e
+        if ds and de:       # 양쪽이 함께 움직였으면(통째 이동·기간 재입력) 둘 다 민다
+            s2 = s + timedelta(days=ds)
+            e2 = max(e + timedelta(days=de), s2)
+        elif ds:            # 시작만 움직였다. 종료는 그대로 두고 뒤집힐 때만 종료에 붙인다
+            s2 = min(s + timedelta(days=ds), e)
+        else:               # 종료만 움직였다. 시작은 그대로 두고 뒤집힐 때만 시작에 붙인다
+            e2 = max(e + timedelta(days=de), s)
         conn.execute(
             "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
             (s2.isoformat(), e2.isoformat(), now, kid),
@@ -309,6 +318,10 @@ LEVEL_LABELS = ["최상위", "하위", "하위2"]
 # 영역 색 계열은 알아볼 만큼만 비틀고, 한 항목의 하위들은 뿌리와 같은 색조를 쓴다.
 HUE_STEPS = [0, -10, 10, -20, 20]
 
+# 세로 순서를 손으로 정한 적이 없는 뿌리에 매기는 값. 정한 것들 뒤에 서지 않고 예전과 같은
+# 자리(일찍 시작한 것이 위)를 지키도록, 정렬에서 서로 비길 만큼 큰 값 하나를 함께 쓴다.
+NO_RANK = 1_000_000
+
 
 def _lt_descendants(conn, item_id: int) -> list[int]:
     """그 항목 아래의 모든 하위 항목 id(깊이 무관)."""
@@ -320,6 +333,20 @@ def _lt_descendants(conn, item_id: int) -> list[int]:
             out.append(r["id"])
             stack.append(r["id"])
     return out
+
+
+def _lt_root(conn, item_id: int) -> int:
+    """그 항목이 속한 뿌리(최상위) 항목 id. 세로 순서는 뿌리 단위로만 매긴다."""
+    cur, seen = item_id, set()
+    while cur not in seen:
+        seen.add(cur)
+        row = conn.execute(
+            "SELECT parent_id FROM lt_item WHERE id = ?", (cur,)
+        ).fetchone()
+        if not row or not row["parent_id"]:
+            return cur
+        cur = row["parent_id"]
+    return cur
 
 
 def _lt_rollup_parent(conn, parent_id: int | None):
@@ -384,7 +411,8 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
     children: dict[int | None, list] = {}
     for r in conn.execute(
         "SELECT id, area_id, parent_id, title, start_date, end_date, progress, "
-        "       block_label, hidden, masked FROM lt_item ORDER BY start_date, id"
+        "       block_label, hidden, masked, sort_order FROM lt_item "
+        "ORDER BY start_date, id"
     ):
         # 접어 둔 항목은 '숨긴 항목 보기'를 켰을 때만 끌어온다(하위도 함께 빠진다)
         if r["area_id"] in tones and (show_hidden or not r["hidden"]):
@@ -398,7 +426,8 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
             return True
         return any(overlaps(c) for c in children.get(it["id"], []))
 
-    def bar(it, blocks: list[str], level: int, hue: int) -> dict:
+    def bar(it, blocks: list[str], level: int, hue: int, rank: int,
+            path: tuple, root_id: int) -> dict:
         s = _parse_date(it["start_date"]) or span_start
         e = _parse_date(it["end_date"]) or s
         vs, ve = max(s, span_start), min(e, span_end)
@@ -410,6 +439,12 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
         row["level"] = min(level, MAX_LEVEL)
         row["level_label"] = LEVEL_LABELS[min(level, MAX_LEVEL)]
         row["hue"] = hue
+        # 세로 순서는 뿌리 하나에 매기고 하위는 그 값을 그대로 물려받는다(묶음째 오르내린다).
+        row["rank"] = rank
+        # 상위 사슬(뿌리부터 바로 위까지)의 제목. 하위 막대가 어디서 내려왔는지 보여 준다.
+        row["path"] = list(path)
+        row["parent_title"] = path[-1] if path else ""
+        row["root_id"] = root_id
         row["visible"] = visible
         row["left"] = round((vs - span_start).days / total * 100, 3) if visible else 0
         row["width"] = round(((ve - vs).days + 1) / total * 100, 3) if visible else 0
@@ -428,16 +463,16 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
 
     bars_by_block: dict[str, list] = {r["key"]: [] for r in rows}
 
-    def walk(it, level: int, hue: int):
+    def walk(it, level: int, hue: int, rank: int, path: tuple, root_id: int):
         # 블록은 항목마다 제 것만 본다. 안 고르면 미지정 줄로 간다(상위를 따라가지 않는다).
         blocks = _split_blocks(it["block_label"]) or [""]
-        b = bar(it, blocks, level, hue)
+        b = bar(it, blocks, level, hue, rank, path, root_id)
         if b["visible"]:
             for k in blocks:
                 bars_by_block[k].append({**b})   # 줄마다 칸(lane)이 달라 사본으로 담는다
         for c in children.get(it["id"], []):
             if overlaps(c):
-                walk(c, level + 1, hue)
+                walk(c, level + 1, hue, rank, (*path, it["title"]), root_id)
 
     seen: dict[int, int] = {}       # 영역마다 뿌리를 몇 개 봤는지(색조를 돌려 쓰려고)
     for it in children.get(None, []):
@@ -445,7 +480,8 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
             continue
         n = seen.get(it["area_id"], 0)
         seen[it["area_id"]] = n + 1
-        walk(it, 0, HUE_STEPS[n % len(HUE_STEPS)])
+        rank = it["sort_order"] if it["sort_order"] is not None else NO_RANK
+        walk(it, 0, HUE_STEPS[n % len(HUE_STEPS)], rank, (), it["id"])
 
     # 키 이름은 'items'를 피한다(Jinja에서 dict.items 메서드와 겹친다).
     return [{**row,
@@ -660,6 +696,63 @@ async def plan_item_resize(request: Request):
                         days if edge == "end" else 0, now)
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True})
+
+
+@router.post("/plan/item/order")
+async def plan_item_order(request: Request):
+    """막대의 세로 순서를 바꾼다. 옮길 막대(id)를 기준 막대(peer) 위(before)나 아래(after)에 둔다.
+
+    순서는 뿌리(최상위) 묶음 단위이고 같은 영역 안에서만 매긴다. 상위 아래에 하위가 붙는
+    규칙과 영역끼리의 위아래(영역 관리 순서)는 그대로다. 한 번 손대면 그 영역의 뿌리 전부에
+    0,1,2… 를 다시 매겨, 정한 것과 안 정한 것이 섞여 순서가 흔들리지 않게 한다.
+    """
+    form = await request.form()
+    try:
+        item_id = int(form.get("id"))
+        peer_id = int(form.get("peer"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    place = (form.get("place") or "before").strip()
+    if place not in ("before", "after"):
+        return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        me, peer = _lt_root(conn, item_id), _lt_root(conn, peer_id)
+        if me == peer:      # 같은 묶음 안에서 끈 것. 묶음 안 순서는 계층이 정한다
+            return JSONResponse({"ok": True, "changed": False})
+        rows = {
+            r["id"]: r["area_id"]
+            for r in conn.execute(
+                "SELECT id, area_id FROM lt_item WHERE id IN (?, ?)", (me, peer)
+            )
+        }
+        if len(rows) < 2:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if rows[me] != rows[peer]:
+            return JSONResponse(
+                {"ok": False, "error": "같은 영역 안에서만 순서를 바꿉니다"}, status_code=400
+            )
+        cur = [
+            (r["id"], r["sort_order"])
+            for r in conn.execute(
+                "SELECT id, sort_order FROM lt_item WHERE area_id = ? AND parent_id IS NULL "
+                "ORDER BY COALESCE(sort_order, ?), start_date, id",
+                (rows[me], NO_RANK),
+            )
+        ]
+        ids = [i for i, _ in cur]
+        if me not in ids or peer not in ids:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        ids.remove(me)
+        ids.insert(ids.index(peer) + (1 if place == "after" else 0), me)
+        was = dict(cur)
+        for n, rid in enumerate(ids):
+            if was[rid] != n:       # 실제로 자리가 바뀐 것만 적는다
+                conn.execute(
+                    "UPDATE lt_item SET sort_order = ?, updated_at = ? WHERE id = ?",
+                    (n, now, rid),
+                )
+    return JSONResponse({"ok": True, "changed": True})
 
 
 @router.post("/plan/item/reparent")

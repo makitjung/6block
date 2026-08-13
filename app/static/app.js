@@ -1966,12 +1966,99 @@
         }, 600);
     }
 
-    function bindGantt() {
+    // 부분 새로고침 뒤에 다시 열어 둘 것. 새 격자에는 새 bindGantt 가 붙으므로,
+    // 여기 적어 두었다가 그 안에서 꺼내 연다(연달아 넣기·순서 바꾸기가 끊기지 않게).
+    let pendingForm = null;     // 추가 폼 {block, area, parent, title, start, end}
+    let pendingEdit = null;     // 편집칸 {id, block}
+    let ganttBusy = false;
+
+    // 화면 전체(location.reload) 대신 간트 부분만 새로 받아 갈아끼운다. 스크롤 자리와
+    // 열어 둔 칸이 그대로 남아, 항목을 연달아 넣거나 순서를 잇달아 바꿀 수 있다.
+    function refreshGantt(focusId, after) {
+        const box = document.querySelector('.plan-scroll');
+        const u = new URL(location.href);
+        if (focusId) u.searchParams.set('focus', focusId);
+        else u.searchParams.delete('focus');
+        if (!box || ganttBusy) { location.href = u.toString(); return; }
+        ganttBusy = true;
+        fetch(u.toString(), { credentials: 'same-origin' })
+            .then((r) => r.text())
+            .then((html) => {
+                const fresh = new DOMParser().parseFromString(html, 'text/html')
+                    .querySelector('.plan-scroll');
+                if (!fresh) throw new Error('no-gantt');
+                const x = box.scrollLeft;
+                box.replaceWith(fresh);
+                fresh.scrollLeft = x;
+                // 서버가 방금 옮긴 항목을 따라 보는 기간을 바꿨으면 주소도 그 기간으로 맞춘다
+                const anchor = fresh.querySelector('.gantt')?.dataset.anchor;
+                if (anchor) u.searchParams.set('anchor', anchor);
+                u.searchParams.delete('focus');
+                history.replaceState(null, '', u.pathname + u.search);
+                ganttBusy = false;
+                bindGantt(true);
+                bindDateParts();        // 새로 온 날짜 칸도 한 칸 입력으로 감싼다
+                if (after) after();
+            })
+            .catch(() => { ganttBusy = false; location.href = u.toString(); });
+    }
+
+    // 그 막대가 속한 계획 묶음(상위 사슬 + 그 아래 전부)의 항목 id 들
+    function ganttFamily(gantt, bar) {
+        const byId = new Map();
+        const kids = new Map();
+        gantt.querySelectorAll('.gt-bar').forEach((b) => {
+            byId.set(b.dataset.id, b);
+            const p = b.dataset.parent || '';
+            if (!kids.has(p)) kids.set(p, []);
+            kids.get(p).push(b);
+        });
+        const out = new Set();
+        let cur = bar;
+        while (cur && !out.has(cur.dataset.id)) {      // 위로: 상위 사슬
+            out.add(cur.dataset.id);
+            cur = byId.get(cur.dataset.parent || '');
+        }
+        const stack = [bar.dataset.id];                // 아래로: 하위 전부
+        while (stack.length) {
+            (kids.get(stack.pop()) || []).forEach((b) => {
+                if (out.has(b.dataset.id)) return;
+                out.add(b.dataset.id);
+                stack.push(b.dataset.id);
+            });
+        }
+        return out;
+    }
+
+    // 한 막대에 손을 얹으면 그 묶음만 남기고 나머지를 흐린다. 상하위가 색 진하기로만
+    // 구분돼 어디에 붙은 것인지 읽기 어려웠던 것을, 짚어 볼 수 있게 한 것이다.
+    function litGanttFamily(gantt, bar) {
+        gantt.querySelectorAll('.is-lit').forEach((el) => el.classList.remove('is-lit'));
+        const ids = bar ? ganttFamily(gantt, bar) : null;
+        if (!ids || ids.size < 2) { gantt.classList.remove('is-lit'); return; }
+        gantt.classList.add('is-lit');
+        gantt.querySelectorAll('.gt-bar').forEach((b) => {
+            if (ids.has(b.dataset.id)) b.classList.add('is-lit');
+        });
+        gantt.querySelectorAll('.gt-links [data-from]').forEach((p) => {
+            if (ids.has(p.dataset.from) && ids.has(p.dataset.to)) p.classList.add('is-lit');
+        });
+    }
+
+    function bindGantt(again) {
         const gantt = document.querySelector('.gantt');
         if (!gantt) return;
+        // 위쪽 체크박스로 켜 둔 상태를 새 격자에도 옮긴다(부분 새로고침에서 잃지 않게)
+        gantt.classList.toggle('show-today',
+                               !!document.getElementById('pg-today-line')?.checked);
+        gantt.classList.toggle('hide-past',
+                               !!document.getElementById('pg-past-hide')?.checked);
 
         const closeAll = () => {
             gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
+            gantt.querySelectorAll('.gt-bar.is-editing')
+                 .forEach((b) => b.classList.remove('is-editing'));
+            litGanttFamily(gantt, null);
         };
         // 격자의 빈 곳을 누르면 닫는다. 입력칸 안이라도 칸·버튼이 아닌 빈 자리를 누르면
         // 마찬가지로 닫는다(입력칸 자신이나 줄 묶음이 눌린 경우).
@@ -1984,22 +2071,57 @@
             if (e.target.closest('.gt-bar, .gt-add')) return;
             closeAll();
         });
-        // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목과 그 영역을 폼에 실어 보낸다.
-        const openForm = (block, areaId, parentId, parentTitle) => {
+        // 막대에 손을 얹으면 그 묶음을 밝힌다. 편집칸을 열어 둔 동안에는 그쪽을 그대로 둔다.
+        gantt.addEventListener('mouseover', (e) => {
+            if (gantt.querySelector('.gt-bar.is-dragging, .gt-bar.is-resizing')) return;
+            const b = e.target.closest('.gt-bar');
+            if (b) litGanttFamily(gantt, b);
+            else if (!gantt.querySelector('.gt-bar.is-editing')) litGanttFamily(gantt, null);
+        });
+
+        // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목·영역·기간을 물려받는다.
+        const openForm = (opt) => {
+            const o = opt || {};
             closeAll();
-            const form = gantt.querySelector('.gt-form[data-block="' + (block || '') + '"]');
+            const form = gantt.querySelector('.gt-form[data-block="' + (o.block || '') + '"]');
             if (!form) return;
             form.hidden = false;
             const area = form.querySelector('.gt-f-area');
-            if (area && areaId) area.value = areaId;
-            form.querySelector('.gt-f-parent').value = parentId || '';
+            if (area && o.area) area.value = o.area;
+            form.querySelector('.gt-f-parent').value = o.parent || '';
             const label = form.querySelector('.gt-f-parent-label');
-            if (label) label.textContent = parentId ? ('하위 · ' + parentTitle) : '';
-            form.querySelector('.gt-f-title').focus();
+            if (label) label.textContent = o.parent ? ('하위 · ' + o.title) : '';
+            [['start', '.gt-f-start'], ['end', '.gt-f-end']].forEach(([k, sel]) => {
+                if (!o[k]) return;
+                const el = form.querySelector(sel);
+                el.value = o[k];
+                syncDateParts(el);      // 코드가 넣은 값을 한 칸 입력에도 반영
+            });
+            const t = form.querySelector('.gt-f-title');
+            t.value = '';
+            t.focus();
+            form.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         };
 
         gantt.querySelectorAll('.gt-add').forEach((btn) =>
-            btn.addEventListener('click', () => openForm(btn.dataset.block, '', '', '')));
+            btn.addEventListener('click', () => openForm({ block: btn.dataset.block })));
+
+        // 빈 자리를 두 번 누르면 그 날짜로 시작하는 1주짜리 항목을 그 블록 줄에 만든다
+        const spanStart = gantt.dataset.start;
+        const spanDays = parseInt(gantt.dataset.days, 10) || 1;
+        gantt.querySelectorAll('.gt-blockrow .gt-track').forEach((track) => {
+            track.addEventListener('dblclick', (e) => {
+                if (e.target.closest('.gt-bar') || !spanStart) return;
+                const r = track.getBoundingClientRect();
+                if (!r.width) return;
+                const off = Math.max(0, Math.min(spanDays - 1,
+                    Math.floor((e.clientX - r.left) / r.width * spanDays)));
+                const s = new Date(spanStart + 'T00:00:00');
+                s.setDate(s.getDate() + off);
+                openForm({ block: track.closest('.gt-blockrow').dataset.block,
+                           start: ymd(s), end: ymd(addSpan(s, 'week')) });
+            });
+        });
 
         gantt.querySelectorAll('.gt-form').forEach((form) => {
             let sending = false;    // 보내는 중 다시 누르면 같은 항목이 2개 저장된다
@@ -2011,14 +2133,24 @@
                 if (!title) { toast('항목 이름을 입력하세요'); return; }
                 if (!start || !end) { toast('시작일과 종료일을 고르세요'); return; }
                 sending = true;
+                const parent = form.querySelector('.gt-f-parent').value;
+                const area = form.querySelector('.gt-f-area').value;
+                const ptext = form.querySelector('.gt-f-parent-label')?.textContent || '';
                 postForm('/plan/item/add', {
-                    area_id: form.querySelector('.gt-f-area').value,
+                    area_id: area,
                     block: form.dataset.block,
                     title: title, start: start, end: end,
-                    parent_id: form.querySelector('.gt-f-parent').value,
+                    parent_id: parent,
                 }).then((d) => {
-                    // 성공하면 그대로 잠그고, 방금 적던 블록 줄 자리를 지킨 채 다시 그린다
-                    if (d && d.ok) { reloadKeepingPlace(); return; }
+                    if (d && d.ok) {
+                        // 같은 자리에 폼을 그대로 다시 열어 연달아 적을 수 있게 한다
+                        pendingForm = {
+                            block: form.dataset.block, area: area, parent: parent,
+                            title: ptext.replace(/^하위 · /, ''), start: start, end: end,
+                        };
+                        refreshGantt(d.id);
+                        return;
+                    }
                     sending = false;
                     toast((d && d.error) || '추가 실패');
                 });
@@ -2046,42 +2178,94 @@
             });
         });
 
+        // 막대를 누르면 그 줄의 편집칸이 열린다. 어느 막대의 것인지 알 수 있게 막대에
+        // 테두리를 두르고 그 묶음을 밝힌 채로 둔다(편집칸이 줄 아래라 멀어 보이던 것).
+        const openEdit = (bar) => {
+            const box = bar.closest('.gt-group')
+                ?.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
+            if (!box) return;
+            const wasOpen = !box.hidden;
+            closeAll();
+            box.hidden = wasOpen;
+            if (wasOpen) return;
+            bar.classList.add('is-editing');
+            litGanttFamily(gantt, bar);
+            box.querySelector('.gt-e-title')?.focus();
+            box.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        };
         gantt.querySelectorAll('.gt-bar').forEach((bar) => {
             bar.addEventListener('click', () => {
                 if (bar.dataset.dragged === '1') { delete bar.dataset.dragged; return; }
-                // 한 항목이 블록 여러 줄에 나오므로 누른 줄 안의 편집칸만 연다
-                const box = bar.closest('.gt-group')
-                    ?.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
-                if (!box) return;
-                const wasOpen = !box.hidden;
-                closeAll();
-                box.hidden = wasOpen;
-                if (!wasOpen) box.querySelector('.gt-e-title')?.focus();
+                openEdit(bar);      // 한 항목이 여러 줄에 나오므로 누른 줄의 것만 연다
             });
         });
 
+        const removeItem = (id, hasKids) => {
+            const msg = hasKids
+                ? '이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.'
+                : '이 항목을 삭제합니다.';
+            if (!window.confirm(msg)) return;
+            postForm('/plan/item/delete', { id: id }).then((d) => {
+                if (d && d.ok) refreshGantt();
+                else toast('삭제 실패');
+            });
+        };
         // 막대 위 ✕: 편집창을 열지 않고 바로 지운다(하위가 있으면 함께 지워진다고 알린다)
         gantt.querySelectorAll('.gt-del').forEach((x) => {
             x.addEventListener('pointerdown', (e) => e.stopPropagation());
             x.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const bar = x.closest('.gt-bar');
-                const kids = bar && bar.classList.contains('is-parent');
-                const msg = kids
-                    ? '이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.'
-                    : '이 항목을 삭제합니다.';
-                if (!window.confirm(msg)) return;
-                postForm('/plan/item/delete', { id: x.dataset.id }).then((d) => {
-                    if (d && d.ok) reloadKeepingPlace();
-                    else toast('삭제 실패');
-                });
+                removeItem(x.dataset.id,
+                           !!x.closest('.gt-bar')?.classList.contains('is-parent'));
             });
         });
 
+        // 같은 줄에서 위(아래)로 이웃한 '다른 묶음'의 막대. 세로 순서를 바꿀 상대다.
+        const neighbourBar = (bar, dir) => {
+            const row = bar.closest('.gt-blockrow');
+            if (!row) return null;
+            const me = bar.getBoundingClientRect();
+            let best = null;
+            let bestD = Infinity;
+            row.querySelectorAll('.gt-bar').forEach((o) => {
+                if (o === bar || o.dataset.root === bar.dataset.root || !o.offsetParent) return;
+                const r = o.getBoundingClientRect();
+                const dy = dir === 'up' ? me.top - r.top : r.top - me.top;
+                if (dy <= 1) return;                    // 같은 칸이거나 반대쪽
+                // 가장 가까운 칸을 먼저, 그 칸 안에서는 가로로 가장 가까운 것을 고른다
+                const d = dy * 10000 + Math.abs((r.left + r.width / 2) - (me.left + me.width / 2));
+                if (d < bestD) { bestD = d; best = o; }
+            });
+            return best;
+        };
+        const moveOrder = (box, dir) => {
+            const bar = box.closest('.gt-group')
+                ?.querySelector('.gt-bar[data-id="' + box.dataset.id + '"]');
+            const peer = bar && neighbourBar(bar, dir);
+            if (!peer) {
+                toast(dir === 'up' ? '위에 바꿀 항목이 없습니다' : '아래에 바꿀 항목이 없습니다');
+                return;
+            }
+            postForm('/plan/item/order', {
+                id: box.dataset.id, peer: peer.dataset.id,
+                place: dir === 'up' ? 'before' : 'after',
+            }).then((d) => {
+                if (!d || !d.ok) { toast((d && d.error) || '순서를 바꾸지 못했습니다'); return; }
+                // 잇달아 누를 수 있게 편집칸을 그대로 다시 연다
+                pendingEdit = { id: box.dataset.id, block: box.dataset.block };
+                refreshGantt(box.dataset.id);
+            });
+        };
+
         bindGanttDrag(gantt);
         drawGanttLinks(gantt);
-        window.addEventListener('resize', () => drawGanttLinks(gantt));
-        restorePlanScroll();    // 방금 항목을 고쳐 다시 그린 것이면 보던 자리로 돌아간다
+        if (!again) {
+            window.addEventListener('resize', () => {
+                const g = document.querySelector('.gantt');
+                if (g) drawGanttLinks(g);
+            });
+            restorePlanScroll();   // 다른 화면에서 돌아온 것이면 보던 자리로
+        }
 
         gantt.querySelectorAll('.gt-edit').forEach((box) => {
             const id = box.dataset.id;
@@ -2102,40 +2286,76 @@
                 box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
                 postForm('/plan/item/update', data).then((d) => {
                     if (!d || !d.ok) { box.hidden = false; toast((d && d.error) || '저장 실패'); return; }
-                    reloadKeepingPlace();
+                    refreshGantt(id);
                 });
             });
             // 영역(막대 색)을 바꾼다. 하위 항목이면 상위에서 빠져 그 영역의 최상위가 된다.
             box.querySelector('.gt-e-area')?.addEventListener('change', (ev) => {
                 postForm('/plan/item/reparent', { id: id, area_id: ev.target.value })
                     .then((d) => {
-                        if (d && d.ok) reloadKeepingPlace();
+                        if (d && d.ok) refreshGantt(id);
                         else toast((d && d.error) || '영역을 바꾸지 못했습니다');
                     });
             });
-            // 상위로 넣기는 막대를 끌어다 붙이고, 삭제는 막대 위 ✕로 한다(편집칸에서는 뺐다)
+            box.querySelector('.gt-e-up')?.addEventListener('click', () => moveOrder(box, 'up'));
+            box.querySelector('.gt-e-down')?.addEventListener('click', () => moveOrder(box, 'down'));
+            // 상위에서 떼기. 예전에는 막대를 아래로 끄는 몸짓이었는데, 그 자리를 순서
+            // 바꾸기가 쓰게 되어 버튼으로 옮겼다(실수로 떨어지던 일도 함께 사라진다).
+            box.querySelector('.gt-e-detach')?.addEventListener('click', () => {
+                postForm('/plan/item/reparent', { id: id, area_id: box.dataset.area })
+                    .then((d) => {
+                        if (d && d.ok) refreshGantt(id);
+                        else toast((d && d.error) || '떼어내지 못했습니다');
+                    });
+            });
+            box.querySelector('.gt-e-del')?.addEventListener('click', () => {
+                const bar = box.closest('.gt-group')
+                    ?.querySelector('.gt-bar[data-id="' + id + '"]');
+                removeItem(id, !!bar?.classList.contains('is-parent'));
+            });
+            box.querySelector('.gt-e-close')?.addEventListener('click', closeAll);
+            // 하위 추가. 상위의 기간을 그대로 물려받아 날짜를 다시 고르지 않아도 되게 한다.
             box.querySelector('.gt-e-child')?.addEventListener('click', (ev) => {
                 const b = ev.currentTarget;
-                openForm(b.dataset.block, b.dataset.area, b.dataset.parent, b.dataset.title);
+                openForm({ block: b.dataset.block, area: b.dataset.area,
+                           parent: b.dataset.parent, title: b.dataset.title,
+                           start: b.dataset.start, end: b.dataset.end });
             });
         });
 
-        // 지난 항목(종료일이 오늘 이전) 접기·펴기. 새로고침하면 다시 접힌 상태로 돌아간다.
-        // 오늘 세로선은 기본으로 안 보이고, 체크할 때만 긋는다(늘 켜 두면 너무 튄다).
-        document.getElementById('pg-today-line')?.addEventListener('change', (e) => {
-            gantt.classList.toggle('show-today', e.target.checked);
-        });
-        // 숨긴 항목은 서버에서 아예 빼고 그리므로 화면을 다시 불러 온다(칸 배치가 달라진다).
-        document.getElementById('pg-show-hidden')?.addEventListener('change', (e) => {
-            const u = e.target.dataset.url;
-            location.href = u + (e.target.checked ? '&show_hidden=1' : '');
-        });
-        // 지난 항목은 기본으로 보이고, 체크할 때만 화면에서 뺀다.
-        const pastBox = document.getElementById('pg-past-hide');
-        pastBox?.addEventListener('change', () => {
-            gantt.classList.toggle('hide-past', pastBox.checked);
-            drawGanttLinks(gantt);         // 막대가 사라지면 연결선도 다시 긋는다
-        });
+        // 부분 새로고침 전에 열려 있던 칸을 그대로 다시 연다(연달아 넣기·순서 바꾸기)
+        if (pendingForm) {
+            const p = pendingForm;
+            pendingForm = null;
+            openForm(p);
+        } else if (pendingEdit) {
+            const p = pendingEdit;
+            pendingEdit = null;
+            const bar = gantt.querySelector('.gt-group[data-block="' + p.block + '"] '
+                                            + '.gt-bar[data-id="' + p.id + '"]');
+            if (bar) openEdit(bar);
+        }
+
+        if (!again) {
+            // 지난 항목(종료일이 오늘 이전) 접기·펴기. 새로고침하면 다시 펴진 상태로 돌아간다.
+            // 오늘 세로선은 기본으로 안 보이고, 체크할 때만 긋는다(늘 켜 두면 너무 튄다).
+            // 격자는 부분 새로고침으로 갈릴 수 있어, 누를 때마다 지금 것을 다시 찾는다.
+            document.getElementById('pg-today-line')?.addEventListener('change', (e) => {
+                document.querySelector('.gantt')?.classList.toggle('show-today', e.target.checked);
+            });
+            // 숨긴 항목은 서버에서 아예 빼고 그리므로 화면을 다시 불러 온다(칸 배치가 달라진다).
+            document.getElementById('pg-show-hidden')?.addEventListener('change', (e) => {
+                const u = e.target.dataset.url;
+                location.href = u + (e.target.checked ? '&show_hidden=1' : '');
+            });
+            const pastBox = document.getElementById('pg-past-hide');
+            pastBox?.addEventListener('change', () => {
+                const g = document.querySelector('.gantt');
+                if (!g) return;
+                g.classList.toggle('hide-past', pastBox.checked);
+                drawGanttLinks(g);         // 막대가 사라지면 연결선도 다시 긋는다
+            });
+        }
 
         // 방금 옮긴 막대가 있으면 그 자리로 스크롤해 놓친 것처럼 보이지 않게 한다
         const found = gantt.querySelector('.gt-bar.is-focus');
@@ -2143,6 +2363,7 @@
             found.scrollIntoView({ block: 'nearest', inline: 'center' });
             return;
         }
+        if (again) return;      // 아래 가로 스크롤은 화면을 처음 열 때만
 
         // 현재 기간 열이 화면에 들어오도록 가로 스크롤(항목 이름 열에 가리지 않게)
         const nowCol = gantt.querySelector('.gt-col.is-now');
