@@ -183,7 +183,10 @@ def test_내일_목표_저장(client):
     assert res.status_code == 200, res.text
 
 
-# -- 블록 PLAN 이월(내일로) ----------------------------------------------------
+# -- 블록 이월(내일로) --------------------------------------------------------
+
+
+TOMORROW = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def _블록(라벨, 날짜=None):
@@ -191,98 +194,176 @@ def _블록(라벨, 날짜=None):
                 (날짜 or TODAY, 라벨))
 
 
-TOMORROW = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+def _슬롯들(라벨, 날짜=None):
+    return _rows("SELECT s.id, s.start_time, s.do_text, s.is_routine FROM slots s "
+                 "JOIN blocks b ON b.id = s.block_id "
+                 "WHERE b.date = ? AND b.block_label = ? ORDER BY s.slot_index",
+                 (날짜 or TODAY, 라벨))
 
 
-def test_내일로가_저장된_PLAN을_옮긴다(client):
+def _DO적기(client, 라벨, 자리, 글, 날짜=None):
+    """그 블록의 n번째 슬롯 DO 칸에 적는다(화면의 자동저장과 같은 경로)."""
+    s = _슬롯들(라벨, 날짜)[자리]
+    client.post("/save/field", data={"entity": "slot", "id": s["id"],
+                                     "field": "do_text", "value": 글})
+    return s
+
+
+def test_슬롯_DO를_내일_같은_시간_칸으로_넘긴다(client):
+    """PLAN 칸을 안 쓰고 30분 칸에만 적는 것이 실제 사용 방식이다."""
     client.get("/today")
+    s0 = _DO적기(client, "B1", 0, "첫 칸 할 일")
+    s2 = _DO적기(client, "B1", 2, "셋째 칸 할 일")
     b = _블록("B1")
-    client.post("/save/field", data={"entity": "block", "id": b["id"],
-                                     "field": "plan_text", "value": "미룬 계획"})
+
     res = client.post("/block/rollover", data={"block_id": b["id"]})
     assert res.status_code == 200, res.text
-    assert res.json()["label"] == "B1"
-    assert _블록("B1", TOMORROW)["plan_text"] == "미룬 계획"
+    assert res.json()["moved"] == 2
+    assert res.json()["skipped"] == 0
+
+    내일 = {s["start_time"]: s["do_text"] for s in _슬롯들("B1", TOMORROW)}
+    assert 내일[s0["start_time"]] == "첫 칸 할 일"
+    assert 내일[s2["start_time"]] == "셋째 칸 할 일"
 
 
-def test_내일로는_아직_저장_안_된_PLAN도_옮긴다(client):
-    """화면에서 적자마자 누르면 자동저장이 아직 서버에 안 닿는다.
+def test_이월은_오늘_칸을_지우지_않는다(client):
+    client.get("/today")
+    s = _DO적기(client, "B1", 0, "남아야 할 일")
+    b = _블록("B1")
+    client.post("/block/rollover", data={"block_id": b["id"]})
+    assert _one("SELECT do_text FROM slots WHERE id = ?", (s["id"],))["do_text"] == "남아야 할 일"
 
-    예전에는 이월 요청이 먼저 도착해 빈 PLAN 을 읽고 '비어 있다'고 되돌려 보냈다.
-    이제 화면에 적힌 값을 함께 받는다.
-    """
+
+def test_아직_저장_안_된_DO도_넘어간다(client):
+    """적자마자 누르면 자동저장이 아직 서버에 안 닿는다. 화면 값을 함께 보낸다."""
     client.get("/today")
     b = _블록("B1")
-    assert (b["plan_text"] or "") == "", "전제가 틀렸다. 저장된 PLAN 이 이미 있다"
+    s = _슬롯들("B1")[0]
+    assert (s["do_text"] or "") == ""
     res = client.post("/block/rollover",
-                      data={"block_id": b["id"], "plan": "방금 적은 계획"})
+                      data={"block_id": b["id"], f"do_{s['id']}": "방금 적은 일"})
     assert res.status_code == 200, res.text
-    assert _블록("B1", TOMORROW)["plan_text"] == "방금 적은 계획"
+    assert res.json()["moved"] == 1
+    내일 = {x["start_time"]: x["do_text"] for x in _슬롯들("B1", TOMORROW)}
+    assert 내일[s["start_time"]] == "방금 적은 일"
 
 
-def test_내일로는_화면_값을_저장값보다_우선한다(client):
-    """적어 두었던 것을 고친 뒤 바로 누르면 고친 쪽이 넘어가야 한다."""
+def test_화면에서_지운_칸은_안_넘어간다(client):
     client.get("/today")
+    s = _DO적기(client, "B1", 0, "지울 일")
     b = _블록("B1")
-    client.post("/save/field", data={"entity": "block", "id": b["id"],
-                                     "field": "plan_text", "value": "옛 계획"})
-    client.post("/block/rollover", data={"block_id": b["id"], "plan": "고친 계획"})
-    assert _블록("B1", TOMORROW)["plan_text"] == "고친 계획"
-
-
-def test_내일로는_비운_채_누르면_거절한다(client):
-    """저장값이 남아 있어도 화면에서 지웠으면 넘길 것이 없다."""
-    client.get("/today")
-    b = _블록("B1")
-    client.post("/save/field", data={"entity": "block", "id": b["id"],
-                                     "field": "plan_text", "value": "지울 계획"})
-    res = client.post("/block/rollover", data={"block_id": b["id"], "plan": "   "})
+    res = client.post("/block/rollover",
+                      data={"block_id": b["id"], f"do_{s['id']}": "  "})
     assert res.status_code == 400
     assert res.json()["error"] == "empty"
-    # 거절할 때는 내일 골격도 만들지 않는다(안 그러면 열어 본 적 없는 날이 생긴다).
     assert _one("SELECT id FROM blocks WHERE date = ?", (TOMORROW,)) is None
 
 
-def test_내일로는_내일_PLAN_뒤에_덧붙인다(client):
+def test_PLAN과_DO를_함께_넘긴다(client):
     client.get("/today")
-    b = _블록("B1")
-    client.post("/block/rollover", data={"block_id": b["id"], "plan": "첫째"})
-    client.post("/block/rollover", data={"block_id": b["id"], "plan": "둘째"})
-    assert _블록("B1", TOMORROW)["plan_text"] == "첫째\n둘째"
-
-
-def test_내일로는_오늘_PLAN을_지우지_않는다(client):
-    """이월은 복사다. 오늘 것이 사라지면 그날 기록이 없어진다."""
-    client.get("/today")
+    _DO적기(client, "B1", 0, "칸에 적은 일")
     b = _블록("B1")
     client.post("/save/field", data={"entity": "block", "id": b["id"],
-                                     "field": "plan_text", "value": "남아야 할 계획"})
-    client.post("/block/rollover", data={"block_id": b["id"], "plan": "남아야 할 계획"})
-    assert _블록("B1")["plan_text"] == "남아야 할 계획"
+                                     "field": "plan_text", "value": "블록 계획"})
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.json()["moved"] == 1
+    assert res.json()["plan"] is True
+    assert _블록("B1", TOMORROW)["plan_text"] == "블록 계획"
+    assert any((s["do_text"] or "") == "칸에 적은 일" for s in _슬롯들("B1", TOMORROW))
 
 
-def test_내일로는_같은_라벨_블록으로만_간다(client):
+def test_넘길_것이_하나도_없으면_거절한다(client):
     client.get("/today")
+    b = _블록("B1")
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.status_code == 400
+    assert res.json()["error"] == "empty"
+    # 거절할 때는 내일 골격도 만들지 않는다(열어 본 적 없는 날이 생기면 안 된다).
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TOMORROW,)) is None
+
+
+def test_내일_같은_칸이_차_있으면_그_블록의_빈_칸으로_민다(client):
+    client.get("/today")
+    client.get(f"/day/{TOMORROW}")
+    첫칸 = _슬롯들("B1", TOMORROW)[0]
+    client.post("/save/field", data={"entity": "slot", "id": 첫칸["id"],
+                                     "field": "do_text", "value": "내일 먼저 잡힌 일"})
+    s = _DO적기(client, "B1", 0, "밀려날 일")
+    b = _블록("B1")
+
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.json()["moved"] == 1
+    내일 = _슬롯들("B1", TOMORROW)
+    assert 내일[0]["do_text"] == "내일 먼저 잡힌 일", "이미 있던 것을 덮어썼다"
+    assert any((x["do_text"] or "") == "밀려날 일" for x in 내일[1:])
+    assert s["start_time"] == 내일[0]["start_time"]
+
+
+def test_내일_블록이_꽉_차면_못_넘긴_개수를_알려_준다(client):
+    client.get("/today")
+    client.get(f"/day/{TOMORROW}")
+    for x in _슬롯들("B1", TOMORROW):
+        client.post("/save/field", data={"entity": "slot", "id": x["id"],
+                                         "field": "do_text", "value": "이미 참"})
+    _DO적기(client, "B1", 0, "넘길 일 하나")
+    _DO적기(client, "B1", 1, "넘길 일 둘")
+    b = _블록("B1")
+
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.status_code == 200, res.text
+    assert res.json()["moved"] == 0
+    assert res.json()["skipped"] == 2
+    assert all(x["do_text"] == "이미 참" for x in _슬롯들("B1", TOMORROW))
+
+
+def test_고정_할일_칸은_안_넘긴다(client):
+    """내일도 템플릿이 다시 채우므로, 함께 넘기면 같은 것이 두 칸에 생긴다."""
+    client.get("/today")
+    s = _슬롯들("B1")[0]
+    with db.get_conn() as conn:
+        conn.execute("UPDATE slots SET do_text = '고정 할일', is_routine = 1 WHERE id = ?",
+                     (s["id"],))
+    b = _블록("B1")
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.status_code == 400, "고정 할일만 있는데 넘겼다"
+    assert res.json()["error"] == "empty"
+
+
+def test_이월은_같은_라벨_블록으로만_간다(client):
+    client.get("/today")
+    _DO적기(client, "B4", 0, "B4 일")
     b = _블록("B4")
-    client.post("/block/rollover", data={"block_id": b["id"], "plan": "B4 계획"})
-    assert _블록("B4", TOMORROW)["plan_text"] == "B4 계획"
-    assert (_블록("B1", TOMORROW)["plan_text"] or "") == ""
-
-
-def test_내일로는_없는_블록이면_404(client):
-    client.get("/today")
-    res = client.post("/block/rollover", data={"block_id": "999999", "plan": "x"})
-    assert res.status_code == 404
+    client.post("/block/rollover", data={"block_id": b["id"]})
+    assert any((x["do_text"] or "") == "B4 일" for x in _슬롯들("B4", TOMORROW))
+    assert all(not (x["do_text"] or "") for x in _슬롯들("B1", TOMORROW))
 
 
 def test_내일_골격이_없어도_이월된다(client):
     """내일을 아직 한 번도 안 열어 본 상태. 서버가 골격을 만들어 두고 넣어야 한다."""
     client.get("/today")
     assert _one("SELECT id FROM blocks WHERE date = ?", (TOMORROW,)) is None
+    _DO적기(client, "B2", 0, "내일 것")
     b = _블록("B2")
-    res = client.post("/block/rollover", data={"block_id": b["id"], "plan": "내일 것"})
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
     assert res.status_code == 200, res.text
-    assert _블록("B2", TOMORROW)["plan_text"] == "내일 것"
+    assert any((x["do_text"] or "") == "내일 것" for x in _슬롯들("B2", TOMORROW))
+
+
+def test_이월은_없는_블록이면_404(client):
+    client.get("/today")
+    res = client.post("/block/rollover", data={"block_id": "999999", "plan": "x"})
+    assert res.status_code == 404
+
+
+def test_두_번_이월하면_빈_칸에_이어_붙는다(client):
+    client.get("/today")
+    s = _DO적기(client, "B1", 0, "같은 일")
+    b = _블록("B1")
+    client.post("/block/rollover", data={"block_id": b["id"]})
+    client.post("/block/rollover", data={"block_id": b["id"]})
+    내일 = [x["do_text"] for x in _슬롯들("B1", TOMORROW) if (x["do_text"] or "")]
+    assert 내일 == ["같은 일", "같은 일"], f"두 번째가 첫 번째를 덮었거나 사라졌다: {내일}"
+    assert s is not None
 
 
 # -- 수집함 ------------------------------------------------------------------
@@ -924,6 +1005,51 @@ def test_고정_할일만_있는_날은_기록한_날이_아니다(client):
     assert _분석KPI(client, "기록한 날") == 0
     client.post(f"/slot/done/{slot['id']}", data={"done": "1"})
     assert _분석KPI(client, "기록한 날") == 1, "체크했는데도 안 센다"
+
+
+def test_여러_날_평균은_기록한_날끼리만_낸다(client):
+    """하루만으로는 평균의 분모가 안 드러난다. 100%인 날과 50%인 날, 빈 날을 섞어 본다."""
+    사흘전 = (datetime.date.today() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+    for 날 in (사흘전, TODAY):
+        client.get(f"/day/{날}")
+    # 사흘 전: 두 칸 계획하고 한 칸만 완료 → 50%
+    슬롯 = _rows("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+               "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 2", (사흘전,))
+    for x in 슬롯:
+        client.post("/save/field", data={"entity": "slot", "id": x["id"],
+                                         "field": "do_text", "value": "일함"})
+    client.post(f"/slot/done/{슬롯[0]['id']}", data={"done": "1"})
+    # 오늘: 두 칸 다 완료 → 100%. 그 사이 날(어제)은 골격만 있고 비어 있다.
+    _내용있는슬롯(client, 2, 날짜=TODAY)
+
+    assert _분석KPI(client, "기록한 날") == 2, "빈 날이 섞였다"
+    assert _분석KPI(client, "평균 완료율") == 75, "50% 와 100% 의 평균이 아니다"
+
+
+def test_전체_기간으로_봐도_같은_기준이다(client):
+    """rng=all 은 start 를 MIN(date) 로 잡는 다른 갈래라 따로 확인한다."""
+    client.get("/week")
+    assert client.get("/analytics?rng=all").status_code == 200
+    import re
+
+    def kpi(html, 이름):
+        m = re.search(이름 + r".*?<strong>([\d.]+)</strong>", html, re.S)
+        assert m, 이름
+        return float(m.group(1))
+
+    html = client.get("/analytics?rng=all").text
+    assert kpi(html, "기록한 날") == 0, "열어만 본 날이 전체 기간에서는 세어진다"
+
+    _내용있는슬롯(client, 6, 날짜=TODAY)
+    html = client.get("/analytics?rng=all").text
+    assert kpi(html, "기록한 날") == 1
+    assert kpi(html, "기록된 시간") == 3.0
+
+
+def test_기록이_하나도_없어도_전체_기간_화면이_열린다(client):
+    for rng in ("7", "30", "all", "이상한값"):
+        assert client.get(f"/analytics?rng={rng}").status_code == 200, rng
+        assert client.post("/analytics/ai", data={"rng": rng}).status_code in (200, 400)
 
 
 def test_분석_탭도_같은_기준으로_센다(client):

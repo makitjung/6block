@@ -3776,18 +3776,35 @@
     function bindRollover() {
         document.querySelectorAll('.block-rollover').forEach((btn) => {
             btn.addEventListener('click', () => {
-                // 화면에 적힌 PLAN 을 함께 보낸다. 이 버튼을 누르면 PLAN 칸에서 blur 가 나며
-                // 자동저장도 같이 출발하는데, 둘 중 무엇이 서버에 먼저 닿을지는 정해져 있지
-                // 않다. 예전에는 이월이 먼저 닿아 방금 적은 계획을 '비어 있다'고 되돌려 보냈다.
-                const ta = document.querySelector(
+                // 화면에 적힌 것을 그대로 함께 보낸다(블록 PLAN 과 그 블록 슬롯의 DO 칸).
+                // 이 버튼을 누르면 방금 고친 칸에서 blur 가 나며 자동저장도 같이 출발하는데,
+                // 둘 중 무엇이 서버에 먼저 닿을지는 정해져 있지 않다. 예전에는 이월이 먼저
+                // 닿아 방금 적은 것을 못 보고 '비어 있다'고 되돌려 보냈다.
+                const body = { block_id: btn.dataset.blockId };
+                const plan = document.querySelector(
                     'textarea[name="plan_' + btn.dataset.blockId + '"]');
-                postForm('/block/rollover', {
-                    block_id: btn.dataset.blockId,
-                    plan: ta ? ta.value : '',
-                }).then((d) => {
-                    if (d && d.ok) toast('내일 ' + (d.label || '') + ' 계획으로 이월');
-                    else if (d && d.error === 'empty') toast('이 블록 PLAN이 비어 있습니다');
-                    else toast('이월 실패');
+                if (plan) body.plan = plan.value;
+                // .block-stack 은 하루 전체를 감싸는 통이고, 블록 하나는 article.block 이다.
+                const block = btn.closest('article.block');
+                if (block) {
+                    block.querySelectorAll('[name^="do_"]').forEach((el) => {
+                        body[el.name] = el.value;
+                    });
+                }
+                postForm('/block/rollover', body).then((d) => {
+                    if (!d || !d.ok) {
+                        toast(d && d.error === 'empty'
+                            ? '이 블록에 넘길 내용이 없습니다'
+                            : '이월 실패');
+                        return;
+                    }
+                    const parts = [];
+                    if (d.moved) parts.push(d.moved + '칸');
+                    if (d.plan) parts.push('PLAN');
+                    let msg = '내일 ' + (d.label || '') + '로 '
+                        + (parts.join(' · ') || '내용') + ' 이월';
+                    if (d.skipped) msg += ' · ' + d.skipped + '칸은 자리가 없어 못 넘김';
+                    toast(msg);
                 });
             });
         });

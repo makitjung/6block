@@ -802,19 +802,32 @@ async def inbox_assign(request: Request):
 
 @router.post("/block/rollover")
 async def block_rollover(request: Request):
-    """이 블록의 PLAN을 다음 날 같은 블록 PLAN 끝에 복사한다(미룬 계획 이월).
+    """이 블록에 적어 둔 것을 내일 같은 블록으로 복사한다(미룬 계획 이월).
 
-    plan 을 함께 받으면 그 값을 쓰고, 없으면 저장된 값을 쓴다. 화면에서 이 버튼을 누르면
-    PLAN 칸에서 blur 가 나며 자동저장이 함께 출발하는데, 두 요청의 도착 순서는 정해져
-    있지 않다. 예전에는 이월이 먼저 닿아 아직 빈 PLAN 을 읽고 '비어 있다'고 되돌려
-    보냈다(방금 적은 계획일수록 반드시 실패했다). 화면에 적힌 것이 사용자의 뜻이므로
-    그 값을 그대로 받는다. 비운 채로 눌렀으면 빈 값이 맞으니 저장값으로 되돌리지 않는다.
+    넘기는 것은 그 블록 슬롯의 DO 칸과, 블록 PLAN 칸에 적은 글이다. 슬롯 DO 는 내일
+    같은 시각 칸으로 간다(시간표가 눈에 그대로 그려지도록). 그 칸이 이미 차 있으면 그
+    블록의 빈 칸 중 가장 이른 자리로 밀고, 빈 칸이 없으면 그것만 건너뛰고 몇 개를 못
+    넘겼는지 알려 준다. 오늘 칸은 지우지 않는다. 이월은 옮기기가 아니라 복사다.
+
+    고정 할일이 채운 칸(is_routine=1)은 넘기지 않는다. 내일도 템플릿이 다시 채우므로
+    함께 넘기면 같은 것이 두 칸에 생긴다.
+
+    화면 값(plan, do_<슬롯id>)이 함께 오면 저장값 대신 그것을 쓴다. 버튼을 누르면 방금
+    고친 칸에서 blur 가 나며 자동저장이 같이 출발하는데, 두 요청의 도착 순서가 정해져
+    있지 않아 예전에는 이월이 먼저 닿아 방금 적은 것을 못 보고 거절했다. 비운 채로
+    눌렀으면 빈 값이 맞으므로 저장값으로 되돌리지 않는다.
     """
     form = await request.form()
     try:
         block_id = int_id(form.get("block_id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+
+    def on_screen(key: str, saved) -> str:
+        """화면에서 온 값이 있으면 그것, 없으면 저장값."""
+        sent = form.get(key)
+        return (sent if sent is not None else (saved or "")).strip()
+
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
         src = conn.execute(
@@ -822,10 +835,21 @@ async def block_rollover(request: Request):
         ).fetchone()
         if not src:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        sent = form.get("plan")
-        plan = (sent if sent is not None else (src["plan_text"] or "")).strip()
-        if not plan:
+        plan = on_screen("plan", src["plan_text"])
+        carry = []          # 내일로 넘길 (시각, 글) 목록. 슬롯 차례대로 담는다.
+        for s in conn.execute(
+            "SELECT id, start_time, do_text, is_routine FROM slots "
+            "WHERE block_id = ? ORDER BY slot_index",
+            (block_id,),
+        ):
+            if s["is_routine"]:
+                continue
+            text = on_screen(f"do_{s['id']}", s["do_text"])
+            if text:
+                carry.append((s["start_time"], text))
+        if not plan and not carry:
             return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+
         d = datetime.strptime(src["date"], "%Y-%m-%d").date()
         nxt = (d + timedelta(days=1)).strftime("%Y-%m-%d")
         ensure_day_skeleton(conn, nxt)
@@ -835,13 +859,43 @@ async def block_rollover(request: Request):
         ).fetchone()
         if not dst:
             return JSONResponse({"ok": False, "error": "no-target"}, status_code=404)
-        cur = (dst["plan_text"] or "").rstrip()
-        new_plan = f"{cur}\n{plan}" if cur else plan
-        conn.execute(
-            "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
-            (new_plan, now, dst["id"]),
-        )
-    return JSONResponse({"ok": True, "date": nxt, "label": src["block_label"]})
+
+        if plan:
+            cur = (dst["plan_text"] or "").rstrip()
+            conn.execute(
+                "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
+                (f"{cur}\n{plan}" if cur else plan, now, dst["id"]),
+            )
+
+        dst_slots = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, start_time, do_text FROM slots WHERE block_id = ? "
+                "ORDER BY slot_index",
+                (dst["id"],),
+            )
+        ]
+        taken = {r["id"] for r in dst_slots if (r["do_text"] or "").strip()}
+        by_time = {r["start_time"]: r for r in dst_slots}
+        moved = 0
+        for start_time, text in carry:
+            # 같은 시각 자리를 먼저 노린다. 요일마다 블록 시간이 다를 수 있어 그 시각이
+            # 아예 없을 수도 있고, 이미 차 있을 수도 있다. 그때는 가장 이른 빈 칸으로 민다.
+            target = by_time.get(start_time)
+            if target is None or target["id"] in taken:
+                target = next((r for r in dst_slots if r["id"] not in taken), None)
+            if target is None:
+                continue        # 그 블록에 빈 칸이 하나도 없다
+            conn.execute(
+                "UPDATE slots SET do_text = ?, is_routine = 0, updated_at = ? WHERE id = ?",
+                (text, now, target["id"]),
+            )
+            taken.add(target["id"])
+            moved += 1
+    return JSONResponse({
+        "ok": True, "date": nxt, "label": src["block_label"],
+        "moved": moved, "skipped": len(carry) - moved, "plan": bool(plan),
+    })
 
 
 @router.post("/meta/tomorrow-goal")
