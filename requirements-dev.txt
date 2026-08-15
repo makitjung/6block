@@ -1,0 +1,5 @@
+# 테스트 전용. 앱 구동에는 필요 없다.
+# 설치 · .venv/bin/pip install -r requirements-dev.txt
+pytest==9.1.1
+httpx==0.28.1
+pyflakes==3.4.0

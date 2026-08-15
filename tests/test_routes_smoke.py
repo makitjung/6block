@@ -128,3 +128,16 @@ def test_모든_POST_가_다른_출처에서_오면_403(client, route):
 def test_재시작_라우트는_존재하되_테스트에서_부르지_않는다():
     paths = {r.path for r in app.routes if isinstance(r, Route)}
     assert "/settings/restart" in paths
+
+
+def test_라우트_커버리지가_100퍼센트다():
+    """이 파일이 실제로 모든 엔드포인트를 두들기는지 집합으로 확인한다.
+
+    빠진 라우트가 있으면 그 자리는 아무도 안 본 채로 남는다. 새 라우트를 추가하면
+    자동으로 목록에 들어오므로 따로 손볼 것이 없다.
+    """
+    전체 = {r.path for r in app.routes if isinstance(r, Route)}
+    두들긴것 = {r.path for r in GET_ROUTES} | {r.path for r in POST_ROUTES}
+    빠진것 = 전체 - 두들긴것 - SKIP_PATHS
+    assert not 빠진것, f"테스트가 한 번도 부르지 않는 라우트: {sorted(빠진것)}"
+    assert len(두들긴것) >= 70, len(두들긴것)

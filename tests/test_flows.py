@@ -1,6 +1,5 @@
 # 통합 테스트. 화면에서 실제로 하는 일(저장·이동·삭제)을 HTTP 로 그대로 밟아 DB 까지 확인한다.
 import datetime
-import json
 
 import pytest
 
@@ -564,6 +563,68 @@ def test_백업이_임시폴더에만_쓴다(client, tmp_root):
     assert res.status_code == 200, res.text
     made = list((TMP_ROOT / "backups").glob("*")) if (TMP_ROOT / "backups").exists() else []
     assert made, "백업 파일이 생기지 않았다"
+
+
+def test_구분을_전부_지우면_고를_구분이_남지_않는다(client):
+    """마지막 하나까지 숨길 수 있다. 그러면 오늘 탭 구분 목록이 텅 빈다."""
+    client.get("/settings")
+    for row in _rows("SELECT id FROM categories WHERE is_active = 1"):
+        client.post("/settings/category/delete", data={"id": row["id"]})
+    남은것 = _one("SELECT COUNT(*) AS c FROM categories WHERE is_active = 1")["c"]
+    assert 남은것 == 0, "마지막 구분은 남겨 둘 줄 알았는데 다 지워졌다"
+    assert client.get("/today").status_code == 200, "구분이 없으면 화면이 깨진다"
+
+
+# -- 주간 '기록된 시간' 집계 ---------------------------------------------------
+
+
+def test_구분이_없는_슬롯은_기록된_시간에_잡히지_않는다(client):
+    """cat_summary 가 categories 와 INNER JOIN 이라, 슬롯도 블록도 구분이 비면 빠진다.
+
+    코어 블록 B1~B6 은 기본 구분이 없다. 그래서 구분을 안 고르고 일한 시간은
+    주간 '기록된 시간' KPI 에 한 시간도 반영되지 않는다.
+    """
+    client.get(f"/day/{MONDAY}")
+    슬롯 = _rows("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+                "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 4", (MONDAY,))
+    for s in 슬롯:
+        client.post("/save/field", data={"entity": "slot", "id": s["id"],
+                                         "field": "do_text", "value": "구분 없이 한 일"})
+        client.post(f"/slot/done/{s['id']}", data={"done": "1"})
+
+    잡힌슬롯 = _one(
+        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
+        "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
+        "WHERE s.date = ?", (MONDAY,))["c"]
+    전체슬롯 = _one("SELECT COUNT(*) AS c FROM slots WHERE date = ?", (MONDAY,))["c"]
+    구분없는슬롯 = _one(
+        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
+        "WHERE s.date = ? AND COALESCE(s.category_id, b.category_id) IS NULL", (MONDAY,))["c"]
+
+    assert 구분없는슬롯 > 0
+    assert 잡힌슬롯 + 구분없는슬롯 == 전체슬롯
+    assert 잡힌슬롯 < 전체슬롯, (
+        f"구분 없는 슬롯 {구분없는슬롯}개가 집계에서 빠진다(전체 {전체슬롯}, 잡힌 것 {잡힌슬롯})"
+    )
+    assert client.get("/week").status_code == 200
+
+
+def test_구분을_정하면_그_시간이_집계에_들어온다(client):
+    """위 테스트의 짝. 구분만 정해 주면 같은 슬롯이 곧바로 잡힌다."""
+    client.get(f"/day/{MONDAY}")
+    cat = _one("SELECT id FROM categories WHERE name = '코어'")
+    block = _one("SELECT id FROM blocks WHERE date = ? AND block_label = 'B1'", (MONDAY,))
+    before = _one(
+        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
+        "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
+        "WHERE s.date = ?", (MONDAY,))["c"]
+    client.post("/save/field", data={"entity": "block", "id": block["id"],
+                                     "field": "bcat", "value": cat["id"]})
+    after = _one(
+        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
+        "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
+        "WHERE s.date = ?", (MONDAY,))["c"]
+    assert after > before, "블록 구분을 정했는데도 집계 슬롯 수가 그대로다"
 
 
 # -- 분석 -------------------------------------------------------------------

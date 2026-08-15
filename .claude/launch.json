@@ -6,6 +6,12 @@
       "runtimeExecutable": ".venv/bin/uvicorn",
       "runtimeArgs": ["app.main:app", "--port", "8023"],
       "port": 8023
+    },
+    {
+      "name": "6block-test",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["tests/serve_isolated.py"],
+      "port": 8024
     }
   ]
 }

@@ -61,7 +61,6 @@ import app.db as db  # noqa: E402
 
 db.DB_PATH = TEST_DB
 
-import app.common as common  # noqa: E402
 import app.integrations.ai as ai  # noqa: E402
 import app.integrations.gcal as gcal  # noqa: E402
 import app.integrations.gcal_write as gcal_write  # noqa: E402
@@ -79,6 +78,15 @@ TEST_ENV.write_text(
     encoding="utf-8",
 )
 settings_routes._env_file_path = lambda: TEST_ENV
+
+# 스텁으로 덮기 전의 진짜 함수. 연동 자체를 시험하는 테스트가 되돌려 쓴다.
+REAL = {
+    "things.enabled": things.enabled,
+    "things.today_tasks": things.today_tasks,
+    "gcal.events_for_date": gcal.events_for_date,
+    "ai.enabled": ai.enabled,
+    "ai.complete": ai.complete,
+}
 
 # 외부 연동은 전부 끈다(구글 호출·AppleScript 권한창·AI 과금이 일어나지 않게).
 things.enabled = lambda: False
@@ -127,6 +135,25 @@ def conn(fresh_db):
     """초기화된 DB 의 연결 하나."""
     with db.get_conn() as c:
         yield c
+
+
+@pytest.fixture
+def real_integrations():
+    """스텁을 잠깐 걷어 내고 진짜 연동 코드를 시험한다(네트워크는 테스트가 직접 가짜로 막는다)."""
+    saved = {
+        "things.enabled": things.enabled,
+        "things.today_tasks": things.today_tasks,
+        "gcal.events_for_date": gcal.events_for_date,
+        "ai.enabled": ai.enabled,
+        "ai.complete": ai.complete,
+    }
+    things.enabled, things.today_tasks = REAL["things.enabled"], REAL["things.today_tasks"]
+    gcal.events_for_date = REAL["gcal.events_for_date"]
+    ai.enabled, ai.complete = REAL["ai.enabled"], REAL["ai.complete"]
+    yield
+    things.enabled, things.today_tasks = saved["things.enabled"], saved["things.today_tasks"]
+    gcal.events_for_date = saved["gcal.events_for_date"]
+    ai.enabled, ai.complete = saved["ai.enabled"], saved["ai.complete"]
 
 
 @pytest.fixture
