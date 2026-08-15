@@ -206,6 +206,12 @@ def _AI켜기(monkeypatch):
 @pytest.mark.parametrize("payload", [
     b"{}",
     b'{"choices": []}',
+    b'{"choices": null}',          # TypeError: NoneType 은 인덱싱이 안 된다
+    b'{"choices": "text"}',        # TypeError: 문자열 인덱스는 정수여야 한다
+    b'{"choices": 7}',             # TypeError
+    b"[1, 2, 3]",                  # 최상위가 배열
+    b'"\\uadf8\\ub0e5 \\ubb38\\uc790\\uc5f4"',   # 최상위가 문자열
+    b'{"choices": [{"message": {"content": 12345}}]}',   # AttributeError: strip 없음
     b'{"choices": [{}]}',
     b'{"choices": [{"message": {}}]}',
     b'{"choices": [{"message": {"content": null}}]}',
@@ -254,3 +260,30 @@ def test_AI가_꺼져_있어도_주간_자동세분화가_동작한다(client):
 def test_AI가_꺼져_있어도_분석_AI_요약이_동작한다(client):
     res = client.post("/analytics/ai", data={"rng": "7"})
     assert res.status_code in (200, 400), res.text
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"choices": null}',
+    b'{"choices": "text"}',
+    b"[1, 2, 3]",
+    b"<html>502 Bad Gateway</html>",
+    b"",
+])
+def test_AI_주소를_잘못_적어_두어도_화면이_500이_되지_않는다(
+        client, monkeypatch, real_integrations, payload):
+    """엉뚱한 JSON API 를 AI 주소로 적어 둔 상태. 규칙기반으로 넘어가야 한다."""
+    import app.db as db
+    from app.common import week_start
+
+    monkeypatch.setattr(ai, "AI_API_KEY", "sk-테스트")
+    db.set_setting("ai_base_url", "https://ai.invalid/v1")
+    db.set_setting("ai_model", "m")
+    monkeypatch.setattr(ai.urllib.request, "urlopen", lambda *a, **k: _Resp(payload))
+
+    import datetime
+
+    monday = week_start(datetime.date.today()).strftime("%Y-%m-%d")
+    client.get("/week")
+    assert client.post("/week/decompose-themes",
+                       data={"week_start": monday}).status_code != 500
+    assert client.post("/analytics/ai", data={"rng": "7"}).status_code != 500

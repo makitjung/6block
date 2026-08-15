@@ -51,36 +51,6 @@ def test_parse_date_에_문자열이_아닌_값이_오면_터진다():
 
 
 # ---------------------------------------------------------------------------
-# 결함 4. AI 응답이 {"choices": null} 이면 TypeError 가 새어 나간다. (설정하면 도달 가능)
-#   ai.complete 의 except 절은 ValueError·KeyError·IndexError 만 잡는다. choices 가
-#   None 이면 TypeError 라 규칙기반 폴백으로 못 가고 그 라우트가 500 이 된다.
-#   설정 탭에서 AI 주소를 엉뚱한 JSON API 로 적어 두면 이 모양이 나올 수 있다.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.xfail(strict=True, reason="TypeError 가 except 절에 없어 500 으로 나간다")
-def test_AI_응답의_choices_가_null_이면_터진다(fresh_db, monkeypatch, real_integrations):
-    import io
-
-    import app.db as db
-    import app.integrations.ai as ai
-
-    class _Resp(io.BytesIO):
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    monkeypatch.setattr(ai, "AI_API_KEY", "sk-테스트")
-    db.set_setting("ai_base_url", "https://ai.invalid/v1")
-    db.set_setting("ai_model", "m")
-    monkeypatch.setattr(ai.urllib.request, "urlopen",
-                        lambda *a, **k: _Resp(b'{"choices": null}'))
-    assert ai.complete("s", "u") is None
-
-
-# ---------------------------------------------------------------------------
 # 결함 5. Things3 할일 제목에 탭이 들어가면 제목이 잘린다. (영향 작음)
 #   Today 목록을 '이름<TAB>태그<TAB>id' 로 직렬화해 읽는데, 제목 자체에 탭이 있으면
 #   그 뒤가 태그·id 자리로 밀려 화면에 제목 앞부분만 나온다.
