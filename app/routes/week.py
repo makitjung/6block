@@ -8,6 +8,7 @@ from app.common import (
     CORE_LABELS,
     KO_WEEKDAYS,
     KST,
+    SLOT_HAS_CONTENT,
     _ai_split,
     _name_override,
     _off_loop,
@@ -109,13 +110,24 @@ def _week_view(request: Request, monday: date):
             )
         ]
         # 슬롯 구분이 비면(NULL) 그 슬롯이 속한 블록 구분을 따른다(블록→슬롯 상속).
+        #
+        # 세는 대상은 '내용이 있는 슬롯'이다. 계획(do_text)·한 일(did_text)·완료 체크 중
+        # 하나라도 있어야 한다. 고정 할일이 채워 넣은 칸은 사람이 적은 것이 아니므로
+        # do_text 만으로는 안 세고, 체크했거나 한 일을 적었을 때만 센다
+        # (common._day_has_content 와 같은 기준).
+        #
+        # 그리고 categories 는 LEFT JOIN 이다. INNER JOIN 이던 시절에는 구분을 안 고른
+        # 슬롯이 통째로 빠져, 코어 블록에 하루를 다 쓰고도 '기록된 시간'이 0 이었다.
+        # 이제 구분이 없는 시간은 '미지정' 한 줄로 모아 보여 준다.
         cat_summary = conn.execute(
             f"""
-            SELECT c.name, c.tone, COUNT(s.id) AS slot_count
+            SELECT COALESCE(c.name, '미지정') AS name,
+                   COALESCE(c.tone, 'gray') AS tone,
+                   COUNT(s.id) AS slot_count
             FROM slots s
             JOIN blocks b ON b.id = s.block_id
-            JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id)
-            WHERE s.date IN ({placeholders})
+            LEFT JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id)
+            WHERE s.date IN ({placeholders}) AND {SLOT_HAS_CONTENT}
             GROUP BY c.id
             ORDER BY slot_count DESC
             """,

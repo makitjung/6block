@@ -45,6 +45,8 @@
     --tone-orange: #e8710a;
     --tone-purple: #9334e6;
     --tone-teal: #12a4af;
+    /* 구분을 안 고른 시간('미지정')용. 팔레트에는 없어서 설정에서 고를 수 없다. */
+    --tone-gray: #80868b;
     /* 캘린더 색 - 계획(노랑) / 모임·여행(빨강) */
     --cal-yellow: #f9ab00;
     --cal-red: #d93025;
@@ -106,6 +108,7 @@
     --tone-orange: #fcad70;
     --tone-purple: #d7aefb;
     --tone-teal: #5bd1d7;
+    --tone-gray: #9aa0a6;
     --cal-yellow: #fdd663;
     --cal-red: #f28b82;
     /* 다크에서는 톤 자체가 밝은 파스텔이라 덜 섞고, 글자는 흰색 쪽으로 밝힌다. */

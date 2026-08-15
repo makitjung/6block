@@ -616,88 +616,97 @@ def test_구분을_전부_지우면_고를_구분이_남지_않는다(client):
     assert client.get("/today").status_code == 200, "구분이 없으면 화면이 깨진다"
 
 
-# -- 주간 '기록된 시간' 집계 ---------------------------------------------------
+# -- 주간·분석 '기록된 시간' 집계 ------------------------------------------------
 
 
-def test_구분이_없는_슬롯은_기록된_시간에_잡히지_않는다(client):
-    """cat_summary 가 categories 와 INNER JOIN 이라, 슬롯도 블록도 구분이 비면 빠진다.
-
-    코어 블록 B1~B6 은 기본 구분이 없다. 그래서 구분을 안 고르고 일한 시간은
-    주간 '기록된 시간' KPI 에 한 시간도 반영되지 않는다.
-    """
-    client.get(f"/day/{MONDAY}")
-    슬롯 = _rows("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
-                "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 4", (MONDAY,))
-    for s in 슬롯:
-        client.post("/save/field", data={"entity": "slot", "id": s["id"],
-                                         "field": "do_text", "value": "구분 없이 한 일"})
-        client.post(f"/slot/done/{s['id']}", data={"done": "1"})
-
-    잡힌슬롯 = _one(
-        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
-        "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
-        "WHERE s.date = ?", (MONDAY,))["c"]
-    전체슬롯 = _one("SELECT COUNT(*) AS c FROM slots WHERE date = ?", (MONDAY,))["c"]
-    구분없는슬롯 = _one(
-        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
-        "WHERE s.date = ? AND COALESCE(s.category_id, b.category_id) IS NULL", (MONDAY,))["c"]
-
-    assert 구분없는슬롯 > 0
-    assert 잡힌슬롯 + 구분없는슬롯 == 전체슬롯
-    assert 잡힌슬롯 < 전체슬롯, (
-        f"구분 없는 슬롯 {구분없는슬롯}개가 집계에서 빠진다(전체 {전체슬롯}, 잡힌 것 {잡힌슬롯})"
-    )
-    assert client.get("/week").status_code == 200
-
-
-def test_기록된_시간_KPI는_구분이_붙은_슬롯_수만_센다(client):
-    """화면에 뜨는 숫자를 직접 읽어 확인한다.
-
-    점심·저녁 블록만 '기타'로 시드되므로, 아무것도 안 한 빈 주에도 24.5시간이 뜬다
-    (하루 3.5시간 x 7일). 반대로 코어 블록에 계획을 적고 완료를 체크해도 구분을
-    안 골랐으면 숫자가 1분도 올라가지 않는다.
-    """
+def _기록된시간(client):
+    """주간 화면에 실제로 찍히는 '기록된 시간' 숫자를 읽는다."""
     import re
 
-    def 기록된시간():
-        html = client.get("/week").text
-        m = re.search(r"기록된 시간.*?<strong>([\d.]+)</strong>h", html, re.S)
-        assert m, "주간 화면에서 '기록된 시간' 을 못 찾았다"
-        return float(m.group(1))
+    html = client.get("/week").text
+    m = re.search(r"기록된 시간.*?<strong>([\d.]+)</strong>h", html, re.S)
+    assert m, "주간 화면에서 '기록된 시간' 을 못 찾았다"
+    return float(m.group(1))
 
-    빈주 = 기록된시간()
-    assert 빈주 == 24.5, f"아무것도 안 한 주인데 {빈주}시간이 뜬다"
 
-    client.get(f"/day/{MONDAY}")
+def _내용있는슬롯(client, 개수, 날짜=None):
+    """코어 블록 슬롯에 계획을 적고 완료까지 체크한다(= 기록으로 잡히는 상태)."""
+    날짜 = 날짜 or MONDAY
+    client.get(f"/day/{날짜}")
     슬롯 = _rows("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
-                "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 6", (MONDAY,))
+               "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT ?",
+               (날짜, 개수))
     for s in 슬롯:
         client.post("/save/field", data={"entity": "slot", "id": s["id"],
                                          "field": "do_text", "value": "일함"})
         client.post(f"/slot/done/{s['id']}", data={"done": "1"})
-
-    기록후 = 기록된시간()
-    assert 기록후 == 빈주, (
-        f"코어 3시간을 계획·완료했는데 {빈주} → {기록후} 로 바뀌었다(지금 동작이 바뀐 것)"
-    )
+    return 슬롯
 
 
-def test_구분을_정하면_그_시간이_집계에_들어온다(client):
-    """위 테스트의 짝. 구분만 정해 주면 같은 슬롯이 곧바로 잡힌다."""
-    client.get(f"/day/{MONDAY}")
-    cat = _one("SELECT id FROM categories WHERE name = '코어'")
+def test_아무것도_안_한_주는_기록된_시간이_0이다(client):
+    """예전에는 점심·저녁 블록이 '기타'로 시드돼 빈 주에도 24.5시간이 떴다."""
+    assert _기록된시간(client) == 0.0
+
+
+def test_구분을_안_골라도_기록한_시간은_잡힌다(client):
+    """코어 블록 B1~B6 은 기본 구분이 없다. 예전에는 이 시간이 통째로 빠졌다."""
+    _내용있는슬롯(client, 6)
+    assert _기록된시간(client) == 3.0, "여섯 칸(3시간)을 기록했는데 숫자가 안 맞는다"
+
+
+def test_구분_없는_시간은_미지정_줄로_보인다(client):
+    _내용있는슬롯(client, 4)
+    html = client.get("/week").text
+    assert "미지정" in html, "구분 없는 시간이 어느 줄에도 안 나온다"
+    assert "var(--tone-gray)" in html, "미지정 줄에 색이 안 붙었다"
+
+
+def test_구분을_정하면_같은_시간이_그_구분으로_옮겨간다(client):
+    """총합은 그대로고 이름표만 '미지정' 에서 그 구분으로 바뀐다."""
+    _내용있는슬롯(client, 4)
+    before = _기록된시간(client)
+    assert "미지정" in client.get("/week").text
+
+    cat = _one("SELECT id, name FROM categories WHERE name = '코어'")
     block = _one("SELECT id FROM blocks WHERE date = ? AND block_label = 'B1'", (MONDAY,))
-    before = _one(
-        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
-        "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
-        "WHERE s.date = ?", (MONDAY,))["c"]
     client.post("/save/field", data={"entity": "block", "id": block["id"],
                                      "field": "bcat", "value": cat["id"]})
-    after = _one(
-        "SELECT COUNT(s.id) AS c FROM slots s JOIN blocks b ON b.id = s.block_id "
-        "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
-        "WHERE s.date = ?", (MONDAY,))["c"]
-    assert after > before, "블록 구분을 정했는데도 집계 슬롯 수가 그대로다"
+
+    assert _기록된시간(client) == before, "구분만 정했는데 총 시간이 달라졌다"
+    html = client.get("/week").text
+    assert "미지정" not in html, "구분을 다 정했는데 미지정 줄이 남아 있다"
+    assert cat["name"] in html
+
+
+def test_내용이_없는_슬롯은_구분이_있어도_안_센다(client):
+    """구분만 정해 두고 아무것도 안 한 시간이 '기록된 시간'에 잡히면 안 된다."""
+    client.get(f"/day/{MONDAY}")
+    cat = _one("SELECT id FROM categories WHERE name = '코어'")
+    for b in _rows("SELECT id FROM blocks WHERE date = ? AND is_core = 1", (MONDAY,)):
+        client.post("/save/field", data={"entity": "block", "id": b["id"],
+                                         "field": "bcat", "value": cat["id"]})
+    assert _기록된시간(client) == 0.0, "구분만 정했는데 시간이 잡힌다"
+
+
+def test_고정_할일이_채운_칸만으로는_안_센다(client):
+    """템플릿이 넣어 준 계획은 사람이 적은 것이 아니다. 체크하면 그때 센다."""
+    client.get(f"/day/{MONDAY}")
+    슬롯 = _one("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+              "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 1", (MONDAY,))
+    with db.get_conn() as conn:
+        conn.execute("UPDATE slots SET do_text = '고정 할일', is_routine = 1 WHERE id = ?",
+                     (슬롯["id"],))
+    assert _기록된시간(client) == 0.0
+    client.post(f"/slot/done/{슬롯['id']}", data={"done": "1"})
+    assert _기록된시간(client) == 0.5, "체크했는데도 안 센다"
+
+
+def test_분석_탭도_같은_기준으로_센다(client):
+    """주간과 분석의 총 시간이 갈리면 어느 쪽을 믿어야 할지 알 수 없다."""
+    _내용있는슬롯(client, 6, 날짜=TODAY)
+    html = client.get("/analytics").text
+    assert "미지정" in html, "분석 탭에 구분 없는 시간이 안 나온다"
+    assert "3.0" in html, "분석 탭 총 시간(3.0h)이 안 보인다"
 
 
 # -- 분석 -------------------------------------------------------------------

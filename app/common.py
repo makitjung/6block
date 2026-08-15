@@ -166,6 +166,17 @@ def _day_has_content(conn, date_str: str) -> bool:
     )
 
 
+# '내용이 있는 슬롯'인지 판정하는 SQL 조각. 슬롯 별칭이 s 인 쿼리에 그대로 끼워 넣는다.
+# 주간·분석의 '기록된 시간'과 구분별 분포가 이 하나를 같이 쓴다(두 화면 숫자가 갈리지 않게).
+# 계획(do_text)·한 일(did_text)·완료 체크 중 하나라도 있으면 기록으로 본다. 다만 고정
+# 할일이 채워 넣은 칸은 사람이 적은 것이 아니라, 체크했거나 한 일을 적었을 때만 센다
+# (_day_has_content 와 같은 기준).
+SLOT_HAS_CONTENT = (
+    "((s.is_routine = 0 AND TRIM(COALESCE(s.do_text, '')) != '') "
+    "OR TRIM(COALESCE(s.did_text, '')) != '' OR s.done = 1)"
+)
+
+
 def ensure_day_skeleton(conn, date_str: str):
     """블록·슬롯이 없으면 생성한다. 설정이 바뀌었고 입력이 없는 날은 새 배치로 자동 재생성한다."""
     if conn.execute(

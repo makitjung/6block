@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.common import (
     KO_WEEKDAYS,
     KST,
+    SLOT_HAS_CONTENT,
     _ko_weekday,
     _like_pattern,
     _off_loop,
@@ -185,11 +186,15 @@ def _analytics_data(rng: str) -> dict:
             start = (today - timedelta(days=days - 1)).strftime("%Y-%m-%d")
             range_label = f"최근 {days}일"
         # 슬롯 구분이 비면 블록 구분을 따라 집계한다(블록→슬롯 상속).
+        # 주간 탭과 같은 기준으로 '내용이 있는 슬롯'만 세고, 구분이 없는 시간은
+        # LEFT JOIN 으로 '미지정' 한 줄에 모은다(두 화면의 총 시간이 갈리지 않게).
         cat_rows = conn.execute(
-            "SELECT c.name, c.tone, COUNT(s.id) AS cnt "
+            "SELECT COALESCE(c.name, '미지정') AS name, "
+            "       COALESCE(c.tone, 'gray') AS tone, COUNT(s.id) AS cnt "
             "FROM slots s JOIN blocks b ON b.id = s.block_id "
-            "JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
-            "WHERE s.date >= ? AND s.date <= ? GROUP BY c.id ORDER BY cnt DESC",
+            "LEFT JOIN categories c ON c.id = COALESCE(s.category_id, b.category_id) "
+            f"WHERE s.date >= ? AND s.date <= ? AND {SLOT_HAS_CONTENT} "
+            "GROUP BY c.id ORDER BY cnt DESC",
             (start, today_s),
         ).fetchall()
         day_rows = conn.execute(
