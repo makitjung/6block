@@ -609,6 +609,38 @@ def test_구분이_없는_슬롯은_기록된_시간에_잡히지_않는다(clie
     assert client.get("/week").status_code == 200
 
 
+def test_기록된_시간_KPI는_구분이_붙은_슬롯_수만_센다(client):
+    """화면에 뜨는 숫자를 직접 읽어 확인한다.
+
+    점심·저녁 블록만 '기타'로 시드되므로, 아무것도 안 한 빈 주에도 24.5시간이 뜬다
+    (하루 3.5시간 x 7일). 반대로 코어 블록에 계획을 적고 완료를 체크해도 구분을
+    안 골랐으면 숫자가 1분도 올라가지 않는다.
+    """
+    import re
+
+    def 기록된시간():
+        html = client.get("/week").text
+        m = re.search(r"기록된 시간.*?<strong>([\d.]+)</strong>h", html, re.S)
+        assert m, "주간 화면에서 '기록된 시간' 을 못 찾았다"
+        return float(m.group(1))
+
+    빈주 = 기록된시간()
+    assert 빈주 == 24.5, f"아무것도 안 한 주인데 {빈주}시간이 뜬다"
+
+    client.get(f"/day/{MONDAY}")
+    슬롯 = _rows("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+                "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 6", (MONDAY,))
+    for s in 슬롯:
+        client.post("/save/field", data={"entity": "slot", "id": s["id"],
+                                         "field": "do_text", "value": "일함"})
+        client.post(f"/slot/done/{s['id']}", data={"done": "1"})
+
+    기록후 = 기록된시간()
+    assert 기록후 == 빈주, (
+        f"코어 3시간을 계획·완료했는데 {빈주} → {기록후} 로 바뀌었다(지금 동작이 바뀐 것)"
+    )
+
+
 def test_구분을_정하면_그_시간이_집계에_들어온다(client):
     """위 테스트의 짝. 구분만 정해 주면 같은 슬롯이 곧바로 잡힌다."""
     client.get(f"/day/{MONDAY}")
