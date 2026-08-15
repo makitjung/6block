@@ -10,14 +10,16 @@ from app.common import (
     KST,
     SLOT_HAS_CONTENT,
     _ai_split,
+    _join3,
     _name_override,
     _off_loop,
     _parse_date,
     _rule_distribute,
     _short_date,
-    _join3,
     _split3,
     ensure_day_skeleton,
+    int_id,
+    opt_id,
     templates,
     today_str,
     week_lt_items,
@@ -337,9 +339,10 @@ async def save_week(week_start_str: str, request: Request):
         }
         for key, val in form.multi_items():
             prefix, _, suffix = key.partition("_")
-            if not suffix.isdigit():
+            # 칸 이름 뒤 숫자가 행 id 다. 못 읽거나 범위를 벗어나면 맞는 행이 없으니 건너뛴다.
+            sid = opt_id(suffix)
+            if sid is None:
                 continue
-            sid = int(suffix)
             if prefix == "bname":
                 label = block_label_by_id.get(sid, "")
                 override = _name_override(val, weekly_name.get(label, ""))
@@ -348,7 +351,7 @@ async def save_week(week_start_str: str, request: Request):
                     (override, now, sid),
                 )
             elif prefix == "bcat":
-                cid = int(val) if val else None
+                cid = opt_id(val)
                 conn.execute(
                     "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, sid),
@@ -367,7 +370,7 @@ async def week_apply_template(request: Request):
     form = await request.form()
     ws = (form.get("week_start") or "").strip()
     try:
-        tid = int(form.get("template_id"))
+        tid = int_id(form.get("template_id"))
         monday = datetime.strptime(ws, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
@@ -452,7 +455,7 @@ async def week_item_to_theme(request: Request):
     ws = (form.get("week_start") or "").strip()
     label = (form.get("label") or "").strip()
     try:
-        item_id = int(form.get("item_id"))
+        item_id = int_id(form.get("item_id"))
         datetime.strptime(ws, "%Y-%m-%d")
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)

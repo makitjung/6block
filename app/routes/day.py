@@ -13,7 +13,9 @@ from app.common import (
     _parse_date,
     _split3,
     ensure_day_skeleton,
+    int_id,
     lt_leaves,
+    opt_id,
     templates,
     today_str,
     week_start,
@@ -357,9 +359,11 @@ async def save_day(date_str: str, request: Request):
         }
         for key, val in form.multi_items():
             prefix, _, suffix = key.partition("_")
-            if not suffix.isdigit():
+            # 칸 이름 뒤 숫자가 행 id 다. 못 읽거나 범위를 벗어나면 맞는 행이 없으니 건너뛴다
+            # (예전에는 아주 큰 숫자가 그대로 쿼리에 들어가 저장 전체가 500 이 됐다).
+            sid = opt_id(suffix)
+            if sid is None:
                 continue
-            sid = int(suffix)
             if prefix == "plan":
                 conn.execute(
                     "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
@@ -394,13 +398,13 @@ async def save_day(date_str: str, request: Request):
                     (val or None, now, sid),
                 )
             elif prefix == "cat":
-                cid = int(val) if val else None
+                cid = opt_id(val)
                 conn.execute(
                     "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, sid),
                 )
             elif prefix == "bcat":
-                cid = int(val) if val else None
+                cid = opt_id(val)
                 conn.execute(
                     "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, sid),
@@ -533,7 +537,7 @@ async def save_field(request: Request):
     rid = None
     if entity not in ("meta", "wmeta", "theme"):
         try:
-            rid = int(raw_id)
+            rid = int_id(raw_id)
         except (TypeError, ValueError):
             return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
 
@@ -564,7 +568,7 @@ async def save_field(request: Request):
                     (override, now, rid),
                 )
             elif field == "bcat":
-                cid = int(value) if value else None
+                cid = opt_id(value)
                 conn.execute(
                     "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
                     (cid, now, rid),
@@ -582,7 +586,7 @@ async def save_field(request: Request):
             # 다시 적용해도 덮이지 않는다). 자동저장은 그냥 지나가기만 해도(blur) 한 번 부르므로
             # 값이 실제로 달라졌을 때만 푼다. SQLite 는 SET 식을 옛 행 값으로 계산한다.
             if field == "cat":
-                cid = int(value) if value else None
+                cid = opt_id(value)
                 conn.execute(
                     "UPDATE slots SET category_id = ?, updated_at = ?, is_routine = "
                     "CASE WHEN COALESCE(category_id, -1) = COALESCE(?, -1) "
@@ -645,14 +649,15 @@ async def save_field(request: Request):
         elif entity == "ltgoal":
             # id=장기 항목 id, week_start=주 시작일. 목표 열에서 그 항목의 이번 주 계획.
             ws = (form.get("week_start") or "").strip()
-            if not _parse_date(ws) or not (form.get("id") or "").isdigit():
+            item_id = opt_id(form.get("id"))
+            if not _parse_date(ws) or item_id is None:
                 return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
             conn.execute(
                 "INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at) "
                 "VALUES (?, ?, ?, ?) "
                 "ON CONFLICT(week_start, item_id) DO UPDATE SET "
                 "goal_text = excluded.goal_text, updated_at = excluded.updated_at",
-                (ws, int(form.get("id")), value.strip(), now),
+                (ws, item_id, value.strip(), now),
             )
         elif entity == "theme":
             # id=week_start, label=블록 라벨(B1..B6), value=테마 텍스트
@@ -773,8 +778,8 @@ async def inbox_assign(request: Request):
     """수집함 항목을 한 블록의 PLAN 끝에 한 줄로 옮기고 수집함에서는 정리한다(GTD 정리 단계)."""
     form = await request.form()
     try:
-        item_id = int(form.get("item_id"))
-        block_id = int(form.get("block_id"))
+        item_id = int_id(form.get("item_id"))
+        block_id = int_id(form.get("block_id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
@@ -800,7 +805,7 @@ async def block_rollover(request: Request):
     """이 블록의 PLAN을 다음 날 같은 블록 PLAN 끝에 복사한다(미룬 계획 이월)."""
     form = await request.form()
     try:
-        block_id = int(form.get("block_id"))
+        block_id = int_id(form.get("block_id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")

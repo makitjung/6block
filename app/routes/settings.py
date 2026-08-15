@@ -13,10 +13,12 @@ from fastapi.responses import JSONResponse, Response
 from app.common import (
     BASE_DIR,
     CORE_LABELS,
-    KST,
     KO_WEEKDAYS,
+    KST,
     _off_loop,
     asset_ver,
+    int_id,
+    opt_id,
     templates,
     today_str,
 )
@@ -448,7 +450,7 @@ def _hides_last_category(conn, cid: int) -> bool:
 async def settings_cat_update(request: Request):
     form = await request.form()
     try:
-        cid = int(form.get("id"))
+        cid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     fields = {}
@@ -475,7 +477,7 @@ async def settings_cat_update(request: Request):
 async def settings_cat_move(request: Request):
     form = await request.form()
     try:
-        cid = int(form.get("id"))
+        cid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     direction = form.get("dir")
@@ -507,7 +509,7 @@ async def settings_cat_delete(request: Request):
     """카테고리를 숨김 처리한다(소프트 삭제). 슬롯·블록의 기존 참조는 보존된다."""
     form = await request.form()
     try:
-        cid = int(form.get("id"))
+        cid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     with get_conn() as conn:
@@ -558,7 +560,7 @@ async def settings_template_rename(request: Request):
     """구분 템플릿 이름을 바꾼다."""
     form = await request.form()
     try:
-        tid = int(form.get("id"))
+        tid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     name = (form.get("name") or "").strip()
@@ -578,7 +580,7 @@ async def settings_template_delete(request: Request):
     """구분 템플릿과 그 셀을 함께 삭제한다."""
     form = await request.form()
     try:
-        tid = int(form.get("id"))
+        tid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     with get_conn() as conn:
@@ -591,15 +593,14 @@ async def settings_template_cell(request: Request):
     """템플릿 한 칸(요일 0~6 × 코어블록)의 구분을 저장한다. 값이 비면 미지정."""
     form = await request.form()
     try:
-        tid = int(form.get("template_id"))
+        tid = int_id(form.get("template_id"))
         weekday = int(form.get("weekday"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     label = (form.get("block_label") or "").strip()
     if not (0 <= weekday <= 6) or label not in CORE_LABELS:
         return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
-    raw = form.get("category_id")
-    cid = int(raw) if raw else None
+    cid = opt_id(form.get("category_id"))
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO cat_template_cell "
@@ -626,7 +627,7 @@ async def settings_routine_add(request: Request):
     """빈 고정 할일 규칙 한 줄을 템플릿에 추가하고 생성된 id를 돌려준다."""
     form = await request.form()
     try:
-        tid = int(form.get("template_id"))
+        tid = int_id(form.get("template_id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     times = _routine_times()
@@ -649,7 +650,7 @@ async def settings_routine_save(request: Request):
     """고정 할일 규칙 한 줄(요일·시작시각·칸 수·할일·구분)을 저장한다."""
     form = await request.form()
     try:
-        rid = int(form.get("id"))
+        rid = int_id(form.get("id"))
         span = int(form.get("span") or 1)
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
@@ -666,7 +667,7 @@ async def settings_routine_save(request: Request):
                 start,
                 min(4, max(1, span)),
                 (form.get("do_text") or "").strip(),
-                int(raw_cat) if raw_cat else None,
+                opt_id(raw_cat),
                 rid,
             ),
         )
@@ -678,7 +679,7 @@ async def settings_routine_delete(request: Request):
     """고정 할일 규칙 한 줄을 지운다(이미 채워 둔 칸은 그대로 남는다)."""
     form = await request.form()
     try:
-        rid = int(form.get("id"))
+        rid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     with get_conn() as conn:

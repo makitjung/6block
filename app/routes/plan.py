@@ -4,7 +4,13 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.common import KST, _parse_date, templates
+from app.common import (
+    KST,
+    _parse_date,
+    int_id,
+    opt_id,
+    templates,
+)
 from app.config import CORE_BLOCKS, TONE_KEYS, TONES, area_tone
 from app.db import get_conn, get_day_blocks
 
@@ -499,7 +505,7 @@ async def plan_item_add(request: Request):
     end = _parse_date(form.get("end")) or start
     raw_parent = (form.get("parent_id") or "").strip()
     try:
-        area_id = int(form.get("area_id"))
+        area_id = int_id(form.get("area_id"))
     except (TypeError, ValueError):
         area_id = 0
     if not title:
@@ -515,7 +521,7 @@ async def plan_item_add(request: Request):
         parent_id = None
         if raw_parent:
             try:
-                pid = int(raw_parent)
+                pid = int_id(raw_parent)
             except ValueError:
                 return JSONResponse({"ok": False, "error": "상위 항목 값이 잘못됨"},
                                     status_code=400)
@@ -546,7 +552,7 @@ async def plan_item_update(request: Request):
     """간트 항목의 제목·기간·진척률·블록을 고친다(보낸 값만 바꾼다)."""
     form = await request.form()
     try:
-        item_id = int(form.get("id"))
+        item_id = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
     fields: dict = {}
@@ -624,7 +630,7 @@ async def plan_item_shift(request: Request):
     """
     form = await request.form()
     try:
-        item_id = int(form.get("id"))
+        item_id = int_id(form.get("id"))
         days = int(form.get("days"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
@@ -662,7 +668,7 @@ async def plan_item_resize(request: Request):
     """
     form = await request.form()
     try:
-        item_id = int(form.get("id"))
+        item_id = int_id(form.get("id"))
         days = int(form.get("days"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
@@ -708,8 +714,8 @@ async def plan_item_order(request: Request):
     """
     form = await request.form()
     try:
-        item_id = int(form.get("id"))
-        peer_id = int(form.get("peer"))
+        item_id = int_id(form.get("id"))
+        peer_id = int_id(form.get("peer"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     place = (form.get("place") or "before").strip()
@@ -763,7 +769,7 @@ async def plan_item_reparent(request: Request):
     """
     form = await request.form()
     try:
-        item_id = int(form.get("id"))
+        item_id = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     raw_parent = (form.get("parent_id") or "").strip()
@@ -779,7 +785,7 @@ async def plan_item_reparent(request: Request):
         kin = _lt_descendants(conn, item_id)
         if raw_parent:
             try:
-                pid = int(raw_parent)
+                pid = int_id(raw_parent)
             except ValueError:
                 return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
             if pid == item_id or pid in kin:
@@ -796,7 +802,7 @@ async def plan_item_reparent(request: Request):
             new_parent, new_area = pid, prow["area_id"]
         else:
             try:
-                new_area = int(raw_area)
+                new_area = int_id(raw_area)
             except (TypeError, ValueError):
                 return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
             if not conn.execute(
@@ -826,7 +832,7 @@ async def plan_item_delete(request: Request):
     """간트 항목을 지운다. 하위 항목도 함께 지워지고 상위 기간은 다시 계산된다."""
     form = await request.form()
     try:
-        item_id = int(form.get("id"))
+        item_id = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
     with get_conn() as conn:
@@ -858,7 +864,7 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
     a = _parse_anchor(anchor)
     # focus = 방금 끌어 옮긴 항목. 그 항목이 보이는 기간 밖으로 나갔으면 화면을 그쪽으로
     # 옮겨 준다. 안 그러면 끌던 막대가 그냥 사라진 것처럼 보인다.
-    focus_id = int(focus) if focus.isdigit() else 0
+    focus_id = opt_id(focus) or 0
     if focus_id:
         with get_conn() as conn:
             r = conn.execute(
@@ -969,7 +975,7 @@ async def plan_area_update(request: Request):
     """영역 이름이나 막대 색(tone)을 바꾼다. 보낸 값만 고친다."""
     form = await request.form()
     try:
-        cid = int(form.get("id"))
+        cid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     fields: dict = {}
@@ -992,7 +998,7 @@ async def plan_area_update(request: Request):
 async def plan_area_move(request: Request):
     form = await request.form()
     try:
-        cid = int(form.get("id"))
+        cid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     direction = form.get("dir")
@@ -1020,7 +1026,7 @@ async def plan_area_delete(request: Request):
     """영역을 숨김 처리(소프트 삭제)한다. 그 영역의 계획 내용은 보존된다."""
     form = await request.form()
     try:
-        cid = int(form.get("id"))
+        cid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     with get_conn() as conn:

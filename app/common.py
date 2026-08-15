@@ -25,6 +25,30 @@ SQLITE_MAX_INT = 9223372036854775807
 RowId = Annotated[int, PathParam(ge=1, le=SQLITE_MAX_INT)]
 
 
+def int_id(value) -> int:
+    """폼으로 온 '반드시 있어야 하는' 행 id. 못 읽거나 범위를 벗어나면 ValueError.
+
+    부르는 쪽은 이미 (TypeError, ValueError) 를 400 으로 돌려주고 있어 그대로 걸린다.
+    범위를 안 보면 큰 수가 쿼리 매개변수로 들어가 sqlite3 가 OverflowError 를 내고
+    화면이 500 이 된다(주소로 오는 id 는 RowId 가 같은 일을 한다).
+    """
+    n = int(value)
+    if not (1 <= n <= SQLITE_MAX_INT):
+        raise ValueError(f"행 id 범위를 벗어남: {n}")
+    return n
+
+
+def opt_id(value) -> int | None:
+    """폼으로 온 '비울 수 있는' 행 id(구분·상위 항목처럼). 비었거나 못 쓸 값이면 None.
+
+    여기서 예외를 내면 칸 하나가 이상하다고 저장 전체가 막힌다. 지정 없음으로 본다.
+    """
+    try:
+        return int_id(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _off_loop(fn, *args, **kwargs):
     """구글 API·AppleScript·AI 호출처럼 느린 동기 함수를 스레드풀에서 실행한다.
 

@@ -103,6 +103,35 @@ def test_모든_POST_가_쓰레기_값에_500을_내지_않는다(client, route)
     assert res.status_code != 500, f"{route.path} → 500 (쓰레기 값)"
 
 
+# 폼으로 오는 id 이름을 모두 모았다. 라우트는 자기가 쓰는 것만 form.get 으로 꺼내므로
+# 한꺼번에 보내도 된다. 나머지 칸은 검증을 통과할 만한 값으로 채워 쿼리까지 닿게 한다.
+ID_FIELDS = ("id", "item_id", "block_id", "peer", "parent_id", "area_id",
+             "template_id", "category_id", "slot_id")
+OUT_OF_RANGE = "9223372036854775808"        # SQLite 최대값 + 1
+
+
+@pytest.mark.parametrize("route", POST_ROUTES, ids=_ids(POST_ROUTES))
+def test_폼의_id가_SQLite_범위를_넘어도_500이_아니다(client, route):
+    """큰 수를 그대로 쿼리에 넣으면 sqlite3 가 OverflowError 를 내 화면이 500 이 된다.
+
+    경로로 오는 id 는 RowId 가 막지만, 폼으로 오는 id 는 라우트마다 int() 로 읽는다.
+    한 곳만 빠져도 그 버튼이 500 이 되므로 전 라우트를 함께 확인한다.
+    """
+    data = {
+        "title": "테스트", "name": "테스트", "text": "테스트", "value": "1",
+        "start": "2026-08-01", "end": "2026-08-31", "date": "2026-08-15",
+        "week_start": "2026-08-10", "days": "1", "edge": "end", "place": "before",
+        "dir": "up", "tone": "blue", "block": "B1", "block_label": "B1",
+        "weekday": "0", "span": "1", "do_text": "x", "weekdays": "0",
+        "start_time": "07:30", "progress": "10", "entity": "slot",
+        "field": "do_text", "label": "B1", "note": "x", "kind": "고민",
+        "done": "1", "content": "K=V\n", "rng": "7", "scope": "",
+    }
+    data.update({k: OUT_OF_RANGE for k in ID_FIELDS})
+    res = client.post(_fill(route.path, GOOD_PARAM), data=data)
+    assert res.status_code != 500, f"{route.path} → 500 (범위 밖 id)"
+
+
 @pytest.mark.parametrize("route", POST_ROUTES, ids=_ids(POST_ROUTES))
 def test_모든_POST_가_다른_출처에서_오면_403(client, route):
     """CSRF 가드는 라우트마다가 아니라 미들웨어라, 하나라도 새면 전부 새는 구조다."""
