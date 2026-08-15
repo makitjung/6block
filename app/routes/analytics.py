@@ -197,6 +197,13 @@ def _analytics_data(rng: str) -> dict:
             "GROUP BY c.id ORDER BY cnt DESC",
             (start, today_s),
         ).fetchall()
+        # 날짜별 완료율. HAVING 으로 '내용이 있는 날'만 남긴다.
+        #
+        # 화면을 한 번 열기만 해도 그날 골격(블록·슬롯)이 만들어진다. 주간 탭은 7일치를
+        # 한꺼번에 만든다. 그래서 예전에는 아무것도 안 적은 날까지 여기에 줄줄이 섞여,
+        # '기록한 날'이 실제로는 열어만 본 날 수가 되고(빈 주에 6일), 그 0% 짜리 날들이
+        # 평균 완료율까지 끌어내렸다(하루를 100% 채워도 17%). 추세 막대에도 0% 기둥이
+        # 늘어서 '그날 다 흘려보냈다'처럼 보였다.
         day_rows = conn.execute(
             "SELECT date, "
             "SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) AS done_cnt, "
@@ -205,7 +212,9 @@ def _analytics_data(rng: str) -> dict:
             "SUM(CASE WHEN (is_routine = 0 AND ((do_text IS NOT NULL AND TRIM(do_text) != '') "
             "                                   OR category_id IS NOT NULL)) "
             "         OR done = 1 THEN 1 ELSE 0 END) AS planned_cnt "
-            "FROM slots WHERE date >= ? AND date <= ? GROUP BY date ORDER BY date",
+            "FROM slots s WHERE date >= ? AND date <= ? GROUP BY date "
+            f"HAVING SUM(CASE WHEN {SLOT_HAS_CONTENT} THEN 1 ELSE 0 END) > 0 "
+            "ORDER BY date",
             (start, today_s),
         ).fetchall()
         pd_rows = conn.execute(
@@ -229,12 +238,14 @@ def _analytics_data(rng: str) -> dict:
             "  AND b.date >= ? AND b.date <= ? GROUP BY b.block_label ORDER BY ord",
             (start, today_s),
         ).fetchall()
+        # 연속 기록(streak)용. 기간과 무관하게 전체 기록일이 필요하다.
+        # 판정은 위 HAVING·주간 '기록된 시간'과 같은 SLOT_HAS_CONTENT 하나를 쓴다.
+        # 예전에는 여기만 '한 일(did_text)'을 빼고 세어서, 같은 화면의 세 숫자가
+        # 저마다 다른 기준으로 '기록한 날'을 판단했다.
         rec_dates = {
             r[0]
             for r in conn.execute(
-                "SELECT DISTINCT date FROM slots "
-                "WHERE (do_text IS NOT NULL AND TRIM(do_text) != '' AND is_routine = 0) "
-                "   OR done = 1"
+                f"SELECT DISTINCT date FROM slots s WHERE {SLOT_HAS_CONTENT}"
             )
         }
         funnel = _exec_funnel(conn, start, today_s)

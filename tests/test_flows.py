@@ -766,6 +766,64 @@ def test_고정_할일이_채운_칸만으로는_안_센다(client):
     assert _기록된시간(client) == 0.5, "체크했는데도 안 센다"
 
 
+def _분석KPI(client, 이름):
+    """분석 화면 KPI 줄에서 숫자 하나를 읽는다."""
+    import re
+
+    html = client.get("/analytics").text
+    m = re.search(이름 + r".*?<strong>([\d.]+)</strong>", html, re.S)
+    assert m, f"분석 화면에서 '{이름}' 을 못 찾았다"
+    return float(m.group(1))
+
+
+def test_화면만_열어_본_날은_기록한_날로_안_센다(client):
+    """주간 탭을 한 번 열면 그 주 7일치 골격이 만들어진다. 그게 기록은 아니다."""
+    client.get("/week")
+    assert _분석KPI(client, "기록한 날") == 0
+    assert _분석KPI(client, "연속 기록") == 0
+    assert _분석KPI(client, "평균 완료율") == 0
+
+
+def test_하루를_채우면_기록한_날과_완료율이_맞는다(client):
+    client.get("/week")
+    _내용있는슬롯(client, 6, 날짜=TODAY)
+    assert _분석KPI(client, "기록한 날") == 1
+    assert _분석KPI(client, "연속 기록") == 1
+    assert _분석KPI(client, "평균 완료율") == 100
+
+
+def test_빈_날이_평균_완료율을_끌어내리지_않는다(client):
+    """예전에는 골격만 있는 빈 날이 0%로 섞여 하루를 다 채워도 17% 가 됐다."""
+    client.get("/week")
+    _내용있는슬롯(client, 6, 날짜=TODAY)
+    assert _분석KPI(client, "평균 완료율") == 100, "빈 날이 평균에 섞였다"
+    assert _분석KPI(client, "기록한 날") == 1
+
+
+def test_한_일만_적은_날도_기록한_날이다(client):
+    """세 숫자가 같은 기준(SLOT_HAS_CONTENT)을 쓰는지 본다."""
+    client.get("/week")
+    slot = _one("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+                "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 1", (TODAY,))
+    client.post("/save/field", data={"entity": "slot", "id": slot["id"],
+                                     "field": "did_text", "value": "계획엔 없었지만 한 일"})
+    assert _분석KPI(client, "기록한 날") == 1
+    assert _분석KPI(client, "연속 기록") == 1
+    assert _분석KPI(client, "기록된 시간") == 0.5
+
+
+def test_고정_할일만_있는_날은_기록한_날이_아니다(client):
+    client.get("/week")
+    slot = _one("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+                "WHERE s.date = ? AND b.is_core = 1 ORDER BY s.slot_index LIMIT 1", (TODAY,))
+    with db.get_conn() as conn:
+        conn.execute("UPDATE slots SET do_text = '고정 할일', is_routine = 1 WHERE id = ?",
+                     (slot["id"],))
+    assert _분석KPI(client, "기록한 날") == 0
+    client.post(f"/slot/done/{slot['id']}", data={"done": "1"})
+    assert _분석KPI(client, "기록한 날") == 1, "체크했는데도 안 센다"
+
+
 def test_분석_탭도_같은_기준으로_센다(client):
     """주간과 분석의 총 시간이 갈리면 어느 쪽을 믿어야 할지 알 수 없다."""
     _내용있는슬롯(client, 6, 날짜=TODAY)
