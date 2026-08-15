@@ -31,16 +31,7 @@ def test_parse_date_에_문자열이_아닌_값이_오면_터진다():
     assert _parse_date(20260815) is None
 
 
-# ---------------------------------------------------------------------------
-# 결함 5. Things3 할일 제목에 탭이 들어가면 제목이 잘린다. (영향 작음)
-#   Today 목록을 '이름<TAB>태그<TAB>id' 로 직렬화해 읽는데, 제목 자체에 탭이 있으면
-#   그 뒤가 태그·id 자리로 밀려 화면에 제목 앞부분만 나온다.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.xfail(strict=True, reason="탭이 필드 구분자라 제목 안의 탭에서 잘린다")
-def test_할일_제목에_탭이_있으면_제목이_잘린다(monkeypatch, real_integrations):
-    import app.integrations.things as things
-
-    monkeypatch.setattr(things, "_run", lambda *a, **k: (0, "앞\t뒤\t태그A\tID123\n"))
-    assert things._today_names()[0]["name"] == "앞\t뒤"
+# 결함 1(잘못된 날짜 500), 2(기록된 시간 KPI), 3(마지막 구분 삭제), 4(AI TypeError),
+# 6(범위 밖 id 500), 7(할일 제목 탭 잘림)은 고쳤다. 그 동작은 각각
+# tests/test_flows.py 와 tests/test_integrations.py 가 지킨다.
+# 5(폰에서 포모도로 다이얼이 입력칸을 덮음)는 그대로 두기로 했다.

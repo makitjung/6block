@@ -50,7 +50,9 @@ def _today_names():
     for ln in out.splitlines():
         if not ln.strip():
             continue
-        parts = ln.split("\t")
+        # 뒤에서부터 두 번만 자른다. 제목 자체에 탭이 들어 있어도(Things3 에서 붙여넣기로
+        # 들어오는 일이 있다) 제목이 잘리지 않고, 태그·id 는 늘 마지막 두 칸이라 그대로 맞는다.
+        parts = ln.rsplit("\t", 2)
         name = parts[0].strip()
         if not name:
             continue

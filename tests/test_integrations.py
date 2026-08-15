@@ -176,6 +176,25 @@ def test_태그와_id_가_없어도_읽는다(monkeypatch, real_integrations):
     assert items == [{"name": "제목만", "tags": [], "id": ""}]
 
 
+def test_할일_제목에_탭이_있어도_제목이_안_잘린다(monkeypatch, real_integrations):
+    """구분자가 탭이라, 앞에서부터 자르면 제목 안의 탭에서 잘려 나갔다."""
+    monkeypatch.setattr(things, "_run", lambda *a, **k: (0, "앞\t뒤\t태그A\tID123\n"))
+    assert things._today_names() == [
+        {"name": "앞\t뒤", "tags": ["태그A"], "id": "ID123"}]
+
+
+def test_제목에_탭이_여러_개여도_태그와_id는_제자리다(monkeypatch, real_integrations):
+    monkeypatch.setattr(things, "_run",
+                        lambda *a, **k: (0, "a\tb\tc\td\t태그1, 태그2\tXYZ\n"))
+    assert things._today_names() == [
+        {"name": "a\tb\tc\td", "tags": ["태그1", "태그2"], "id": "XYZ"}]
+
+
+def test_태그가_비어_있어도_id는_제자리다(monkeypatch, real_integrations):
+    monkeypatch.setattr(things, "_run", lambda *a, **k: (0, "앞\t뒤\t\tID9\n"))
+    assert things._today_names() == [{"name": "앞\t뒤", "tags": [], "id": "ID9"}]
+
+
 def test_빈_제목_할일은_보내지_않는다(monkeypatch, real_integrations):
     불렸나 = {"n": 0}
 
