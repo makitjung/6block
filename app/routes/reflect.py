@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.common import KST, _like_pattern, _off_loop, templates, today_str
+from app.common import KST, RowId, _like_pattern, _off_loop, templates, today_str
 from app.db import get_conn, uid_from_created
 from app.integrations import gcal_write
 
@@ -285,7 +285,7 @@ async def reflect_add(request: Request):
 
 
 @router.post("/reflect/sync/{item_id}")
-def reflect_sync(item_id: int):
+def reflect_sync(item_id: RowId):
     """캘린더 반영에 실패했던 항목을 다시 시도한다."""
     event_id = None
     with get_conn() as conn:
@@ -310,7 +310,7 @@ def reflect_sync(item_id: int):
 
 
 @router.post("/reflect/update/{item_id}")
-async def reflect_update(item_id: int, request: Request):
+async def reflect_update(item_id: RowId, request: Request):
     """종류·제목·내용·태그·다시 볼 날짜를 수정하고, 구글 이벤트와 다시보기 사본까지 함께 맞춘다."""
     form = await request.form()
     now = datetime.now(KST).isoformat(timespec="seconds")
@@ -407,7 +407,7 @@ async def reflect_update(item_id: int, request: Request):
 
 
 @router.post("/reflect/delete/{item_id}")
-def reflect_delete(item_id: int):
+def reflect_delete(item_id: RowId):
     """기록을 삭제하고 캘린더 이벤트도 함께 지운다. 원본을 지우면 다시보기 사본도,
     사본을 지우면 원본의 '다시 볼 날짜'를 함께 정리한다."""
     with get_conn() as conn:
@@ -441,7 +441,7 @@ def reflect_delete(item_id: int):
 
 
 @router.post("/reflect/review-note/{item_id}")
-async def reflect_review_note(item_id: int, request: Request):
+async def reflect_review_note(item_id: RowId, request: Request):
     """다시보기 내용을 저장하고, 사본 캘린더 이벤트에 다시보기 내용을 우선 반영한다."""
     form = await request.form()
     note = (form.get("note") or "").strip()

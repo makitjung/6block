@@ -4,8 +4,10 @@ import json
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
+from fastapi import Path as PathParam
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
@@ -15,6 +17,12 @@ from app.integrations import ai
 
 KST = ZoneInfo("Asia/Seoul")
 BASE_DIR = Path(__file__).parent
+
+# 주소에 오는 행 id(/slot/done/12 의 12). FastAPI 는 자릿수가 아무리 길어도 파이썬 int 로
+# 잘 바꿔 주지만, SQLite 는 64비트를 넘는 정수를 못 받아 OverflowError 로 500 이 된다.
+# 범위를 벗어나거나 0·음수면 쿼리까지 가기 전에 422 로 거절한다.
+SQLITE_MAX_INT = 9223372036854775807
+RowId = Annotated[int, PathParam(ge=1, le=SQLITE_MAX_INT)]
 
 
 async def _off_loop(fn, *args, **kwargs):

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.common import (
     KST,
+    RowId,
     _join3,
     _name_override,
     _off_loop,
@@ -711,14 +712,14 @@ async def inbox_add(request: Request):
 
 
 @router.post("/inbox/done/{item_id}")
-def inbox_done(item_id: int):
+def inbox_done(item_id: RowId):
     with get_conn() as conn:
         conn.execute("UPDATE inbox SET done = 1 WHERE id = ?", (item_id,))
     return JSONResponse({"ok": True})
 
 
 @router.post("/inbox/delete/{item_id}")
-def inbox_delete(item_id: int):
+def inbox_delete(item_id: RowId):
     """수집함 항목을 완전히 삭제한다(정리 ✓와 달리 DB에서 지움)."""
     with get_conn() as conn:
         conn.execute("DELETE FROM inbox WHERE id = ?", (item_id,))
@@ -862,7 +863,7 @@ async def meta_tomorrow_goal(request: Request):
 
 
 @router.post("/slot/done/{slot_id}")
-async def slot_done(slot_id: int, request: Request):
+async def slot_done(slot_id: RowId, request: Request):
     """DO 옆 체크박스. 즉시 저장(폼 저장과 별개)."""
     form = await request.form()
     val = 1 if (form.get("done") in ("1", "true", "on")) else 0

@@ -92,6 +92,31 @@ def test_잘못된_날짜로_저장하면_그_날짜_행이_생기지_않는다(
     assert 이상한날짜 == [], 이상한날짜
 
 
+# -- 주소의 id 가 범위를 벗어났을 때 --------------------------------------------
+
+ID_ROUTES = ["/slot/done/{}", "/inbox/done/{}", "/inbox/delete/{}",
+             "/reflect/sync/{}", "/reflect/update/{}", "/reflect/delete/{}",
+             "/reflect/review-note/{}"]
+
+
+@pytest.mark.parametrize("path", ID_ROUTES)
+@pytest.mark.parametrize("bad", [
+    "99999999999999999999",                    # SQLite 64비트 범위 초과
+    "9223372036854775808",                     # 딱 한 칸 초과
+    "0", "-1", "-9999999999999999999999",
+])
+def test_범위_밖의_id는_422로_거절한다(client, path, bad):
+    res = client.post(path.format(bad), data={})
+    assert res.status_code == 422, f"{path.format(bad)} → {res.status_code}"
+
+
+@pytest.mark.parametrize("path", ID_ROUTES)
+def test_범위_안이지만_없는_id는_500이_아니다(client, path):
+    """SQLite 최대값은 정상 범위다. 없는 행일 뿐이라 조용히 넘어가야 한다."""
+    res = client.post(path.format("9223372036854775807"), data={})
+    assert res.status_code != 500, res.status_code
+
+
 # -- 오늘 탭 저장 ------------------------------------------------------------
 
 

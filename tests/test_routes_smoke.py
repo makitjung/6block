@@ -72,15 +72,7 @@ def test_GET_경로_매개변수가_이상해도_500이_아니다(client, route,
     assert res.status_code != 500, f"{path} → 500 (처리 안 된 예외)"
 
 
-# 아주 큰 정수 id 에 500 을 내는 라우트(확인됨). test_known_defects.py 가 못 박아 두었으므로
-# 전수 점검에서는 빼서 나머지 라우트의 회귀를 계속 지킨다.
-BROKEN_POST_ROUTES = {
-    "/slot/done/{slot_id}", "/inbox/done/{item_id}", "/inbox/delete/{item_id}",
-    "/reflect/sync/{item_id}", "/reflect/update/{item_id}",
-    "/reflect/delete/{item_id}", "/reflect/review-note/{item_id}",
-}
-
-_PARAM_POSTS = [r for r in POST_ROUTES if "{" in r.path and r.path not in BROKEN_POST_ROUTES]
+_PARAM_POSTS = [r for r in POST_ROUTES if "{" in r.path]
 
 
 @pytest.mark.parametrize("bad", BAD_PARAM_VALUES)

@@ -5,25 +5,6 @@ import pytest
 from app.common import _parse_date, _rule_distribute, lt_tree_order
 
 # ---------------------------------------------------------------------------
-# 결함 2. id 가 SQLite 정수 범위를 넘으면 500 이 된다. (화면에서는 도달 불가)
-#   OverflowError: Python int too large to convert to SQLite INTEGER.
-#   FastAPI 가 int 로는 잘 바꿔 주지만 SQLite 가 못 받는다.
-# ---------------------------------------------------------------------------
-
-HUGE = "99999999999999999999"
-
-
-@pytest.mark.xfail(strict=True, reason="큰 정수 id 를 SQLite 가 못 받아 OverflowError 가 500 으로 나간다")
-@pytest.mark.parametrize("path", [
-    "/slot/done/{}", "/inbox/done/{}", "/inbox/delete/{}",
-    "/reflect/sync/{}", "/reflect/update/{}", "/reflect/delete/{}",
-    "/reflect/review-note/{}",
-])
-def test_아주_큰_id_로_부르면_500이_난다(client, path):
-    assert client.post(path.format(HUGE), data={}).status_code != 500
-
-
-# ---------------------------------------------------------------------------
 # 결함 3. 순수 함수의 잠재 결함. 지금은 호출부가 막고 있어 화면에서는 도달할 수 없다.
 #   막고 있는 곳을 손댈 때 여기가 먼저 알려 준다.
 # ---------------------------------------------------------------------------
