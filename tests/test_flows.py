@@ -1,0 +1,677 @@
+# 통합 테스트. 화면에서 실제로 하는 일(저장·이동·삭제)을 HTTP 로 그대로 밟아 DB 까지 확인한다.
+import datetime
+import json
+
+import pytest
+
+import app.db as db
+from app.common import today_str, week_start
+
+TODAY = today_str()
+MONDAY = week_start(datetime.date.today()).strftime("%Y-%m-%d")
+
+
+def _rows(sql, params=()):
+    with db.get_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def _one(sql, params=()):
+    rows = _rows(sql, params)
+    return rows[0] if rows else None
+
+
+# -- 하루 골격 --------------------------------------------------------------
+
+
+def test_오늘_화면이_하루_골격을_만든다(client):
+    assert client.get("/today").status_code == 200
+    blocks = _rows("SELECT * FROM blocks WHERE date = ? ORDER BY block_order", (TODAY,))
+    slots = _rows("SELECT * FROM slots WHERE date = ? ORDER BY slot_index", (TODAY,))
+    assert len(blocks) == 8
+    assert [b["block_label"] for b in blocks][:2] == ["B1", "B2"]
+    assert len(slots) == 31, f"기본 시간표의 30분 슬롯 개수가 달라졌다: {len(slots)}"
+    assert [s["slot_index"] for s in slots] == list(range(len(slots)))
+
+
+def test_골격을_두_번_열어도_중복되지_않는다(client):
+    client.get("/today")
+    n1 = len(_rows("SELECT id FROM blocks WHERE date = ?", (TODAY,)))
+    client.get("/today")
+    client.get(f"/day/{TODAY}")
+    n2 = len(_rows("SELECT id FROM blocks WHERE date = ?", (TODAY,)))
+    assert n1 == n2 == 8
+
+
+def test_점심_저녁_블록은_기타_구분으로_시드된다(client):
+    client.get("/today")
+    etc = _one("SELECT id FROM categories WHERE name = '기타'")
+    for label in ("점심", "저녁"):
+        row = _one("SELECT category_id FROM blocks WHERE date = ? AND block_label = ?",
+                   (TODAY, label))
+        assert row["category_id"] == etc["id"], f"{label} 블록 구분이 기타가 아니다"
+
+
+# -- 오늘 탭 저장 ------------------------------------------------------------
+
+
+def test_슬롯_do_저장이_왕복한다(client):
+    client.get("/today")
+    slot = _one("SELECT id FROM slots WHERE date = ? ORDER BY slot_index LIMIT 1", (TODAY,))
+    res = client.post("/save/field", data={
+        "entity": "slot", "id": slot["id"], "field": "do_text", "value": "테스트 할 일",
+    })
+    assert res.status_code == 200, res.text
+    assert _one("SELECT do_text FROM slots WHERE id = ?", (slot["id"],))["do_text"] == "테스트 할 일"
+    assert "테스트 할 일" in client.get("/today").text
+
+
+def test_슬롯_완료_토글(client):
+    client.get("/today")
+    slot = _one("SELECT id FROM slots WHERE date = ? LIMIT 1", (TODAY,))
+    client.post(f"/slot/done/{slot['id']}", data={"done": "1"})
+    assert _one("SELECT done FROM slots WHERE id = ?", (slot["id"],))["done"] == 1
+    client.post(f"/slot/done/{slot['id']}", data={"done": "0"})
+    assert _one("SELECT done FROM slots WHERE id = ?", (slot["id"],))["done"] == 0
+
+
+def test_허용되지_않은_필드는_거절한다(client):
+    """f-string 으로 컬럼명을 만들기 때문에 이 검증이 뚫리면 SQL 이 조작된다."""
+    client.get("/today")
+    slot = _one("SELECT id FROM slots WHERE date = ? LIMIT 1", (TODAY,))
+    for bad in ("id", "date", "do_text = 'x' --", "done; DROP TABLE slots"):
+        res = client.post("/save/field", data={
+            "entity": "slot", "id": slot["id"], "field": bad, "value": "x"})
+        assert res.status_code == 400, f"{bad!r} 이 통과했다"
+    assert _one("SELECT COUNT(*) AS c FROM slots")["c"] > 0, "slots 테이블이 사라졌다"
+
+
+def test_블록_구분_저장과_상속(client):
+    """슬롯 구분이 비면 블록 구분을 상속한다. 집계가 이 규칙에 기대고 있다."""
+    client.get("/today")
+    cat = _one("SELECT id FROM categories WHERE name = '업무'")
+    block = _one("SELECT id FROM blocks WHERE date = ? AND block_label = 'B1'", (TODAY,))
+    client.post("/save/field", data={
+        "entity": "block", "id": block["id"], "field": "bcat", "value": cat["id"]})
+    row = _one(
+        "SELECT COALESCE(s.category_id, b.category_id) AS eff FROM slots s "
+        "JOIN blocks b ON b.id = s.block_id WHERE s.block_id = ? LIMIT 1",
+        (block["id"],))
+    assert row["eff"] == cat["id"]
+
+
+def test_하루_저장_왕복(client):
+    client.get("/today")
+    res = client.post(f"/save/day/{TODAY}", data={
+        "vow": "오늘의 다짐", "memo": "메모", "day_review": "하루 평가",
+        "dplan1": "달성1", "dplan2": "달성2", "dplan3": "달성3",
+    })
+    assert res.status_code in (200, 303), res.text
+    meta = _one("SELECT * FROM daily_meta WHERE date = ?", (TODAY,))
+    assert meta is not None, "daily_meta 가 저장되지 않았다"
+
+
+def test_내일_목표_저장(client):
+    client.get("/today")
+    tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    res = client.post("/meta/tomorrow-goal", data={"date": tomorrow, "text": "내일 할 것"})
+    assert res.status_code == 200, res.text
+
+
+# -- 수집함 ------------------------------------------------------------------
+
+
+def test_수집함_추가_배정_완료_삭제(client):
+    client.get("/today")
+    res = client.post("/inbox/add", data={"text": "수집 항목"})
+    assert res.status_code == 200
+    item_id = res.json().get("id")
+    assert item_id, res.text
+
+    block = _one("SELECT id FROM blocks WHERE date = ? AND block_label = 'B2'", (TODAY,))
+    res = client.post("/inbox/assign", data={"item_id": item_id, "block_id": block["id"]})
+    assert res.status_code == 200, res.text
+    assert "수집 항목" in (
+        _one("SELECT COALESCE(plan_text,'') AS p FROM blocks WHERE id = ?", (block["id"],))["p"]
+    )
+
+    client.post(f"/inbox/done/{item_id}", data={})
+    client.post(f"/inbox/delete/{item_id}", data={})
+    assert _one("SELECT id FROM inbox WHERE id = ?", (item_id,)) is None
+
+
+def test_빈_수집함_항목은_거절(client):
+    client.get("/today")
+    res = client.post("/inbox/add", data={"text": "   "})
+    assert res.status_code in (400, 422), res.status_code
+
+
+# -- 주간 -------------------------------------------------------------------
+
+
+def test_주간_저장_왕복(client):
+    assert client.get("/week").status_code == 200
+    res = client.post(f"/week/save/{MONDAY}", data={
+        "vow": "주간 다짐", "memo": "주간 메모",
+        "theme_B1": "B1 테마", "theme_B2": "B2 테마",
+        "appointments": "약속",
+    })
+    assert res.status_code in (200, 303), res.text
+    themes = _rows("SELECT block_label, theme_text FROM weekly_block_themes "
+                   "WHERE week_start = ?", (MONDAY,))
+    assert {t["block_label"] for t in themes} >= {"B1", "B2"}
+
+
+def test_주간_블록_테마가_오늘_블록_이름으로_상속된다(client):
+    client.get("/week")
+    client.post(f"/week/save/{MONDAY}", data={"theme_B1": "이번주 B1"})
+    html = client.get(f"/day/{MONDAY}").text
+    assert "이번주 B1" in html, "주간 테마가 그 주의 오늘 화면에 안 보인다"
+
+
+# -- 장기(간트) --------------------------------------------------------------
+
+
+def _add_item(client, title, start, end, area_id=None, parent_id=""):
+    if area_id is None:
+        area_id = _one("SELECT id FROM lt_area ORDER BY display_order LIMIT 1")["id"]
+    res = client.post("/plan/item/add", data={
+        "area_id": area_id, "title": title, "start": start, "end": end,
+        "parent_id": parent_id, "block": "B1"})
+    assert res.status_code == 200, res.text
+    return res.json().get("id")
+
+
+def test_장기_항목_추가_수정_삭제(client):
+    client.get("/plan")
+    iid = _add_item(client, "항목 A", "2026-08-01", "2026-08-31")
+    assert iid
+    client.post("/plan/item/update", data={
+        "id": iid, "title": "항목 A2", "start": "2026-08-05", "end": "2026-08-20",
+        "progress": "50", "block": "B2", "hidden": "0", "masked": "0"})
+    row = _one("SELECT * FROM lt_item WHERE id = ?", (iid,))
+    assert row["title"] == "항목 A2"
+    assert row["start_date"] == "2026-08-05"
+    assert row["progress"] == 50
+    client.post("/plan/item/delete", data={"id": iid})
+    assert _one("SELECT id FROM lt_item WHERE id = ?", (iid,)) is None
+
+
+def test_장기_항목_하루_이동과_리사이즈(client):
+    client.get("/plan")
+    iid = _add_item(client, "이동", "2026-08-10", "2026-08-20")
+    client.post("/plan/item/shift", data={"id": iid, "days": "3"})
+    row = _one("SELECT start_date, end_date FROM lt_item WHERE id = ?", (iid,))
+    assert (row["start_date"], row["end_date"]) == ("2026-08-13", "2026-08-23")
+    client.post("/plan/item/resize", data={"id": iid, "edge": "end", "days": "2"})
+    row = _one("SELECT start_date, end_date FROM lt_item WHERE id = ?", (iid,))
+    assert row["end_date"] == "2026-08-25"
+
+
+def test_리사이즈가_기간을_뒤집지_못한다(client):
+    client.get("/plan")
+    iid = _add_item(client, "뒤집기", "2026-08-10", "2026-08-12")
+    client.post("/plan/item/resize", data={"id": iid, "edge": "end", "days": "-99"})
+    row = _one("SELECT start_date, end_date FROM lt_item WHERE id = ?", (iid,))
+    assert row["start_date"] <= row["end_date"], (
+        f"시작이 끝보다 뒤가 됐다: {row['start_date']} ~ {row['end_date']}"
+    )
+
+
+def test_자기_자신을_상위로_넣을_수_없다(client):
+    client.get("/plan")
+    iid = _add_item(client, "자기참조", "2026-08-01", "2026-08-31")
+    res = client.post("/plan/item/reparent", data={"id": iid, "parent_id": iid})
+    assert res.status_code == 400
+    assert _one("SELECT parent_id FROM lt_item WHERE id = ?", (iid,))["parent_id"] is None
+
+
+def test_자기_하위를_상위로_넣을_수_없다(client):
+    """이걸 허용하면 순환이 생겨 장기 탭에서 막대가 통째로 사라진다."""
+    client.get("/plan")
+    parent = _add_item(client, "상위", "2026-08-01", "2026-08-31")
+    child = _add_item(client, "하위", "2026-08-05", "2026-08-10", parent_id=parent)
+    assert _one("SELECT parent_id FROM lt_item WHERE id = ?", (child,))["parent_id"] == parent
+    res = client.post("/plan/item/reparent", data={"id": parent, "parent_id": child})
+    assert res.status_code == 400, "순환을 허용했다"
+
+
+def test_영역_추가_이름변경_이동_삭제(client):
+    client.get("/plan")
+    res = client.post("/plan/area/add", data={"name": "새 영역"})
+    assert res.status_code == 200, res.text
+    aid = res.json().get("id")
+    client.post("/plan/area/update", data={"id": aid, "name": "바뀐 영역", "tone": "teal"})
+    row = _one("SELECT name, tone FROM lt_area WHERE id = ?", (aid,))
+    assert (row["name"], row["tone"]) == ("바뀐 영역", "teal")
+    client.post("/plan/area/move", data={"id": aid, "dir": "up"})
+    client.post("/plan/area/delete", data={"id": aid})
+    assert client.get("/plan").status_code == 200
+
+
+def test_영역을_지우면_그_안의_항목도_함께_정리된다(client):
+    client.get("/plan")
+    aid = client.post("/plan/area/add", data={"name": "지울 영역"}).json()["id"]
+    iid = _add_item(client, "딸린 항목", "2026-08-01", "2026-08-31", area_id=aid)
+    client.post("/plan/area/delete", data={"id": aid})
+    left = _one("SELECT id FROM lt_item WHERE id = ?", (iid,))
+    if left is not None:
+        assert _one("SELECT id FROM lt_area WHERE id = ?", (aid,)) is not None, (
+            "영역은 지워졌는데 항목이 없는 영역을 가리키며 남았다(고아 데이터)"
+        )
+    assert client.get("/plan").status_code == 200
+
+
+# -- 구분(카테고리) ----------------------------------------------------------
+
+
+def test_구분_추가_수정_이동_삭제(client):
+    client.get("/settings")
+    res = client.post("/settings/category/add", data={"name": "새 구분", "tone": "purple"})
+    assert res.status_code == 200, res.text
+    cid = res.json().get("id")
+    client.post("/settings/category/update",
+                data={"id": cid, "name": "바뀐 구분", "tone": "orange", "is_active": "1"})
+    row = _one("SELECT name, tone FROM categories WHERE id = ?", (cid,))
+    assert (row["name"], row["tone"]) == ("바뀐 구분", "orange")
+    client.post("/settings/category/move", data={"id": cid, "dir": "up"})
+    client.post("/settings/category/delete", data={"id": cid})
+    assert _one("SELECT is_active FROM categories WHERE id = ?", (cid,))["is_active"] == 0
+
+
+def test_잘못된_색은_저장되지_않는다(client):
+    client.get("/settings")
+    res = client.post("/settings/category/add", data={"name": "이상한색", "tone": "무지개"})
+    if res.status_code == 200:
+        cid = res.json()["id"]
+        tone = _one("SELECT tone FROM categories WHERE id = ?", (cid,))["tone"]
+        from app.config import TONE_KEYS
+        assert tone in TONE_KEYS, f"팔레트에 없는 색이 저장됐다: {tone}"
+
+
+def test_지운_구분을_쓰던_날도_화면이_열린다(client):
+    """소프트 삭제라 참조는 남는다. 그 상태에서 오늘·주간·분석이 깨지면 안 된다."""
+    client.get("/today")
+    cid = client.post("/settings/category/add",
+                      data={"name": "임시", "tone": "blue"}).json()["id"]
+    block = _one("SELECT id FROM blocks WHERE date = ? AND block_label = 'B3'", (TODAY,))
+    client.post("/save/field", data={"entity": "block", "id": block["id"],
+                                     "field": "bcat", "value": cid})
+    client.post("/settings/category/delete", data={"id": cid})
+    for path in ("/today", "/week", "/analytics", "/settings"):
+        assert client.get(path).status_code == 200, f"{path} 가 깨졌다"
+
+
+# -- 블록 시간 설정 -----------------------------------------------------------
+
+
+def _times(pairs):
+    out = {}
+    for i, (s, e) in enumerate(pairs):
+        out[f"start_{i}"] = s
+        out[f"end_{i}"] = e
+    return out
+
+
+DEFAULT_PAIRS = [("07:30", "09:30"), ("09:30", "11:30"), ("11:30", "12:30"),
+                 ("12:30", "14:30"), ("14:30", "16:30"), ("16:30", "19:00"),
+                 ("19:00", "21:00"), ("21:00", "23:00")]
+
+
+def test_블록시간_저장과_요일_덮어쓰기(client):
+    client.get("/settings")
+    res = client.post("/settings/blocktimes", data=_times(DEFAULT_PAIRS))
+    assert res.status_code == 200, res.text
+    wed = [("06:00", "08:00"), ("08:00", "10:00"), ("10:00", "11:00"),
+           ("11:00", "13:00"), ("13:00", "15:00"), ("15:00", "17:30"),
+           ("17:30", "19:30"), ("19:30", "21:30")]
+    res = client.post("/settings/blocktimes", data=dict(_times(wed), scope="2"))
+    assert res.status_code == 200, res.text
+    db._settings_cache = None
+    assert db.get_day_blocks(2)[0][2] == "06:00"
+    assert db.get_day_blocks(0)[0][2] == "07:30"
+    client.post("/settings/blocktimes/reset", data={"scope": "2"})
+    db._settings_cache = None
+    assert db.get_day_blocks(2)[0][2] == "07:30"
+
+
+@pytest.mark.parametrize("pairs,왜", [
+    ([("10:00", "08:00")] + DEFAULT_PAIRS[1:], "시작이 끝보다 늦음"),
+    ([("07:30", "07:50")] + DEFAULT_PAIRS[1:], "30분 배수가 아님"),
+    ([("07:30", "09:30"), ("09:00", "11:30")] + DEFAULT_PAIRS[2:], "앞 블록과 겹침"),
+    ([("25:99", "09:30")] + DEFAULT_PAIRS[1:], "시각 형식이 틀림"),
+    ([("", "09:30")] + DEFAULT_PAIRS[1:], "빈 값"),
+])
+def test_잘못된_블록시간은_400으로_막힌다(client, pairs, 왜):
+    client.get("/settings")
+    res = client.post("/settings/blocktimes", data=_times(pairs))
+    assert res.status_code == 400, f"{왜} 인데 통과했다"
+
+
+def test_잘못된_요일_범위는_400(client):
+    client.get("/settings")
+    for scope in ("7", "-1", "abc", "99"):
+        res = client.post("/settings/blocktimes",
+                          data=dict(_times(DEFAULT_PAIRS), scope=scope))
+        assert res.status_code == 400, f"scope={scope} 가 통과했다"
+
+
+def test_블록시간을_바꾸면_빈_날의_골격이_다시_만들어진다(client):
+    client.get("/today")
+    before = len(_rows("SELECT id FROM slots WHERE date = ?", (TODAY,)))
+    shorter = [("07:30", "08:30")] + DEFAULT_PAIRS[1:]
+    assert client.post("/settings/blocktimes", data=_times(shorter)).status_code == 200
+    db._settings_cache = None
+    client.get("/today")
+    after = len(_rows("SELECT id FROM slots WHERE date = ?", (TODAY,)))
+    assert after < before, "블록을 줄였는데 슬롯 수가 그대로다"
+
+
+def test_내용이_있는_날은_블록시간을_바꿔도_보존된다(client):
+    """이 보호가 깨지면 설정 한 번에 그날 기록이 조용히 사라진다."""
+    client.get("/today")
+    slot = _one("SELECT id FROM slots WHERE date = ? ORDER BY slot_index LIMIT 1", (TODAY,))
+    client.post("/save/field", data={"entity": "slot", "id": slot["id"],
+                                     "field": "do_text", "value": "지우면 안 되는 기록"})
+    shorter = [("07:30", "08:30")] + DEFAULT_PAIRS[1:]
+    client.post("/settings/blocktimes", data=_times(shorter))
+    db._settings_cache = None
+    client.get("/today")
+    kept = _one("SELECT do_text FROM slots WHERE id = ?", (slot["id"],))
+    assert kept is not None and kept["do_text"] == "지우면 안 되는 기록"
+
+
+# -- 구분 템플릿 42칸 ---------------------------------------------------------
+
+
+def test_템플릿_42칸_저장(client):
+    client.get("/settings")
+    tid = client.post("/settings/template/add", data={"name": "T1"}).json()["id"]
+    cid = _one("SELECT id FROM categories WHERE name = '코어'")["id"]
+    for weekday in range(7):
+        for label in ("B1", "B2", "B3", "B4", "B5", "B6"):
+            res = client.post("/settings/template/cell", data={
+                "template_id": tid, "weekday": weekday,
+                "block_label": label, "category_id": cid})
+            assert res.status_code == 200, f"{weekday}/{label} 저장 실패: {res.text}"
+    n = _one("SELECT COUNT(*) AS c FROM cat_template_cell WHERE template_id = ?", (tid,))["c"]
+    assert n == 42, f"42칸이 아니라 {n}칸이 저장됐다"
+    client.post("/settings/template/rename", data={"id": tid, "name": "T2"})
+    client.post("/settings/template/delete", data={"id": tid})
+    assert _one("SELECT COUNT(*) AS c FROM cat_template_cell WHERE template_id = ?",
+                (tid,))["c"] == 0, "템플릿을 지웠는데 칸이 남았다"
+
+
+@pytest.mark.parametrize("weekday", ["7", "-1", "abc", "99"])
+def test_템플릿_요일_범위_검증(client, weekday):
+    client.get("/settings")
+    tid = client.post("/settings/template/add", data={"name": "T"}).json()["id"]
+    res = client.post("/settings/template/cell", data={
+        "template_id": tid, "weekday": weekday, "block_label": "B1", "category_id": ""})
+    assert res.status_code in (400, 422), f"weekday={weekday} 가 통과했다"
+
+
+# -- 고결감 -----------------------------------------------------------------
+
+
+def test_고결감_추가_수정_다시보기메모_삭제(client):
+    assert client.get("/reflect").status_code == 200
+    res = client.post("/reflect/add", data={
+        "kind": "고민", "title": "제목", "text": "내용", "tags": "#태그",
+        "review_date": "2026-09-01"})
+    assert res.status_code == 200, res.text
+    rid = res.json().get("id")
+    assert rid, res.text
+    client.post(f"/reflect/update/{rid}", data={
+        "kind": "결심", "title": "제목2", "text": "내용2", "tags": "",
+        "review_date": "", "event_date": TODAY})
+    row = _one("SELECT * FROM reflection WHERE id = ?", (rid,))
+    assert row["title"] == "제목2"
+    client.post(f"/reflect/review-note/{rid}", data={"note": "다시 보니"})
+    assert _one("SELECT review_note FROM reflection WHERE id = ?", (rid,))["review_note"] == "다시 보니"
+    client.post(f"/reflect/delete/{rid}", data={})
+    assert _one("SELECT id FROM reflection WHERE id = ?", (rid,)) is None
+
+
+def test_고결감_uid가_자동으로_붙는다(client):
+    client.get("/reflect")
+    rid = client.post("/reflect/add", data={
+        "kind": "감상", "title": "t", "text": "x", "tags": "", "review_date": ""}).json()["id"]
+    uid = _one("SELECT uid FROM reflection WHERE id = ?", (rid,))["uid"]
+    assert uid and len(uid.split("-")) == 3, f"공용 키 형식이 아니다: {uid}"
+
+
+# -- 설정 저장 --------------------------------------------------------------
+
+
+def test_설정_저장_왕복(client):
+    client.get("/settings")
+    res = client.post("/settings/save", data={
+        "start_view": "week", "default_theme": "dark", "collapse_blocks": "0",
+        "show_did": "0", "hide_task_titles": "숨길 제목"})
+    assert res.status_code == 200
+    db._settings_cache = None
+    s = db.get_settings()
+    assert s["start_view"] == "week"
+    assert s["default_theme"] == "dark"
+    assert s["hide_task_titles"] == "숨길 제목"
+    assert client.get("/", follow_redirects=False).headers["location"] == "/week"
+
+
+def test_허용되지_않은_설정키는_저장되지_않는다(client):
+    client.get("/settings")
+    client.post("/settings/save", data={"악의적키": "값", "DB_PATH": "/etc/passwd"})
+    db._settings_cache = None
+    assert "악의적키" not in db.get_settings()
+    assert "DB_PATH" not in db.get_settings()
+
+
+def test_요일_컨셉_7칸_저장(client):
+    client.get("/settings")
+    res = client.post("/settings/weekday-concepts",
+                      data={f"wd{i}": f"컨셉{i}" for i in range(7)})
+    assert res.status_code == 200
+    db._settings_cache = None
+    assert db.get_weekday_concepts() == [f"컨셉{i}" for i in range(7)]
+
+
+def test_AI_설정_저장(client):
+    client.get("/settings")
+    res = client.post("/settings/ai/save",
+                      data={"base_url": "https://api.example.com/v1", "model": "m1"})
+    assert res.status_code == 200, res.text
+    db._settings_cache = None
+    s = db.get_settings()
+    assert s["ai_base_url"] == "https://api.example.com/v1"
+    assert s["ai_model"] == "m1"
+
+
+# -- .env 편집 ---------------------------------------------------------------
+
+
+def test_env_화면에_키값이_그대로_나오지_않는다(client):
+    """설정 탭이 API 키를 평문으로 뿌리면 화면 캡처·캐시에 그대로 남는다."""
+    html = client.get("/settings").text
+    assert "sk-test-secret" not in html, ".env 의 실제 키가 화면에 노출된다"
+
+
+def test_env_저장이_가려진_값을_원래대로_되돌린다(client, test_env_file):
+    TEST_ENV = test_env_file
+    before = TEST_ENV.read_text(encoding="utf-8")
+    res = client.post("/settings/env/save", data={
+        "content": "AI_API_KEY=********\nAI_MODEL=바뀐모델\nEMPTY=\n"})
+    assert res.status_code == 200, res.text
+    after = TEST_ENV.read_text(encoding="utf-8")
+    assert "sk-test-secret" in after, "가림표시를 그대로 저장해 원래 키가 날아갔다"
+    assert "바뀐모델" in after
+    assert before != after
+
+
+# -- 기간 삭제 · 내보내기 ------------------------------------------------------
+
+
+def test_기간삭제는_지정한_기간만_지운다(client):
+    client.get("/today")
+    old = "2020-03-05"
+    client.get(f"/day/{old}")
+    assert _one("SELECT id FROM blocks WHERE date = ?", (old,)) is not None
+    res = client.post("/settings/purge", data={"start": "2020-01-01", "end": "2020-12-31"})
+    assert res.status_code == 200, res.text
+    assert _one("SELECT id FROM blocks WHERE date = ?", (old,)) is None
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TODAY,)) is not None, (
+        "기간 밖의 오늘 기록까지 지워졌다"
+    )
+
+
+def test_기간삭제는_날짜가_비면_거절한다(client):
+    client.get("/today")
+    for data in ({"start": "", "end": ""}, {"start": "2020-01-01"}, {}):
+        res = client.post("/settings/purge", data=data)
+        assert res.status_code in (400, 422), f"{data} 가 통과했다"
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TODAY,)) is not None
+
+
+def test_기간삭제는_날짜가_아닌_값을_받아도_기록을_지우지_않는다(client):
+    """형식 검증이 없어 문자열 비교로 도는 자리다. 최소한 남의 날짜를 지우면 안 된다."""
+    client.get("/today")
+    res = client.post("/settings/purge", data={"start": "abc", "end": "def"})
+    assert res.status_code in (200, 400), res.status_code
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TODAY,)) is not None
+
+
+def test_기간삭제는_거꾸로_준_기간에_아무것도_지우지_않는다(client):
+    client.get("/today")
+    res = client.post("/settings/purge", data={"start": "2030-01-01", "end": "2020-01-01"})
+    assert res.status_code in (200, 400)
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TODAY,)) is not None
+
+
+def test_CSV_내보내기(client):
+    client.get("/today")
+    res = client.get("/settings/export.csv?start=2020-01-01&end=2030-12-31")
+    assert res.status_code == 200, res.text
+    assert "text/csv" in res.headers.get("content-type", "")
+    assert res.text.startswith("﻿") or "날짜" in res.text
+
+
+def test_CSV_내보내기는_기간_없이_부르면_거절한다(client):
+    assert client.get("/settings/export.csv").status_code == 422
+
+
+def test_백업이_임시폴더에만_쓴다(client, tmp_root):
+    TMP_ROOT = tmp_root
+    res = client.post("/settings/backup", data={})
+    assert res.status_code == 200, res.text
+    made = list((TMP_ROOT / "backups").glob("*")) if (TMP_ROOT / "backups").exists() else []
+    assert made, "백업 파일이 생기지 않았다"
+
+
+# -- 분석 -------------------------------------------------------------------
+
+
+def test_분석_화면이_기록_없이도_열린다(client):
+    assert client.get("/analytics").status_code == 200
+
+
+def test_분석_화면이_기록이_있어도_열린다(client):
+    client.get("/today")
+    slot = _one("SELECT id FROM slots WHERE date = ? LIMIT 1", (TODAY,))
+    client.post("/save/field", data={"entity": "slot", "id": slot["id"],
+                                     "field": "do_text", "value": "계획"})
+    client.post("/save/field", data={"entity": "slot", "id": slot["id"],
+                                     "field": "did_text", "value": "한 일"})
+    client.post(f"/slot/done/{slot['id']}", data={"done": "1"})
+    res = client.get("/analytics")
+    assert res.status_code == 200
+    assert "%" in res.text
+
+
+# -- 마이그레이션 -------------------------------------------------------------
+
+
+def test_init_db_는_몇_번_돌려도_같다(fresh_db):
+    def snapshot():
+        with db.get_conn() as conn:
+            tables = sorted(r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"))
+            cats = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+            areas = conn.execute("SELECT COUNT(*) FROM lt_area").fetchone()[0]
+            return tables, cats, areas
+
+    first = snapshot()
+    db.init_db()
+    db.init_db()
+    assert snapshot() == first, "init_db 를 다시 돌리면 상태가 달라진다"
+
+
+def test_옛_스키마_버전에서도_마이그레이션이_돈다(fresh_db):
+    """옛 .sql 덤프를 복원하면 user_version 이 0 이라 마이그레이션이 다시 한 번 돈다."""
+    with db.get_conn() as conn:
+        conn.execute("PRAGMA user_version = 0")
+    db.init_db()
+    with db.get_conn() as conn:
+        ver = conn.execute("PRAGMA user_version").fetchone()[0]
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(daily_meta)")}
+    assert ver == db.SCHEMA_VERSION
+    assert {"gratitude", "goal_tags", "concept", "day_review"} <= cols
+
+
+def test_없어진_테이블은_되살아나지_않는다(fresh_db):
+    with db.get_conn() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS lt_plan (id INTEGER PRIMARY KEY)")
+        conn.execute("PRAGMA user_version = 0")
+    db.init_db()
+    with db.get_conn() as conn:
+        names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "lt_plan" not in names
+    assert "weekday_concept" not in names
+
+
+def test_설정_캐시가_저장_후_갱신된다(fresh_db):
+    db.get_settings()
+    db.set_setting("start_view", "week")
+    assert db.get_settings()["start_view"] == "week"
+
+
+def test_요일_컨셉_저장값이_깨져도_7칸을_준다(fresh_db):
+    for bad in ("not-json", "{}", "[1,2]", ""):
+        db.set_setting("weekday_concepts", bad)
+        assert len(db.get_weekday_concepts()) == 7, f"{bad!r} 에서 7칸이 아니다"
+
+
+def test_블록시간_저장값이_깨져도_기본값으로_돈다(fresh_db):
+    for bad in ("not-json", "[]", '[{"start":"x"}]', "{}"):
+        db.set_setting(db.BLOCK_TIMES_KEY, bad)
+        blocks = db.get_day_blocks(0)
+        assert len(blocks) == 8, f"{bad!r} 에서 블록이 8개가 아니다"
+
+
+def test_PWA_자산이_전부_응답한다(client):
+    for path, ctype in (("/manifest.webmanifest", "manifest"),
+                        ("/sw.js", "javascript"),
+                        ("/favicon.ico", "icon"),
+                        ("/apple-touch-icon.png", "png")):
+        res = client.get(path)
+        assert res.status_code == 200, path
+        assert ctype in res.headers.get("content-type", ""), path
+
+
+def test_버전_엔드포인트(client):
+    res = client.get("/version")
+    assert res.status_code == 200
+    assert res.json()["v"].isdigit()
+    assert res.headers.get("cache-control") == "no-store"
+
+
+def test_서버시각은_KST(client):
+    res = client.get("/api/now")
+    assert res.status_code == 200
+    assert "+09:00" in res.json()["iso"], res.json()
+
+
+def test_정적파일_캐시_정책(client):
+    with_v = client.get("/static/app.js?v=1")
+    without_v = client.get("/static/app.js")
+    assert "immutable" in with_v.headers.get("cache-control", "")
+    assert without_v.headers.get("cache-control") == "no-cache"
+    assert client.get("/today").headers.get("cache-control") == "no-cache"
