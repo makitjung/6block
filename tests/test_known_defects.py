@@ -5,29 +5,6 @@ import pytest
 from app.common import _parse_date, _rule_distribute, lt_tree_order
 
 # ---------------------------------------------------------------------------
-# 결함 1. 날짜 경로 매개변수를 검증하지 않아 화면이 500 이 된다. (실제로 도달 가능)
-#   /day/2026-13-45 처럼 잘못된 날짜를 주소창에 넣거나, 옛 북마크·오타로 들어오면
-#   그 탭이 통째로 안 열린다. datetime.strptime 이 ValueError 를 그대로 던진다.
-# ---------------------------------------------------------------------------
-
-BAD_DATES = ["invalid", "2026-13-45", "2026-02-30", "26-1-1", "0", "-1", "%20"]
-
-
-@pytest.mark.xfail(strict=True, reason="날짜 형식 검증 없음 → ValueError 가 500 으로 나간다")
-@pytest.mark.parametrize("path", ["/day/{}", "/api/day/{}", "/week/{}"])
-def test_잘못된_날짜로_화면을_열면_500이_난다(client, path):
-    codes = {client.get(path.format(bad)).status_code for bad in BAD_DATES}
-    assert 500 not in codes, f"{path} → {sorted(codes)}"
-
-
-@pytest.mark.xfail(strict=True, reason="날짜 형식 검증 없음 → ValueError 가 500 으로 나간다")
-@pytest.mark.parametrize("path", ["/save/day/{}", "/week/save/{}"])
-def test_잘못된_날짜로_저장하면_500이_난다(client, path):
-    codes = {client.post(path.format(bad), data={}).status_code for bad in BAD_DATES}
-    assert 500 not in codes, f"{path} → {sorted(codes)}"
-
-
-# ---------------------------------------------------------------------------
 # 결함 2. id 가 SQLite 정수 범위를 넘으면 500 이 된다. (화면에서는 도달 불가)
 #   OverflowError: Python int too large to convert to SQLite INTEGER.
 #   FastAPI 가 int 로는 잘 바꿔 주지만 SQLite 가 못 받는다.

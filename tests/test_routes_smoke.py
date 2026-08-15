@@ -61,11 +61,7 @@ def test_모든_GET_이_정상값으로_열린다(client, route):
     assert res.status_code < 500
 
 
-# 아래 세 라우트는 잘못된 날짜에 500 을 낸다(확인됨). 별도로 test_known_defects.py 가
-# 그 사실을 못 박아 두었으므로, 전수 점검에서는 빼서 나머지 라우트의 회귀를 계속 지킨다.
-BROKEN_DATE_ROUTES = {"/day/{date_str}", "/api/day/{date_str}", "/week/{date_str}"}
-
-_PARAM_GETS = [r for r in GET_ROUTES if "{" in r.path and r.path not in BROKEN_DATE_ROUTES]
+_PARAM_GETS = [r for r in GET_ROUTES if "{" in r.path]
 
 
 @pytest.mark.parametrize("bad", BAD_PARAM_VALUES)
@@ -76,11 +72,9 @@ def test_GET_경로_매개변수가_이상해도_500이_아니다(client, route,
     assert res.status_code != 500, f"{path} → 500 (처리 안 된 예외)"
 
 
-# 아래 라우트도 확인된 결함이 있어 전수 점검에서 뺀다(test_known_defects.py 가 못 박아 둔다).
-#   /save/day, /week/save   → 잘못된 날짜에 500
-#   나머지                   → 아주 큰 정수 id 에 500
+# 아주 큰 정수 id 에 500 을 내는 라우트(확인됨). test_known_defects.py 가 못 박아 두었으므로
+# 전수 점검에서는 빼서 나머지 라우트의 회귀를 계속 지킨다.
 BROKEN_POST_ROUTES = {
-    "/save/day/{date_str}", "/week/save/{week_start_str}",
     "/slot/done/{slot_id}", "/inbox/done/{item_id}", "/inbox/delete/{item_id}",
     "/reflect/sync/{item_id}", "/reflect/update/{item_id}",
     "/reflect/delete/{item_id}", "/reflect/review-note/{item_id}",

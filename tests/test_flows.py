@@ -51,6 +51,47 @@ def test_점심_저녁_블록은_기타_구분으로_시드된다(client):
         assert row["category_id"] == etc["id"], f"{label} 블록 구분이 기타가 아니다"
 
 
+# -- 잘못된 날짜가 주소에 들어왔을 때 ------------------------------------------
+
+BAD_DATES = ["invalid", "2026-13-45", "2026-02-30", "26-1-1", "0", "-1", "' OR 1=1--"]
+
+
+@pytest.mark.parametrize("bad", BAD_DATES)
+def test_잘못된_날짜의_오늘_화면은_오늘로_보낸다(client, bad):
+    res = client.get(f"/day/{bad}", follow_redirects=False)
+    assert res.status_code in (302, 303, 307), res.status_code
+    assert res.headers["location"] == "/today"
+    assert client.get(f"/day/{bad}").status_code == 200
+
+
+@pytest.mark.parametrize("bad", BAD_DATES)
+def test_잘못된_날짜의_주간_화면은_이번_주로_보낸다(client, bad):
+    res = client.get(f"/week/{bad}", follow_redirects=False)
+    assert res.status_code in (302, 303, 307), res.status_code
+    assert res.headers["location"] == "/week"
+    assert client.get(f"/week/{bad}").status_code == 200
+
+
+@pytest.mark.parametrize("bad", BAD_DATES)
+def test_잘못된_날짜로는_저장도_조회도_400(client, bad):
+    assert client.get(f"/api/day/{bad}").status_code == 400
+    assert client.post(f"/save/day/{bad}", data={"memo": "x"}).status_code == 400
+    assert client.post(f"/week/save/{bad}", data={"memo": "x"}).status_code == 400
+
+
+def test_잘못된_날짜로_저장하면_그_날짜_행이_생기지_않는다(client):
+    """예전에는 ensure_day_skeleton 이 먼저 돌아 쓰레기 날짜의 블록이 만들어졌다."""
+    client.get("/today")
+    before = _one("SELECT COUNT(*) AS c FROM blocks")["c"]
+    for bad in BAD_DATES:
+        client.post(f"/save/day/{bad}", data={"memo": "x"})
+        client.get(f"/api/day/{bad}")
+    assert _one("SELECT COUNT(*) AS c FROM blocks")["c"] == before
+    이상한날짜 = _rows("SELECT DISTINCT date FROM blocks WHERE date NOT GLOB "
+                  "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'")
+    assert 이상한날짜 == [], 이상한날짜
+
+
 # -- 오늘 탭 저장 ------------------------------------------------------------
 
 

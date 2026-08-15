@@ -38,6 +38,10 @@ def today_view(request: Request):
 
 @router.get("/day/{date_str}")
 def day_view(request: Request, date_str: str):
+    # 주소에 날짜가 아닌 것이 들어오면(옛 북마크·오타·잘못 만든 링크) 화면이 통째로
+    # 500 이 되지 않게 오늘로 보낸다. 개인용 서버라 오류 화면보다 오늘이 낫다.
+    if _parse_date(date_str) is None:
+        return RedirectResponse(url="/today")
     return _day_view(request, date_str)
 
 
@@ -327,6 +331,8 @@ def _day_view(request: Request, date_str: str):
 
 @router.post("/save/day/{date_str}")
 async def save_day(date_str: str, request: Request):
+    if _parse_date(date_str) is None:
+        return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
     form = await request.form()
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
@@ -872,7 +878,9 @@ async def slot_done(slot_id: int, request: Request):
 @router.get("/api/day/{date_str}")
 def api_day(date_str: str):
     """현재 캘린더·Things 아젠다를 JSON으로. 클라이언트가 주기적으로 폴링해 갱신."""
-    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    d = _parse_date(date_str)
+    if d is None:
+        return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
     is_today = date_str == today_str()
     with get_conn() as conn:
         ensure_day_skeleton(conn, date_str)

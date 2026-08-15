@@ -77,7 +77,10 @@ def week_view(request: Request):
 
 @router.get("/week/{date_str}")
 def week_view_for(request: Request, date_str: str):
-    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    # 날짜가 아닌 것이 들어오면 500 대신 이번 주로 보낸다(day.py 의 /day 와 같은 규칙).
+    d = _parse_date(date_str)
+    if d is None:
+        return RedirectResponse(url="/week")
     return _week_view(request, week_start(d))
 
 
@@ -256,6 +259,8 @@ def _week_view(request: Request, monday: date):
 
 @router.post("/week/save/{week_start_str}")
 async def save_week(week_start_str: str, request: Request):
+    if _parse_date(week_start_str) is None:
+        return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
     form = await request.form()
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
