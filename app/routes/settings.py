@@ -432,6 +432,18 @@ async def settings_cat_add(request: Request):
     return JSONResponse({"ok": True, "id": cid, "name": name, "tone": tone})
 
 
+# 구분이 하나도 없으면 오늘·주간의 구분 콤보박스가 텅 비어 아무것도 고를 수 없다.
+# 숨기기(update is_active=0)와 삭제(delete)가 같은 결과를 내므로 두 곳에서 함께 막는다.
+LAST_CATEGORY_ERROR = "구분은 최소 하나는 남아 있어야 합니다"
+
+
+def _hides_last_category(conn, cid: int) -> bool:
+    """이 구분을 숨기면 고를 수 있는 구분이 하나도 안 남는지."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM categories WHERE is_active = 1 AND id != ?", (cid,)
+    ).fetchone()[0] == 0
+
+
 @router.post("/settings/category/update")
 async def settings_cat_update(request: Request):
     form = await request.form()
@@ -450,6 +462,9 @@ async def settings_cat_update(request: Request):
         return JSONResponse({"ok": False}, status_code=400)
     sets = ", ".join(f"{k} = ?" for k in fields)
     with get_conn() as conn:
+        if fields.get("is_active") == 0 and _hides_last_category(conn, cid):
+            return JSONResponse({"ok": False, "error": LAST_CATEGORY_ERROR},
+                                status_code=400)
         conn.execute(
             f"UPDATE categories SET {sets} WHERE id = ?", (*fields.values(), cid)
         )
@@ -496,6 +511,9 @@ async def settings_cat_delete(request: Request):
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     with get_conn() as conn:
+        if _hides_last_category(conn, cid):
+            return JSONResponse({"ok": False, "error": LAST_CATEGORY_ERROR},
+                                status_code=400)
         conn.execute("UPDATE categories SET is_active = 0 WHERE id = ?", (cid,))
     return JSONResponse({"ok": True})
 

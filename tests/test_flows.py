@@ -606,14 +606,54 @@ def test_백업이_임시폴더에만_쓴다(client, tmp_root):
     assert made, "백업 파일이 생기지 않았다"
 
 
-def test_구분을_전부_지우면_고를_구분이_남지_않는다(client):
-    """마지막 하나까지 숨길 수 있다. 그러면 오늘 탭 구분 목록이 텅 빈다."""
+def test_마지막_구분은_지울_수_없다(client):
+    """다 지우면 오늘·주간의 구분 콤보박스가 텅 빈다. 하나는 남아야 한다."""
     client.get("/settings")
+    거절 = 0
     for row in _rows("SELECT id FROM categories WHERE is_active = 1"):
-        client.post("/settings/category/delete", data={"id": row["id"]})
+        res = client.post("/settings/category/delete", data={"id": row["id"]})
+        if res.status_code == 400:
+            거절 += 1
+    assert 거절 == 1, f"마지막 하나에서만 막혀야 하는데 {거절}번 막혔다"
     남은것 = _one("SELECT COUNT(*) AS c FROM categories WHERE is_active = 1")["c"]
-    assert 남은것 == 0, "마지막 구분은 남겨 둘 줄 알았는데 다 지워졌다"
-    assert client.get("/today").status_code == 200, "구분이 없으면 화면이 깨진다"
+    assert 남은것 == 1, f"{남은것}개가 남았다"
+    assert client.get("/today").status_code == 200
+
+
+def test_마지막_구분은_숨기기로도_없앨_수_없다(client):
+    """/settings/category/update 의 is_active=0 도 같은 결과라 함께 막아야 한다."""
+    client.get("/settings")
+    for row in _rows("SELECT id FROM categories WHERE is_active = 1")[:-1]:
+        client.post("/settings/category/delete", data={"id": row["id"]})
+    마지막 = _one("SELECT id FROM categories WHERE is_active = 1")
+    res = client.post("/settings/category/update",
+                      data={"id": 마지막["id"], "is_active": "0"})
+    assert res.status_code == 400, "마지막 구분을 숨기는 것이 통과했다"
+    assert _one("SELECT is_active FROM categories WHERE id = ?",
+                (마지막["id"],))["is_active"] == 1
+
+
+def test_마지막_구분이라도_이름과_색은_바꿀_수_있다(client):
+    """숨기기만 막는 것이지, 마지막 구분을 못 고치게 하는 것이 아니다."""
+    client.get("/settings")
+    for row in _rows("SELECT id FROM categories WHERE is_active = 1")[:-1]:
+        client.post("/settings/category/delete", data={"id": row["id"]})
+    마지막 = _one("SELECT id FROM categories WHERE is_active = 1")
+    res = client.post("/settings/category/update",
+                      data={"id": 마지막["id"], "name": "새 이름", "tone": "teal"})
+    assert res.status_code == 200, res.text
+    row = _one("SELECT name, tone FROM categories WHERE id = ?", (마지막["id"],))
+    assert (row["name"], row["tone"]) == ("새 이름", "teal")
+
+
+def test_구분을_새로_만들면_다시_지울_수_있다(client):
+    client.get("/settings")
+    for row in _rows("SELECT id FROM categories WHERE is_active = 1")[:-1]:
+        client.post("/settings/category/delete", data={"id": row["id"]})
+    마지막 = _one("SELECT id FROM categories WHERE is_active = 1")
+    client.post("/settings/category/add", data={"name": "새 구분", "tone": "blue"})
+    assert client.post("/settings/category/delete",
+                       data={"id": 마지막["id"]}).status_code == 200
 
 
 # -- 주간·분석 '기록된 시간' 집계 ------------------------------------------------
