@@ -221,12 +221,15 @@
         try { new Notification(title, { body, icon: '/static/icon.svg', tag: '6block-pomo' }); }
         catch (e) {}
     }
+    const TOAST_MS = 1800;
+    let lastToastAt = 0;        // 사용자가 누른 동작의 안내가 마지막으로 뜬 시각
     function toast(msg) {
         const t = document.getElementById('toast');
         if (!t) return;
+        lastToastAt = Date.now();
         t.textContent = msg;
         t.classList.add('show');
-        setTimeout(() => t.classList.remove('show'), 1800);
+        setTimeout(() => t.classList.remove('show'), TOAST_MS);
     }
 
     // ---- state transitions ----------------------------------------------
@@ -3195,6 +3198,10 @@
     function autosaveToast() {
         const t = document.getElementById('toast');
         if (!t) return;
+        // 방금 누른 동작의 안내가 아직 떠 있으면 덮지 않는다. '저장됨'은 배경 알림이라
+        // 사용자가 시킨 일의 결과보다 뒤에 선다. 안 그러면 '내일로'를 눌러 이월해 놓고도
+        // 곧바로 '저장됨'으로 바뀌어(자동저장이 늦게 끝난다) 된 건지 알 수 없다.
+        if (Date.now() - lastToastAt < TOAST_MS) return;
         t.textContent = '✓ 저장됨';
         t.classList.add('show');
         if (asToastTimer) clearTimeout(asToastTimer);
@@ -3769,7 +3776,15 @@
     function bindRollover() {
         document.querySelectorAll('.block-rollover').forEach((btn) => {
             btn.addEventListener('click', () => {
-                postForm('/block/rollover', { block_id: btn.dataset.blockId }).then((d) => {
+                // 화면에 적힌 PLAN 을 함께 보낸다. 이 버튼을 누르면 PLAN 칸에서 blur 가 나며
+                // 자동저장도 같이 출발하는데, 둘 중 무엇이 서버에 먼저 닿을지는 정해져 있지
+                // 않다. 예전에는 이월이 먼저 닿아 방금 적은 계획을 '비어 있다'고 되돌려 보냈다.
+                const ta = document.querySelector(
+                    'textarea[name="plan_' + btn.dataset.blockId + '"]');
+                postForm('/block/rollover', {
+                    block_id: btn.dataset.blockId,
+                    plan: ta ? ta.value : '',
+                }).then((d) => {
                     if (d && d.ok) toast('내일 ' + (d.label || '') + ' 계획으로 이월');
                     else if (d && d.error === 'empty') toast('이 블록 PLAN이 비어 있습니다');
                     else toast('이월 실패');

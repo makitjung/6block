@@ -802,7 +802,14 @@ async def inbox_assign(request: Request):
 
 @router.post("/block/rollover")
 async def block_rollover(request: Request):
-    """이 블록의 PLAN을 다음 날 같은 블록 PLAN 끝에 복사한다(미룬 계획 이월)."""
+    """이 블록의 PLAN을 다음 날 같은 블록 PLAN 끝에 복사한다(미룬 계획 이월).
+
+    plan 을 함께 받으면 그 값을 쓰고, 없으면 저장된 값을 쓴다. 화면에서 이 버튼을 누르면
+    PLAN 칸에서 blur 가 나며 자동저장이 함께 출발하는데, 두 요청의 도착 순서는 정해져
+    있지 않다. 예전에는 이월이 먼저 닿아 아직 빈 PLAN 을 읽고 '비어 있다'고 되돌려
+    보냈다(방금 적은 계획일수록 반드시 실패했다). 화면에 적힌 것이 사용자의 뜻이므로
+    그 값을 그대로 받는다. 비운 채로 눌렀으면 빈 값이 맞으니 저장값으로 되돌리지 않는다.
+    """
     form = await request.form()
     try:
         block_id = int_id(form.get("block_id"))
@@ -815,7 +822,8 @@ async def block_rollover(request: Request):
         ).fetchone()
         if not src:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        plan = (src["plan_text"] or "").strip()
+        sent = form.get("plan")
+        plan = (sent if sent is not None else (src["plan_text"] or "")).strip()
         if not plan:
             return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
         d = datetime.strptime(src["date"], "%Y-%m-%d").date()

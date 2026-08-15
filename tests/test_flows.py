@@ -183,6 +183,108 @@ def test_내일_목표_저장(client):
     assert res.status_code == 200, res.text
 
 
+# -- 블록 PLAN 이월(내일로) ----------------------------------------------------
+
+
+def _블록(라벨, 날짜=None):
+    return _one("SELECT id, plan_text FROM blocks WHERE date = ? AND block_label = ?",
+                (날짜 or TODAY, 라벨))
+
+
+TOMORROW = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def test_내일로가_저장된_PLAN을_옮긴다(client):
+    client.get("/today")
+    b = _블록("B1")
+    client.post("/save/field", data={"entity": "block", "id": b["id"],
+                                     "field": "plan_text", "value": "미룬 계획"})
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.status_code == 200, res.text
+    assert res.json()["label"] == "B1"
+    assert _블록("B1", TOMORROW)["plan_text"] == "미룬 계획"
+
+
+def test_내일로는_아직_저장_안_된_PLAN도_옮긴다(client):
+    """화면에서 적자마자 누르면 자동저장이 아직 서버에 안 닿는다.
+
+    예전에는 이월 요청이 먼저 도착해 빈 PLAN 을 읽고 '비어 있다'고 되돌려 보냈다.
+    이제 화면에 적힌 값을 함께 받는다.
+    """
+    client.get("/today")
+    b = _블록("B1")
+    assert (b["plan_text"] or "") == "", "전제가 틀렸다. 저장된 PLAN 이 이미 있다"
+    res = client.post("/block/rollover",
+                      data={"block_id": b["id"], "plan": "방금 적은 계획"})
+    assert res.status_code == 200, res.text
+    assert _블록("B1", TOMORROW)["plan_text"] == "방금 적은 계획"
+
+
+def test_내일로는_화면_값을_저장값보다_우선한다(client):
+    """적어 두었던 것을 고친 뒤 바로 누르면 고친 쪽이 넘어가야 한다."""
+    client.get("/today")
+    b = _블록("B1")
+    client.post("/save/field", data={"entity": "block", "id": b["id"],
+                                     "field": "plan_text", "value": "옛 계획"})
+    client.post("/block/rollover", data={"block_id": b["id"], "plan": "고친 계획"})
+    assert _블록("B1", TOMORROW)["plan_text"] == "고친 계획"
+
+
+def test_내일로는_비운_채_누르면_거절한다(client):
+    """저장값이 남아 있어도 화면에서 지웠으면 넘길 것이 없다."""
+    client.get("/today")
+    b = _블록("B1")
+    client.post("/save/field", data={"entity": "block", "id": b["id"],
+                                     "field": "plan_text", "value": "지울 계획"})
+    res = client.post("/block/rollover", data={"block_id": b["id"], "plan": "   "})
+    assert res.status_code == 400
+    assert res.json()["error"] == "empty"
+    # 거절할 때는 내일 골격도 만들지 않는다(안 그러면 열어 본 적 없는 날이 생긴다).
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TOMORROW,)) is None
+
+
+def test_내일로는_내일_PLAN_뒤에_덧붙인다(client):
+    client.get("/today")
+    b = _블록("B1")
+    client.post("/block/rollover", data={"block_id": b["id"], "plan": "첫째"})
+    client.post("/block/rollover", data={"block_id": b["id"], "plan": "둘째"})
+    assert _블록("B1", TOMORROW)["plan_text"] == "첫째\n둘째"
+
+
+def test_내일로는_오늘_PLAN을_지우지_않는다(client):
+    """이월은 복사다. 오늘 것이 사라지면 그날 기록이 없어진다."""
+    client.get("/today")
+    b = _블록("B1")
+    client.post("/save/field", data={"entity": "block", "id": b["id"],
+                                     "field": "plan_text", "value": "남아야 할 계획"})
+    client.post("/block/rollover", data={"block_id": b["id"], "plan": "남아야 할 계획"})
+    assert _블록("B1")["plan_text"] == "남아야 할 계획"
+
+
+def test_내일로는_같은_라벨_블록으로만_간다(client):
+    client.get("/today")
+    b = _블록("B4")
+    client.post("/block/rollover", data={"block_id": b["id"], "plan": "B4 계획"})
+    assert _블록("B4", TOMORROW)["plan_text"] == "B4 계획"
+    assert (_블록("B1", TOMORROW)["plan_text"] or "") == ""
+
+
+def test_내일로는_없는_블록이면_404(client):
+    client.get("/today")
+    res = client.post("/block/rollover", data={"block_id": "999999", "plan": "x"})
+    assert res.status_code == 404
+
+
+def test_내일_골격이_없어도_이월된다(client):
+    """내일을 아직 한 번도 안 열어 본 상태. 서버가 골격을 만들어 두고 넣어야 한다."""
+    client.get("/today")
+    assert _one("SELECT id FROM blocks WHERE date = ?", (TOMORROW,)) is None
+    b = _블록("B2")
+    res = client.post("/block/rollover", data={"block_id": b["id"], "plan": "내일 것"})
+    assert res.status_code == 200, res.text
+    assert _블록("B2", TOMORROW)["plan_text"] == "내일 것"
+
+
 # -- 수집함 ------------------------------------------------------------------
 
 
