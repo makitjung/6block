@@ -298,7 +298,12 @@ async def reflect_add(request: Request):
 
 @router.post("/reflect/sync/{item_id}")
 def reflect_sync(item_id: RowId):
-    """캘린더 반영에 실패했던 항목을 다시 시도한다."""
+    """캘린더 반영에 실패했던 항목을 다시 시도한다(카드의 '캘린더 안 됨' 을 누르면 온다).
+
+    다시보기 사본은 원본과 다른 이벤트다 — 설명이 '다시 볼 내용 + 원본' 이라
+    create_event 로 되살리면 정작 그날 볼 내용이 빠진 채 올라간다. source_id 가
+    있으면 원본 행에서 review_note 를 읽어 create_review_copy 로 만든다.
+    사본을 만드는 다른 두 자리(reflect_update)가 이미 그렇게 한다."""
     event_id = None
     with get_conn() as conn:
         r = conn.execute("SELECT * FROM reflection WHERE id = ?", (item_id,)).fetchone()
@@ -308,9 +313,17 @@ def reflect_sync(item_id: RowId):
             return JSONResponse({"ok": True, "synced": True})
         title = _reflect_title(r["title"], r["text"])
         try:
-            event_id = gcal_write.create_event(
-                r["kind"], title, r["text"] or "", r["tags"] or "", r["event_date"]
-            )
+            if r["source_id"]:
+                p = conn.execute("SELECT review_note FROM reflection WHERE id = ?",
+                                 (r["source_id"],)).fetchone()
+                event_id = gcal_write.create_review_copy(
+                    r["kind"], title, (p["review_note"] if p else "") or "",
+                    r["text"] or "", r["tags"] or "", r["event_date"]
+                )
+            else:
+                event_id = gcal_write.create_event(
+                    r["kind"], title, r["text"] or "", r["tags"] or "", r["event_date"]
+                )
         except Exception:
             event_id = None
         if event_id:

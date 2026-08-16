@@ -23,8 +23,10 @@
         <span class="rf-badge" data-kind="{{ it.kind }}">{{ it.kind }}</span>
         {% if it.source_id %}<span class="rf-rev">다시보기</span>{% endif %}
         <span class="rf-date mono">{{ it.event_date }}</span>
-        {# 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다 #}
-        {% if not it.synced %}<span class="rf-sync off">캘린더 안 됨</span>{% endif %}
+        {# 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다.
+           눌러서 다시 올린다 — 알리기만 하고 고칠 길이 없으면 그 표시는 막다른 길이다 #}
+        {% if not it.synced %}<button type="button" class="rf-sync off" data-id="{{ it.id }}"
+            title="눌러서 캘린더에 다시 올리기">캘린더 안 됨</button>{% endif %}
         <button type="button" class="rf-del" data-id="{{ it.id }}" title="삭제">✕</button>
     </div>
     <div class="rf-card-title">{% if it.title %}{{ it.title }}{% else %}{{ (it.text or '')[:60] }}{% endif %}</div>

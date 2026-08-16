@@ -3561,10 +3561,33 @@
                     deleteItem(b.dataset.id, () => b.closest('.rf-card')?.remove());
                 }));
 
-            // 카드 아무 데나 눌러도 열린다. ✕ 와 다시 볼 내용 칸은 빼고.
+            // '캘린더 안 됨' 을 누르면 그 자리에서 다시 올린다. 붉은 표시에 뻔한 고침이
+            // 있으면 그 표시가 곧 버튼이다 — 알리기만 하면 손쓸 데가 없다.
+            list.querySelectorAll('.rf-sync.off').forEach((b) =>
+                b.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (b.disabled) return;
+                    b.disabled = true;
+                    b.textContent = '올리는 중';
+                    fetch('/reflect/sync/' + b.dataset.id, { method: 'POST' })
+                        .then((r) => r.json())
+                        .then((d) => {
+                            if (d && d.synced) { b.remove(); return; }
+                            b.disabled = false;
+                            b.textContent = '캘린더 안 됨';
+                            toast('캘린더에 못 올렸어요. 구글 연결을 확인해주세요.');
+                        })
+                        .catch(() => {
+                            b.disabled = false;
+                            b.textContent = '캘린더 안 됨';
+                        });
+                }));
+
+            // 카드 아무 데나 눌러도 열린다. ✕·캘린더 버튼과 다시 볼 내용 칸은 빼고.
             list.querySelectorAll('.rf-card').forEach((card) =>
                 card.addEventListener('click', (e) => {
-                    if (e.target.closest('.rf-del') || e.target.tagName === 'TEXTAREA') return;
+                    if (e.target.closest('.rf-del') || e.target.closest('.rf-sync')
+                        || e.target.tagName === 'TEXTAREA') return;
                     openEditModal(card);
                 }));
 

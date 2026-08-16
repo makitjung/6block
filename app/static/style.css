@@ -1277,8 +1277,11 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-badge[data-kind="감상"] { --rf-tone: var(--tone-teal); }
 .rf-badge[data-kind="결심"] { --rf-tone: var(--tone-purple); }
 /* 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다 */
+/* 눌러서 다시 올리는 버튼이라 글꼴을 물려받고 테두리를 지운다(알약 모양은 그대로) */
 .rf-sync.off { font-size: 11px; padding: 1px 8px; border-radius: var(--r-pill);
-    color: var(--danger); background: var(--danger-soft); white-space: nowrap; }
+    color: var(--danger); background: var(--danger-soft); white-space: nowrap;
+    border: 0; font-family: inherit; cursor: pointer; }
+.rf-sync.off:disabled { opacity: 0.6; cursor: default; }
 /* 이동 시 잠깐 강조 */
 .rf-card.flash { animation: rfFlash 1.2s ease; }
 @keyframes rfFlash { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: var(--sh-1); } }

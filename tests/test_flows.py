@@ -681,6 +681,46 @@ def test_고결감_추가_수정_다시보기메모_삭제(client):
     assert _one("SELECT id FROM reflection WHERE id = ?", (rid,)) is None
 
 
+def test_캘린더_다시올리기가_다시보기_사본을_사본으로_만든다(client, monkeypatch):
+    """'캘린더 안 됨' 을 눌러 되살릴 때, 다시보기 사본은 사본 서식으로 올라가야 한다.
+
+    사본 이벤트의 설명은 '다시 볼 내용 + 원본' 이라 create_event 로 되살리면
+    정작 그날 볼 내용이 빠진 채 캘린더에 선다."""
+    from app.integrations import gcal_write
+
+    rid = client.post("/reflect/add", data={
+        "kind": "고민", "title": "원본", "text": "본문", "tags": "",
+        "review_date": ""}).json()["id"]
+    client.post(f"/reflect/review-note/{rid}", data={"note": "그날 볼 것"})
+    # 다시 볼 날을 잡으면 사본 행이 생긴다(캘린더는 꺼져 있어 synced=0 이다)
+    client.post(f"/reflect/update/{rid}", data={
+        "kind": "고민", "title": "원본", "text": "본문", "tags": "",
+        "review_date": "2026-09-01", "event_date": TODAY})
+    child = _one("SELECT * FROM reflection WHERE source_id = ?", (rid,))
+    assert child and not child["synced"]
+
+    # 카드의 '캘린더 안 됨' 은 알림이 아니라 누르는 버튼이다(막다른 표시를 두지 않는다)
+    html = client.get("/reflect").text
+    assert f'class="rf-sync off" data-id="{child["id"]}"' in html
+
+    seen = {}
+    monkeypatch.setattr(gcal_write, "create_review_copy",
+                        lambda *a: seen.setdefault("copy", a) and "ev-1" or "ev-1")
+    monkeypatch.setattr(gcal_write, "create_event",
+                        lambda *a: seen.setdefault("plain", a) and "ev-2" or "ev-2")
+
+    r = client.post(f"/reflect/sync/{child['id']}").json()
+    assert r["synced"] is True
+    assert "copy" in seen and "plain" not in seen, "사본을 예사 일정으로 만들었다"
+    assert "그날 볼 것" in seen["copy"], "다시 볼 내용이 안 실렸다"
+    assert _one("SELECT * FROM reflection WHERE id = ?", (child["id"],))["synced"] == 1
+
+    # 원본은 그대로 예사 일정이다
+    seen.clear()
+    client.post(f"/reflect/sync/{rid}")
+    assert "plain" in seen and "copy" not in seen
+
+
 def test_고결감_uid가_자동으로_붙는다(client):
     client.get("/reflect")
     rid = client.post("/reflect/add", data={
