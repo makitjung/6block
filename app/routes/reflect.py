@@ -5,7 +5,15 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.common import KST, RowId, _like_pattern, _off_loop, templates, today_str
+from app.common import (
+    KST,
+    RowId,
+    _like_pattern,
+    _off_loop,
+    _parse_date,
+    templates,
+    today_str,
+)
 from app.db import get_conn, uid_from_created
 from app.integrations import gcal_write
 
@@ -246,7 +254,11 @@ async def reflect_add(request: Request):
     text = (form.get("text") or "").strip()                     # 내용
     tags = (form.get("tags") or "").strip()
     event_date = today_str()                                    # 기록일은 자동(오늘)
-    review_date = (form.get("review_date") or "").strip() or None  # 입력할 때만 저장
+    # 다시 볼 날짜는 입력할 때만 저장한다. 형식이 아니거나 다룰 수 없는 연도면 없는 것으로 본다
+    # (이 값이 그대로 캘린더 종일 이벤트의 끝날짜 계산으로 넘어간다).
+    review_date = (form.get("review_date") or "").strip() or None
+    if review_date and _parse_date(review_date) is None:
+        review_date = None
     if not title and not text:
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
     title = _reflect_title(title, text)
@@ -327,6 +339,8 @@ async def reflect_update(item_id: RowId, request: Request):
         text = (form.get("text") or "").strip()
         tags = (form.get("tags") or "").strip()
         review_date = (form.get("review_date") or "").strip() or None
+        if review_date and _parse_date(review_date) is None:
+            review_date = None
         event_date = (form.get("event_date") or "").strip() or r["event_date"]
         if not title and not text:
             return JSONResponse({"ok": False, "error": "empty"}, status_code=400)

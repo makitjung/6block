@@ -277,12 +277,21 @@ def _join3(form, prefix: str) -> str:
     return joined if joined.strip() else ""
 
 
+# 이 앱이 다루는 날짜는 사람의 생애 범위다. 파이썬 date 의 상한(9999-12-31)에 바짝 붙은
+# 날짜가 들어오면 형식 검사는 통과한 뒤 그 다음 계산에서 터진다. 하루 화면은 '다음날'(d+1일)을,
+# 주간 항목은 '그 주 일요일'(월요일+6일)을 구하는데 9999-12-27 부터는 그 결과가 10000년이 돼
+# OverflowError 가 그대로 올라가 화면이 500 이 된다. 계산부마다 try/except 를 다는 대신
+# 입구 한 곳에서 걸러 day·week·plan·api 를 한꺼번에 막는다.
+MAX_YEAR = 9000
+
+
 def _parse_date(s) -> date | None:
-    """'YYYY-MM-DD' 를 date 로. 형식이 틀리면 None."""
+    """'YYYY-MM-DD' 를 date 로. 형식이 틀리거나 MAX_YEAR 를 넘으면 None."""
     try:
-        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
+        d = datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+    return d if d.year <= MAX_YEAR else None
 
 
 # -- 장기 항목 상하관계 (오늘·주간 공용) --------------------------------------

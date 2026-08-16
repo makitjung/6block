@@ -618,10 +618,14 @@ async def save_field(request: Request):
                     (date_str, value),
                 )
             else:
+                # 화면(app.js bindAutoSave)은 3칸을 늘 함께 보내지만, 다른 클라이언트가
+                # {entity, field, value} 만 보낼 수도 있다. 그러면 _merge3 가 찾을 키가
+                # 없어 200 을 돌려주면서 값을 조용히 버린다. 그 경우에만 이 칸 하나를 채워 준다.
+                triple_form = form if field in form else {**dict(form), field: value}
                 for prefix, col in _META_TRIPLES:
                     if not field.startswith(prefix):
                         continue
-                    _merge3(conn, date_str, prefix, col, form)
+                    _merge3(conn, date_str, prefix, col, triple_form)
                     if prefix == "dplan":
                         achieve_date = date_str   # 달성이 바뀌었으니 성과 캘린더 반영
                     break

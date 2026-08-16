@@ -78,9 +78,18 @@ def status() -> dict:
 
 
 def _next_day(d: str) -> str:
-    """종일 이벤트의 end.date는 종료 다음날(배타적)이라 하루 더한다."""
+    """종일 이벤트의 end.date는 종료 다음날(배타적)이라 하루 더한다.
+
+    date 의 상한(9999-12-31)이면 다음날이 없어 OverflowError 가 난다. 그대로 두면
+    고결감 저장 전체가 500 이 되므로, 캘린더에 못 올리는 날짜라고 ValueError 로 알린다.
+    부르는 쪽은 이미 예외를 잡아 '캘린더 반영 실패'로 처리하고 기록 자체는 저장한다.
+    (평소에는 common._parse_date 가 MAX_YEAR 로 먼저 막아 여기까지 오지 않는다.)
+    """
     y, m, dd = (int(x) for x in d.split("-"))
-    return (date(y, m, dd) + timedelta(days=1)).isoformat()
+    try:
+        return (date(y, m, dd) + timedelta(days=1)).isoformat()
+    except OverflowError:
+        raise ValueError(f"캘린더에 올릴 수 없는 날짜입니다: {d}") from None
 
 
 def _hashtags(tags: str) -> str:
@@ -108,8 +117,14 @@ def _norm_kind(kind: str) -> str:
 
 
 def parse_summary(summary: str):
-    """'[종류] 제목' → (kind, title). 형식이 아니면 (고민, 통째 제목)."""
-    m = re.match(r"^\s*\[(.+?)\]\s*(.*)$", summary or "")
+    """'[종류] 제목' → (kind, title). 형식이 아니면 (고민, 통째 제목).
+
+    종류 자리에는 대괄호가 올 수 없다. 예전 정규식은 (.+?) 가 비탐욕적이라
+    '[고민 [부제]] 제목' 에서 첫 ']' 까지만 종류로 보고 '] 제목' 만 제목에 남겨,
+    약속한 '통째 제목' 대신 앞부분이 잘린 제목을 돌려줬다.
+    제목 안의 대괄호('[결정] [중요] 회의')는 종전대로 그대로 보존된다.
+    """
+    m = re.match(r"^\s*\[([^\[\]]+)\]\s*(.*)$", summary or "")
     if m:
         return _norm_kind(m.group(1)), m.group(2).strip()
     return "고민", (summary or "").strip()

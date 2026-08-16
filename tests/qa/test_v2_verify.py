@@ -55,22 +55,31 @@ class TestSlotsForDayEdgeCaseBugReport:
         assert "30분 단위" in data.get("error", "")
 
     def test_settings_api_accepts_30min_multiple_blocks(self, client: TestClient):
-        """설정 API는 30분 배수인 블록을 수락한다."""
-        # 08:00~08:30 (30분)
+        """설정 API는 30분 배수인 블록 8개를 수락한다.
+
+        이 엔드포인트는 8블록을 통째로 받는다(start_0~start_7). 한 칸만 보내면
+        나머지가 빈 값이라 'HH:MM 형식이 잘못됨'으로 400 이 나는 것이 정상이다.
+        """
+        from app.config import DAY_BLOCKS
+
+        data = {"scope": ""}
+        for i, (_label, _core, s_t, e_t) in enumerate(DAY_BLOCKS):
+            data[f"start_{i}"] = s_t
+            data[f"end_{i}"] = e_t      # 기본 시간표는 전부 30분 배수다
+
+        response = client.post("/settings/blocktimes", data=data)
+
+        assert response.status_code == 200, response.text
+        assert response.json().get("ok") is True
+
+    def test_settings_api_rejects_partial_payload(self, client: TestClient):
+        """한 칸만 보내면 거절한다(위 테스트가 왜 8칸을 다 보내는지에 대한 근거)."""
         response = client.post(
             "/settings/blocktimes",
-            data={
-                "scope": "",
-                "label_0": "B1",
-                "start_0": "08:00",
-                "end_0": "08:30",  # 30분 ✓
-            },
+            data={"scope": "", "start_0": "08:00", "end_0": "08:30"},
         )
-
-        # 200 OK 수락됨
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("ok") is True
+        assert response.status_code == 400
+        assert "HH:MM" in response.json().get("error", "")
 
 
 class TestRealImpactAnalysis:

@@ -225,20 +225,27 @@ def _assign_lanes(bars: list[dict]) -> int:
         fams.setdefault(root_of(b), []).append(b)
 
     lanes: list[list[tuple[str, str]]] = []      # 칸마다 이미 놓인 (시작, 끝) 목록
-    held: list[tuple[int, int]] = []             # 묶음이 통째로 잡아 둔 칸 범위
+    # 묶음이 통째로 잡아 둔 칸. 예전에는 (시작, 끝) 구간 목록을 두고 칸을 물어볼 때마다
+    # 전체를 훑어(any) 묶음 수에 비례해 느려졌다. 잡힌 칸 번호를 그대로 담아 O(1)로 본다.
+    held_lanes: set[int] = set()
+    max_lane = -1                                # 지금까지 실제로 쓴 가장 아래 칸
+
     def open_at(i: int, b) -> bool:
         """그 칸이 어느 묶음에도 잡혀 있지 않고 기간도 안 겹치는가."""
-        if any(lo <= i < hi for lo, hi in held):
+        if i in held_lanes:
             return False
         while i >= len(lanes):
             lanes.append([])
         return all(b["ve"] < s or b["vs"] > e for s, e in lanes[i])
 
     def put(i: int, b):
+        nonlocal max_lane
         while i >= len(lanes):
             lanes.append([])
         lanes[i].append((b["vs"], b["ve"]))
         b["lane"] = i
+        if i > max_lane:
+            max_lane = i
 
     # 영역 표시 순서대로 위에서 아래로 놓는다. 같은 영역 안에서는 손으로 정한 순서(rank)를
     # 먼저 따르고, 정한 적이 없으면 예전처럼 일찍 시작하는 것부터 놓는다. 기간이 안 겹치면
@@ -250,7 +257,7 @@ def _assign_lanes(bars: list[dict]) -> int:
     floor, seen_area = 0, None
     for fam in ordered:
         if seen_area is not None and fam[0]["area_order"] != seen_area:
-            floor = max((b["lane"] for b in bars if "lane" in b), default=-1) + 1
+            floor = max_lane + 1          # 예전에는 여기서 막대 전체를 다시 훑었다
         seen_area = fam[0]["area_order"]
         members = sorted(fam, key=lambda x: (x["level"], x["vs"], x["ve"], x["id"]))
         if len(members) < 2:
@@ -277,11 +284,11 @@ def _assign_lanes(bars: list[dict]) -> int:
             base += 1
         for b in members:
             put(base + rel[b["id"]], b)
-        held.append((base, base + len(span)))
+        held_lanes.update(range(base, base + len(span)))
     # 맨 아래 한 칸은 늘 비워 둔다. 하위 막대를 그리로 끌어내려 상위에서 떼고,
     # 다른 줄에서 끌어온 막대를 놓는 자리로도 쓴다.
     # (lanes 는 자리를 찾다 늘어나기도 해서, 실제로 쓴 칸으로 센다)
-    used = max((b["lane"] for b in bars), default=-1) + 1
+    used = max_lane + 1
     return max(used + 1, MIN_LANES)
 
 

@@ -106,23 +106,14 @@ class TestIntegrationEdgeCaseInput:
     """라우트 엔드포인트에서 극단값 입력 처리."""
 
     def test_day_view_with_max_date_path(self, client):
-        """GET /day/9999-12-31 요청."""
-        # 이 경로는 _parse_date("9999-12-31")에 의해 검증됨
-        # 유효한 날짜 형식이므로 _day_view로 진행
-        response = client.get("/day/9999-12-31")
-        # 200 또는 500이 반환될 수 있음
-        assert response.status_code in (200, 500)
-        # 500이면 OverflowError 때문일 가능성
+        """GET /day/9999-12-31 은 OverflowError 가 그대로 올라온다(= 운영에서 500).
 
-    def test_save_achievement_with_max_date(self, client):
-        """POST /save/achievement with date=9999-12-31."""
-        # 이 엔드포인트는 upsert_achievement_event 호출
-        # 극단값 date_str이 전달되면 OverflowError 발생 가능
-        response = client.post(
-            "/save/achievement",
-            json={"date": "9999-12-31", "items": ["달성1"]}
-        )
-        # 성공하거나 명확한 오류 응답이어야 함 (500 아님)
-        if response.status_code == 500:
-            pytest.fail("극단값 입력에 대해 500 오류 반환 (OverflowError 미처리)")
-        assert response.status_code in (200, 201, 400, 422)
+        확정된 결함이다. 고치면 이 테스트가 실패하므로, 고칠 때 200 을 기대하도록 바꾼다.
+        재현 경로는 tests/qa/test_p6_maxdate.py 가 HTTP 요청으로 더 정확히 남긴다.
+        """
+        with pytest.raises(OverflowError):
+            client.get("/day/9999-12-31")
+
+    # 삭제: POST /save/achievement 는 존재하지 않는 엔드포인트였다(404).
+    # 달성 저장은 /save/field(entity=meta, field=dplan1~3) 와 /save/day/{date} 가 담당하며,
+    # 그 경로의 성과 캘린더 반영은 tests/qa/test_p5_final_verify.py 가 다룬다.

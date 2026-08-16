@@ -14,6 +14,9 @@ def _seed_range(start_i: int, end_i: int):
     with get_conn() as c:
         for i in range(start_i, end_i):
             ds = (base + timedelta(days=i)).strftime("%Y-%m-%d")
+            # 화면이 이미 골격을 만들어 둔 날은 건너뛴다(중복 삽입 방지).
+            if c.execute("SELECT 1 FROM blocks WHERE date = ? LIMIT 1", (ds,)).fetchone():
+                continue
             ids = {}
             for order, (label, is_core, s_t, e_t) in enumerate(DAY_BLOCKS):
                 cur = c.execute(
