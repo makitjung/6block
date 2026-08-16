@@ -126,8 +126,14 @@ def test_서비스워커가_옛_캐시를_지운다():
     assert "skipWaiting" in SW_JS and "clients.claim" in SW_JS
 
 
-def test_서비스워커_캐시_이름이_자산_버전을_따른다():
-    assert "searchParams.get('v')" in SW_JS, "버전이 안 붙으면 옛 캐시가 계속 산다"
+def test_서비스워커가_캐시를_두지_않는다():
+    """캐시 자체를 없앴다. 예전에는 캐시 이름에 ?v= 를 붙여 옛 캐시를 갈아치웠는데,
+    실패 폴백이 ignoreSearch 로 ?v= 를 무시해 결국 옛 app.js 가 나왔다.
+    자세한 판단 근거는 app/static/sw.js 첫 주석과 tests/qa/test_p8_sw_manifest.py 에 있다."""
+    code = "\n".join(ln for ln in SW_JS.splitlines() if not ln.strip().startswith("//"))
+    assert "caches.open" not in code, "캐시 저장소를 다시 열고 있다"
+    assert "respondWith" not in code, "요청을 가로채 캐시로 답하고 있다"
+    assert "caches.delete" in code, "이미 설치된 기기의 옛 캐시를 지우는 코드가 없다"
 
 
 # -- 응답 확인 없는 fetch (서버가 오류 HTML 을 주면 화면이 멈춘다) -----------------
