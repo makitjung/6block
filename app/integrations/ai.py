@@ -50,8 +50,13 @@ def complete(system: str, user: str, *, max_tokens: int = 600,
                  "Authorization": f"Bearer {key}"},
         method="POST",
     )
-    # 이 함수의 약속은 '어떻게 실패하든 None' 이다. 부르는 쪽(주간 자동세분화·분석 요약)은
-    # None 을 받으면 규칙기반으로 넘어간다. 그래서 예외 종류를 하나씩 적지 않고 통째로 잡는다.
+    # 이 함수의 약속은 '어떻게 실패하든 None' 이다. 그래서 예외 종류를 하나씩 적지 않고
+    # 통째로 잡는다. None 을 받은 뒤의 처리는 부르는 쪽마다 다르니 헷갈리지 말 것.
+    #  - 주간 자동세분화(week.decompose_themes)는 그 자리에서 _rule_distribute 로 넘어간다.
+    #  - 분석(analytics)은 함수 단위로 넘어가지 않는다. /analytics 화면이 규칙기반
+    #    _build_insights 를 애초에 늘 싣고 있고, AI 는 눌렀을 때만 부르는 별도 버튼이라
+    #    실패하면 그 사실을 그대로 알린다. 여기서 규칙기반 문장을 대신 돌려주면 사용자가
+    #    'AI 제안'을 눌러 이미 화면에 떠 있는 문장을 AI 답으로 받는 꼴이 된다.
     # 예전에는 URLError·ValueError·KeyError·IndexError 만 적어 두었는데, 응답이
     # {"choices": null} 이면 TypeError 라 그대로 새어 나가 그 화면이 500 이 됐다.
     # 설정 탭에서 AI 주소를 다른 JSON API 로 잘못 적어 두면 곧바로 겪는 모양이다.

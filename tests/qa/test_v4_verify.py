@@ -9,9 +9,8 @@ class TestNextDayOverflow:
     """_next_day 극단값 OverflowError 검증."""
 
     def test_next_day_max_date_overflow_occurs(self):
-        """9999-12-31 + 1day는 범위를 벗어나 OverflowError 발생."""
-        # 이 테스트는 OverflowError가 실제로 발생하는지 확인
-        with pytest.raises(OverflowError):
+        """(수정 후) 9999-12-31 은 다음날이 없어 명확한 ValueError 로 알린다."""
+        with pytest.raises(ValueError):
             gcal_write._next_day("9999-12-31")
 
     def test_next_day_normal_dates_work(self):
@@ -43,11 +42,10 @@ class TestNextDayOverflow:
         assert result == "9999-12-31"
 
     def test_next_day_at_max_boundary(self):
-        """9999-12-31은 OverflowError (재확인)."""
-        with pytest.raises(OverflowError) as exc_info:
+        """(수정 후) 오류 메시지에 문제가 된 날짜가 들어가 원인을 바로 알 수 있다."""
+        with pytest.raises(ValueError) as exc_info:
             gcal_write._next_day("9999-12-31")
-        # 에러 메시지 확인
-        assert "out of range" in str(exc_info.value).lower()
+        assert "9999-12-31" in str(exc_info.value)
 
 
 class TestNextDayCallsitesException:
@@ -106,13 +104,13 @@ class TestIntegrationEdgeCaseInput:
     """라우트 엔드포인트에서 극단값 입력 처리."""
 
     def test_day_view_with_max_date_path(self, client):
-        """GET /day/9999-12-31 은 OverflowError 가 그대로 올라온다(= 운영에서 500).
+        """(수정 후) GET /day/9999-12-31 은 500 이 아니라 /today 로 보낸다.
 
-        확정된 결함이다. 고치면 이 테스트가 실패하므로, 고칠 때 200 을 기대하도록 바꾼다.
-        재현 경로는 tests/qa/test_p6_maxdate.py 가 HTTP 요청으로 더 정확히 남긴다.
+        _parse_date 가 MAX_YEAR 로 먼저 걸러 계산부까지 가지 않는다.
+        더 넓은 경계 검증은 tests/qa/test_p6_known_defects.py 에 있다.
         """
-        with pytest.raises(OverflowError):
-            client.get("/day/9999-12-31")
+        r = client.get("/day/9999-12-31", follow_redirects=False)
+        assert r.status_code in (200, 307)
 
     # 삭제: POST /save/achievement 는 존재하지 않는 엔드포인트였다(404).
     # 달성 저장은 /save/field(entity=meta, field=dplan1~3) 와 /save/day/{date} 가 담당하며,

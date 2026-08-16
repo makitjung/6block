@@ -439,15 +439,14 @@ def test_p3_day_save_field_and_save_day_consistency(client, fresh_db):
 
 
 def test_p3_day_meta_merge3_dplan_path(client, fresh_db):
-    """
-    BUG FOUND: POST /save/field로 메타 3칸 필드(dplan1~3) 저장 시 form 구조 불일치.
+    """(수정 후) POST /save/field 로 메타 3칸 필드를 최소 폼으로 보내도 저장된다.
 
-    /save/field는 form에 "value" 필드만 보내는데, _merge3는 form에서 "dplan1" 키를 찾습니다.
-    따라서 실제로는 저장되지 않습니다. 이는 설계 결함입니다:
-    - /save/field: value 전달
-    - _merge3: form["dplan1"], form["dplan2"], form["dplan3"] 기대
+    예전에는 /save/field 가 {entity, field, id, value} 만 받는데 _merge3 는 form["dplan1"]
+    을 찾아, 200 을 돌려주면서 값을 조용히 버렸다. 지금은 그룹 키가 없을 때만 그 칸 하나를
+    폼에 채워 넣어 반영한다.
 
-    이 테스트는 버그를 기록하는 것입니다.
+    참고로 화면(app.js bindAutoSave)은 예나 지금이나 3칸을 함께 보내므로 사용자 경로에는
+    영향이 없었다. 이 수정은 Record 앱·스크립트 같은 다른 클라이언트를 위한 것이다.
     """
     d = today_str()
     client.get("/today")
@@ -462,19 +461,15 @@ def test_p3_day_meta_merge3_dplan_path(client, fresh_db):
             "value": "save_field 달성 1",
         },
     )
-    # 상태코드는 200이지만 실제로는 저장되지 않음
     assert resp.status_code in (200, 303), f"save_field 응답 실패: {resp.status_code}"
 
-    # DB에서 daily_meta 확인 - 이 시점에 저장되지 않음 (버그)
     with get_conn() as conn:
         meta = conn.execute(
             "SELECT daily_plan FROM daily_meta WHERE date = ?", (d,)
         ).fetchone()
 
     assert meta is not None, "daily_meta가 생성되지 않았다"
-    # BUG: dplan1이 실제로 저장되지 않음 (form["dplan1"] != form["value"])
-    # 이 어설션은 버그의 증거
-    assert meta["daily_plan"] == "", f"BUG: dplan1이 저장되어선 안 되는데 저장됐다: {meta['daily_plan']}"
+    assert meta["daily_plan"].split("\n")[0] == "save_field 달성 1", meta["daily_plan"]
 
     # /save/day로 올바르게 저장
     resp = client.post(

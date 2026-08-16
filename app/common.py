@@ -88,7 +88,7 @@ templates.env.filters["short_date"] = _short_date
 # sw.js 도 넣는다. 서비스워커는 /sw.js?v=<이 값> 으로 등록되므로, 여기 없으면 sw.js 만
 # 고쳤을 때 등록 주소가 그대로라 새 워커가 곧바로 올라오지 않는다.
 VERSIONED_ASSETS = ("app.js", "style.css", "sw.js",
-                    "icon.svg", "icon.png", "apple-touch-icon.png")
+                    "icon.svg", "icon.png", "icon-192.png", "apple-touch-icon.png")
 _ASSET_VER_TTL = 10          # 초. 한 페이지를 그리는 동안 stat 을 반복하지 않게만 잡아 둔다.
 _asset_ver_cache: tuple[float, str] | None = None
 

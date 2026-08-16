@@ -78,9 +78,10 @@ class TestSaveFieldMetaMerge3Detailed:
     """
 
     def test_save_field_meta_dplan_bug_confirmed(self, client, fresh_db):
-        """
-        bug를 재현하는 테스트.
-        /save/field로 dplan1을 저장하면 DB에 저장되지 않는다.
+        """(수정 후) /save/field 로 dplan1 을 최소 폼으로 보내도 DB 에 저장된다.
+
+        보고 당시에는 저장되지 않았다. 다만 그때도 화면(app.js)은 3칸을 함께 보내고 있어
+        실제 사용자 데이터 유실은 없었다. 수정은 다른 클라이언트를 위한 계약 보강이다.
         """
         d = today_str()
         client.get("/today")
@@ -105,13 +106,9 @@ class TestSaveFieldMetaMerge3Detailed:
                 "SELECT daily_plan FROM daily_meta WHERE date = ?", (d,)
             ).fetchone()
 
-        # meta가 생성되지 않았거나, 생성되었어도 daily_plan이 빈 문자열
-        if meta:
-            # daily_plan이 비어있음 = 저장되지 않음 (버그)
-            assert meta["daily_plan"] == "", f"save_field 저장이 작동하지 않음: {meta['daily_plan']}"
-        else:
-            # meta가 생성되지 않음 = 더욱 확실한 버그
-            pass
+        assert meta is not None, "daily_meta 가 만들어지지 않았다"
+        assert meta["daily_plan"].split("\n")[0] == "save_field로 저장한 달성", \
+            meta["daily_plan"]
 
     def test_save_day_works_correctly(self, client, fresh_db):
         """

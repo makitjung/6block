@@ -64,20 +64,19 @@ def test_save_field_tag_path_single_key_saves(client):
     assert _meta_col(client, d, "goal_tags") == "\n건강\n"
 
 
-def test_save_field_minimal_payload_is_silently_dropped(client):
-    """계약 취약점(진짜 결함이 아니라 견고성 문제).
+def test_save_field_minimal_payload_now_saves(client):
+    """(수정 후) 그룹 키 없이 {entity,field,value} 만 보내도 반영된다.
 
-    그룹 키 없이 {entity,field,value} 만 보내면 200 을 돌려주면서 값을 버린다.
-    현재 화면은 이런 폼을 보내지 않으므로 사용자에게 드러나지 않는다. 다만 이 엔드포인트를
-    다른 클라이언트(Record 앱·스크립트)가 부르면 조용히 유실된다.
+    보고 당시에는 200 을 돌려주면서 값을 버렸다. 화면은 늘 3칸을 함께 보내 사용자
+    경로에는 영향이 없었고, 이 수정은 Record 앱·스크립트 같은 다른 클라이언트를 위한 것이다.
     """
     d = "2026-08-15"
     client.get(f"/day/{d}")
     r = client.post("/save/field", data={
-        "entity": "meta", "id": d, "field": "dplan1", "value": "버려짐",
+        "entity": "meta", "id": d, "field": "dplan1", "value": "최소폼",
     })
-    assert r.status_code == 200                       # 성공이라고 답하지만
-    assert _meta_col(client, d, "daily_plan") == ""   # 값은 저장되지 않는다
+    assert r.status_code == 200
+    assert _meta_col(client, d, "daily_plan").split("\n")[0] == "최소폼"
 
 
 # ---------------------------------------------------------------------------
@@ -85,12 +84,11 @@ def test_save_field_minimal_payload_is_silently_dropped(client):
 # ---------------------------------------------------------------------------
 
 
-def test_parse_summary_nested_bracket_breaks_docstring():
-    """docstring: '형식이 아니면 (고민, 통째 제목)'. 중첩 대괄호는 통째가 아니라 잘린 제목을 준다."""
+def test_parse_summary_nested_bracket_now_matches_docstring():
+    """(수정 후) docstring '형식이 아니면 (고민, 통째 제목)' 을 지킨다."""
     kind, title = gcal_write.parse_summary("[고민 [부제]] 제목")
     assert kind == "고민"
-    assert title == "] 제목"                    # 실제
-    assert title != "[고민 [부제]] 제목"          # 약속된 '통째'가 아니다
+    assert title == "[고민 [부제]] 제목"
 
 
 @pytest.mark.parametrize("summary,want_kind,want_title", [
@@ -117,19 +115,19 @@ def test_create_event_roundtrip_never_produces_nested_first_bracket():
 # ---------------------------------------------------------------------------
 
 
-def test_next_day_overflow_at_max_year():
-    """9999-12-31 은 형식이 유효해 _parse_date 를 통과하지만 +1일에서 터진다."""
+def test_next_day_raises_clear_error_at_max_year():
+    """(수정 후) OverflowError 대신 날짜가 담긴 ValueError 를 낸다."""
     assert gcal_write._next_day("2026-08-15") == "2026-08-16"
-    with pytest.raises(OverflowError):
+    with pytest.raises(ValueError) as ei:
         gcal_write._next_day("9999-12-31")
+    assert "9999-12-31" in str(ei.value)
 
 
-def test_next_day_no_guard_in_callers():
-    """호출부에 try/except 가 없어 이 예외는 그대로 위로 올라간다(500 이 된다)."""
-    import inspect
-    src = inspect.getsource(gcal_write.create_event)
-    assert "_next_day" in src
-    assert "OverflowError" not in src
+def test_parse_date_gate_blocks_max_year_before_callers():
+    """애초에 _parse_date 가 막아 라우트에서는 여기까지 오지 않는다."""
+    from app.common import MAX_YEAR, _parse_date
+    assert _parse_date("9999-12-31") is None
+    assert _parse_date(f"{MAX_YEAR}-12-31") is not None
 
 
 # ---------------------------------------------------------------------------

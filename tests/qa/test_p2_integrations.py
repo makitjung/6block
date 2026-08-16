@@ -49,10 +49,12 @@ class TestGcalWriteNextDayEdges:
             gcal_write._next_day("2024-01-00")
 
     def test_next_day_max_date(self):
-        """연도 9999년 12월 31일."""
-        with pytest.raises(OverflowError):
-            # 다음날은 10000-01-01이 되어야 하는데 date가 4자리만 지원
-            # ValueError가 아니라 OverflowError 발생
+        """연도 9999년 12월 31일. (수정 후) 다음날이 없으므로 명확한 ValueError 로 알린다.
+
+        예전에는 OverflowError 가 그대로 올라가 고결감 저장 전체가 500 이 됐다.
+        지금은 부르는 쪽의 except 가 잡아 '캘린더 반영 실패'로 처리하고 기록은 저장된다.
+        """
+        with pytest.raises(ValueError):
             gcal_write._next_day("9999-12-31")
 
     def test_next_day_y1_date(self):
@@ -165,14 +167,15 @@ class TestGcalWriteParseSummaryEdges:
     """parse_summary: 대괄호 중첩, 빈 대괄호, 내용 없음, 비표준 형식."""
 
     def test_parse_summary_nested_brackets(self):
-        """대괄호 중첩: [고민 [부제]] 제목. 정규식이 첫 번째 ] 까지 가져와 형식이 깨짐."""
+        """대괄호 중첩: [고민 [부제]] 제목. (수정 후) 형식이 아니므로 제목을 통째로 준다.
+
+        예전 정규식 ^\\s*\\[(.+?)\\]\\s*(.*)$ 는 비탐욕적이라 '고민 [부제' 까지만 종류로 보고
+        '] 제목' 만 남겨 앞부분을 조용히 잘랐다. 지금은 종류 자리에 대괄호를 허용하지 않아
+        아예 매칭되지 않고, docstring 대로 (고민, 통째 제목) 이 나온다.
+        """
         kind, title = gcal_write.parse_summary("[고민 [부제]] 제목")
-        # 정규식 ^\s*\[(.+?)\]\s*(.*)$ 는 비탐욕적이므로
-        # [고민 [부제] 부분까지 가져옴 → group(1)="고민 [부제", group(2)="] 제목"
-        # 이것은 조용한 데이터 손상: 사용자가 [고민 [부제]] 형식으로 적었는데
-        # 첫 번째 ] 이후가 버려짐
-        assert kind == "고민"  # "고민 [부제"가 정규화되어 "고민"이 됨
-        assert title == "] 제목"  # 조용한 손상!
+        assert kind == "고민"
+        assert title == "[고민 [부제]] 제목"
 
     def test_parse_summary_empty_brackets(self):
         """빈 대괄호: [] 제목."""

@@ -17,12 +17,11 @@ class TestParseSummaryNestedBracketsVerification:
     """
 
     def test_nested_brackets_reproduced_confirmed(self):
-        """중첩 대괄호가 정규식의 한계로 데이터를 손상시킨다. 버그 확정."""
+        """(수정 후) 중첩 대괄호는 형식이 아니므로 제목이 통째로 보존된다."""
         kind, title = gcal_write.parse_summary("[고민 [부제]] 제목")
 
-        # 실제 동작 확인
         assert kind == "고민"
-        assert title == "] 제목"  # 손상됨
+        assert title == "[고민 [부제]] 제목"      # 더 이상 손상되지 않는다
 
     def test_normal_format_works_correctly(self):
         """대조군: 정상 형식은 올바르게 작동."""
@@ -43,15 +42,11 @@ class TestParseSummaryNestedBracketsVerification:
         중첩 대괄호는 명시된 형식 `[종류] 제목` 이 아니다.
         따라서 "형식이 아님" 규칙을 따라 통째 문자열을 반환해야 한다.
 
-        현재 구현이 형식이 아닌 입력에 대해 부분 정규식 매칭으로
-        데이터를 손상시키는 것은 docstring 위반이다.
+        보고 당시 구현은 형식이 아닌 입력에 부분 정규식 매칭을 해 데이터를 손상시켰다.
+        수정 후에는 이 규칙을 지킨다. 종류 자리에 대괄호를 허용하지 않는 정규식으로 바꿔
+        중첩 입력은 아예 매칭되지 않고 통째 제목으로 떨어진다.
         """
-        # 기대: ("고민", "[고민 [부제]] 제목")
-        # 실제: ("고민", "] 제목")
-        # → 버그 확인됨
-
         kind, title = gcal_write.parse_summary("[고민 [부제]] 제목")
 
-        # 버그를 명시적으로 기록
-        assert title != "[고민 [부제]] 제목", "형식이 아닌 입력에 대해 전체 문자열을 반환해야 함"
-        assert title == "] 제목", "정규식이 중첩 대괄호를 처리하지 못해 손상됨"
+        assert kind == "고민"
+        assert title == "[고민 [부제]] 제목", "형식이 아닌 입력은 전체 문자열을 반환해야 함"

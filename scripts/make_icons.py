@@ -227,6 +227,8 @@ def build(name: str):
     fn = CANDIDATES[name]
     # 홈화면 아이콘은 불투명해야 한다(iOS는 투명을 검게 깔아 버린다).
     fn(512).convert("RGB").save(STATIC / "icon.png")
+    # 안드로이드 크롬이 '앱으로 설치'에서 쓰는 규격. 180(애플용)과 다른 크기라 따로 낸다.
+    fn(192).convert("RGB").save(STATIC / "icon-192.png")
     fn(180).convert("RGB").save(STATIC / "apple-touch-icon.png")
     fn(64).convert("RGBA").save(
         STATIC / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)]
@@ -235,8 +237,8 @@ def build(name: str):
     (STATIC / "icon.svg").write_text(_svg(body, rounded=True), encoding="utf-8")
     # maskable 은 모서리를 깎지 않는다(런처가 제 모양으로 자른다).
     (STATIC / "icon-maskable.svg").write_text(_svg(body, rounded=False), encoding="utf-8")
-    for f in ("icon.png", "apple-touch-icon.png", "favicon.ico", "icon.svg",
-              "icon-maskable.svg"):
+    for f in ("icon.png", "icon-192.png", "apple-touch-icon.png", "favicon.ico",
+              "icon.svg", "icon-maskable.svg"):
         print(f"[ok] {STATIC / f}")
 
 
