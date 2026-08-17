@@ -30,10 +30,14 @@
     <header class="topbar">
         <div class="topbar-inner">
             {# 로고를 누르면 오늘 탭을 새로 받고, 뜬 뒤 지금 블록으로 맞춘다(initialScroll) #}
-            <a href="/today" class="logo" id="logo-now" title="오늘 탭 새로고침 · 지금 블록으로">
-                <span class="logo-mark"></span>
-                <span class="logo-text">6block</span>
-            </a>
+            {# 아이콘·제목 바로 옆의 ↻ 가 지금 보고 있는 화면을 다시 받는다 #}
+            <div class="topbar-left">
+                <a href="/today" class="logo" id="logo-now" title="오늘 탭 새로고침 · 지금 블록으로">
+                    <span class="logo-mark"></span>
+                    <span class="logo-text">6block</span>
+                </a>
+                <button type="button" id="page-refresh" class="theme-toggle" title="이 화면 새로고침" aria-label="새로고침">↻</button>
+            </div>
             <nav class="topnav">
                 <a href="/today" class="{% if active == 'today' %}is-active{% endif %}">오늘</a>
                 <a href="/week"  class="{% if active == 'week' %}is-active{% endif %}">주간</a>
@@ -44,8 +48,6 @@
             <div class="topbar-right">
                 <span id="net-status" class="net-status" hidden></span>
                 <span id="now-clock" class="now-clock mono"></span>
-                {# 오늘·주간 탭 안에 있던 '새로고침'을 여기로 모았다(어느 탭에서나 지금 화면을 다시 받는다) #}
-                <button type="button" id="page-refresh" class="theme-toggle" title="이 화면 새로고침" aria-label="새로고침">↻</button>
                 <button type="button" id="theme-toggle" class="theme-toggle" title="라이트/다크 전환" aria-label="테마 전환">◐</button>
             </div>
         </div>
