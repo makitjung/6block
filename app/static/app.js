@@ -4007,8 +4007,10 @@
 
         const pomo = document.getElementById('pomo');
         if (pomo) {
-            pomo.querySelector('.pomo-dial')?.addEventListener('click', () => {
-                pomo.classList.toggle('expanded');
+            const dialBtn = pomo.querySelector('.pomo-dial');
+            dialBtn?.addEventListener('click', () => {
+                const open = pomo.classList.toggle('expanded');
+                dialBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
             });
             pomo.querySelector('.pomo-start')?.addEventListener('click', () => {
                 ensureNotifPermission();
