@@ -19,19 +19,16 @@
                 <label for="rf-title">제목</label>
                 <input type="text" id="rf-title" placeholder="구글 캘린더 제목칸에 들어갑니다" autocomplete="off">
                 <button type="button" id="rf-err" class="rf-err" hidden title="문제가 있습니다 — 누르면 내용" aria-label="문제 보기">!</button>
+                {# 태그·다시 볼 날. Record 고결감 탭과 같은 ＋ 다(2026-08-19 사용자 요청) —
+                   같은 일을 하는 칸이 프로그램마다 다르게 생기면 어느 쪽에서 뭘 할 수
+                   있는지 외워야 한다. 내용 캡션 행을 통째로 걷어 내용칸을 길게 썼다. #}
+                <button type="button" id="rf-extra-btn" class="rf-mini rf-x" title="태그 · 다시 볼 날 붙이기">＋<span class="rf-x-n" id="rf-extra-n" hidden></span></button>
                 {% if gcal_write_on %}
                 <button type="button" id="rf-sync-now" class="rf-mini" title="구글 캘린더에서 지금 가져오기" aria-label="지금 동기화">⟳</button>
                 {% endif %}
                 <button type="button" id="rf-add" class="rf-mini primary-btn">저장</button>
             </div>
             <div class="rf-errbox" id="rf-errbox" hidden></div>
-            <div class="rf-line">
-                <span class="rf-lab">내용</span>
-                <span class="rf-lab rf-push">태그</span>
-                <input type="text" id="rf-tags" class="rf-tagin" placeholder="공백 구분 · 계층은 슬래시(건강/운동)" autocomplete="off">
-                <span class="rf-lab">다시</span>
-                <input type="date" id="rf-review" value="">
-            </div>
             <textarea id="rf-text" class="rf-text" rows="15" placeholder="구글 캘린더 설명칸에 들어갑니다"></textarea>
         </section>
 
@@ -95,6 +92,29 @@
         </div>
         <textarea id="rf-modal-text" class="rf-modal-text"></textarea>
         <button type="button" id="rf-modal-src" class="rf-srcbtn" hidden></button>
+    </div>
+</div>
+
+{# 태그 · 다시 볼 날. 제목 행의 ＋ 가 여는 창이다(2026-08-19).
+   칸 id(rf-tags·rf-review)는 옛것 그대로다 — 저장과 비우기가 그 이름으로 값을 읽고
+   지우므로 자리만 옮겼다. 따로 저장 단추를 두지 않는다. 여기 적은 것은 그 기록의
+   일부라 제목 행의 저장이 함께 가져간다. #}
+<div id="rf-extra" class="rf-modal" hidden>
+    <div class="rf-modal-backdrop"></div>
+    <div class="rf-modal-box rf-extra-box" role="dialog" aria-label="태그와 다시 볼 날">
+        <div class="rf-modal-acts">
+            <button type="button" id="rf-extra-close" class="rf-modal-close">닫기</button>
+        </div>
+        <div class="rf-modal-headline">🏷 태그 · 🔁 다시 볼 날</div>
+        <div class="rf-extra-f">
+            <label for="rf-tags">태그</label>
+            <input type="text" id="rf-tags" class="rf-tagin" placeholder="공백 구분 · 계층은 슬래시(건강/운동)" autocomplete="off">
+        </div>
+        <div class="rf-extra-f">
+            <label for="rf-review">🔁 다시 볼 날</label>
+            <input type="date" id="rf-review" value="">
+        </div>
+        <p class="rf-extra-hint">비워 두면 아무 일도 안 일어납니다. 적은 것은 저장을 누를 때 함께 갑니다.</p>
     </div>
 </div>
 

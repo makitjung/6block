@@ -3625,6 +3625,45 @@
                 chip.addEventListener('click', () => focusCard(chip.dataset.target)));
         }
 
+        // ---- 태그 · 다시 볼 날 창(제목 행의 ＋) ----
+        // Record 고결감 탭과 같은 짜임이다(2026-08-19 사용자 요청). 어쩌다 쓰는 칸이
+        // 늘 한 행을 먹으면 정작 내용칸이 그만큼 짧다. 붙여 둔 것이 있으면 단추에
+        // 개수와 날짜를 적는다 — 접힌 칸은 무엇을 달아 뒀는지 화면에 안 남는다.
+        const rfExtraWin = document.getElementById('rf-extra');
+        const rfExtraBtn = document.getElementById('rf-extra-btn');
+        function paintRfExtra() {
+            if (!rfExtraBtn) return;
+            const bits = [];
+            const tags = ((document.getElementById('rf-tags').value || '').trim()
+                .split(/[,\s]+/).filter(Boolean));
+            if (tags.length) bits.push(String(tags.length));
+            // 날짜는 월/일만. 연도까지 적으면 이 좁은 행에서 옆 단추를 밀어낸다.
+            const d = (document.getElementById('rf-review').value || '').trim();
+            if (d) bits.push(d.slice(5).replace('-', '/'));
+            const n = document.getElementById('rf-extra-n');
+            n.hidden = bits.length === 0;
+            n.textContent = bits.join(' · ');
+            rfExtraBtn.classList.toggle('on', bits.length > 0);
+        }
+        if (rfExtraBtn && rfExtraWin) {
+            const closeRfExtra = () => { rfExtraWin.hidden = true; paintRfExtra(); };
+            rfExtraBtn.addEventListener('click', () => {
+                rfExtraWin.hidden = false;
+                document.getElementById('rf-tags').focus();
+            });
+            document.getElementById('rf-extra-close').addEventListener('click', closeRfExtra);
+            rfExtraWin.querySelector('.rf-modal-backdrop')
+                .addEventListener('click', closeRfExtra);
+            ['rf-tags', 'rf-review'].forEach((id) => document.getElementById(id)
+                .addEventListener('input', paintRfExtra));
+            // 조합 중 엔터는 조합을 끝내는 키다. 가로채면 치던 한글이 자모로 쪼개진다.
+            document.getElementById('rf-tags').addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+                e.preventDefault();
+                closeRfExtra();
+            });
+        }
+
         // ---- 작성칸(저장) ----
         bindListEditor(document.getElementById('rf-text'));
         document.getElementById('rf-add')?.addEventListener('click', () => {
@@ -3650,6 +3689,7 @@
                     document.getElementById('rf-tags').value = '';
                     document.getElementById('rf-review').value = '';
                     syncDateParts(document.getElementById('rf-review'));
+                    paintRfExtra();      // 비웠으니 ＋ 의 개수·날짜도 함께 내린다
                     refreshReflect(true);
                 })
                 .catch(() => { enqueue(op); toast('저장 대기 · 연결되면 전송'); });

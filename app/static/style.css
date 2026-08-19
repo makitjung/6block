@@ -1224,6 +1224,23 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-mini { padding: 5px 11px; font-size: 12.5px; border-radius: var(--r-pill); line-height: 1.4;
     flex: none; cursor: pointer; }
 #rf-sync-now { font-size: 14px; padding: 4px 9px; }   /* 글자 없는 아이콘이라 조금 크게 */
+/* 태그·다시 볼 날을 여는 ＋(2026-08-19 사용자 요청). 내용 캡션 행을 걷고 그 두 칸을
+   창으로 옮겼다. 붙여 둔 것이 있으면 여기에 개수·날짜가 붙는다 — 접힌 칸은 무엇을
+   달아 뒀는지 화면에 안 남는다.
+   색은 파랑이다. 붉은색은 삭제, 파란색은 추가·저장이다(모든 프로그램 공통 규칙). */
+.rf-x { display: inline-flex; align-items: center; gap: 3px; font-weight: 700;
+    color: var(--accent); }
+.rf-x:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
+.rf-x.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-soft-text); }
+.rf-x-n { font-size: 11px; font-weight: 600; letter-spacing: -.2px; }
+.rf-x-n[hidden] { display: none; }
+/* 창은 두 줄뿐이다. 수정창(960px)만큼 넓힐 이유가 없다. .rf-modal-box 의 width 가
+   이 파일 아래쪽에 적혀 있어 같은 무게로는 그쪽이 이긴다 — id 로 무게를 올린다. */
+#rf-extra .rf-modal-box { width: min(460px, 100%); }
+.rf-extra-f { margin-bottom: 12px; }
+.rf-extra-f label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+.rf-extra-f input[type="text"] { width: 100%; }
+.rf-extra-hint { margin: 0; font-size: 12.5px; color: var(--text-muted); }
 /* 잘 도는 동안은 아무 말도 하지 않는다. 문제가 있을 때만 이 느낌표가 선다 */
 .rf-err { width: 22px; height: 22px; min-width: 22px; padding: 0; border-radius: 50%; flex: none;
     font-size: 13px; font-weight: 700; line-height: 1; color: #fff; cursor: pointer;

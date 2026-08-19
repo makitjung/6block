@@ -227,11 +227,16 @@ def reflect_list(q: str = "", kind: str = "", force: int = 0):
 
 
 @router.get("/reflect/api/items")
-def reflect_api_items(q: str = "", kind: str = "", sync: int = 1):
+def reflect_api_items(q: str = "", kind: str = "", sync: int = 1, force: int = 0):
     """외부 앱(Record 고결감 탭)용 JSON 목록. HTML 대신 구조화된 항목을 돌려준다.
-    sync=1 이면 조회 전에 구글 캘린더에서 만든 것도 가져와 반영한다."""
+    sync=1 이면 조회 전에 구글 캘린더에서 만든 것도 가져와 반영한다.
+
+    force=1 이면 5분 읽기 캐시를 비우고 구글을 다시 읽는다(2026-08-19). 이 갈래가
+    없어서 Record 고결감 탭의 '지금 가져오기' 단추가 최대 5분 묵은 목록을 봤다 —
+    구글에서 지운 일정이 눌러도 눌러도 그대로 서 있었다. 6block 제 화면은
+    /reflect/list?force=1 로 이미 캐시를 건너뛰고 있었고 여기만 길이 없었다."""
     if sync:
-        _import_gcal_reflections()
+        _import_gcal_reflections(force=bool(force))
     ctx = _reflect_ctx(q, kind)
     keys = ("id", "uid", "kind", "title", "text", "tags", "event_date", "review_date",
             "review_note", "created_at", "source_id", "synced", "review_child_id")
