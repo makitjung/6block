@@ -22,9 +22,9 @@
                 {# 태그·다시 볼 날. Record 고결감 탭과 같은 ＋ 다(2026-08-19 사용자 요청) —
                    같은 일을 하는 칸이 프로그램마다 다르게 생기면 어느 쪽에서 뭘 할 수
                    있는지 외워야 한다. 내용 캡션 행을 통째로 걷어 내용칸을 길게 썼다. #}
-                <button type="button" id="rf-extra-btn" class="rf-mini rf-x" title="태그 · 다시 볼 날 붙이기">＋<span class="rf-x-n" id="rf-extra-n" hidden></span></button>
+                <button type="button" id="rf-extra-btn" class="rf-mini rf-ico rf-x" title="태그 · 다시 볼 날 붙이기" aria-label="태그와 다시 볼 날"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="rf-x-n" id="rf-extra-n" hidden></span></button>
                 {% if gcal_write_on %}
-                <button type="button" id="rf-sync-now" class="rf-mini" title="구글 캘린더에서 지금 가져오기" aria-label="지금 동기화">⟳</button>
+                <button type="button" id="rf-sync-now" class="rf-mini rf-ico" title="구글 캘린더에서 지금 가져오기" aria-label="지금 동기화"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                 {% endif %}
                 <button type="button" id="rf-add" class="rf-mini primary-btn">저장</button>
             </div>
