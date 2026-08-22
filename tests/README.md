@@ -37,6 +37,7 @@
 | `test_integrations.py` | 구글·Things3·AI 고장 주입(네트워크는 부르지 않는다) |
 | `test_frontend_static.py` | JS 문법, 한글 IME 가드, 자산 버전, 서비스워커 정책 |
 | `test_known_defects.py` | 아직 안 고친 잠재 결함. xfail 로 통과하고 고치면 실패해 알려 준다 |
+| `test_uncovered_paths.py` | 다른 테스트가 한 번도 안 밟던 사용자 경로(재시작 버튼, 고결감 삭제 연쇄, 캘린더 쓰기 게이트, .env 경로) |
 | `run_smoke.py` | 진짜 서버를 띄워 HTML 구조까지 확인하는 208개 검사 |
 | `serve_isolated.py` | 브라우저 확인용 격리 서버 |
 

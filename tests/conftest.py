@@ -77,6 +77,7 @@ TEST_ENV.write_text(
     "# 테스트용\nAI_API_KEY=sk-test-secret\nAI_MODEL=test-model\nEMPTY=\n",
     encoding="utf-8",
 )
+_REAL_ENV_FILE_PATH = settings_routes._env_file_path
 settings_routes._env_file_path = lambda: TEST_ENV
 
 # 스텁으로 덮기 전의 진짜 함수. 연동 자체를 시험하는 테스트가 되돌려 쓴다.
@@ -86,6 +87,10 @@ REAL = {
     "gcal.events_for_date": gcal.events_for_date,
     "ai.enabled": ai.enabled,
     "ai.complete": ai.complete,
+    "gcal_write.enabled": gcal_write.enabled,
+    "gcal_write.write_enabled": gcal_write.write_enabled,
+    "gcal_write.service_account_email": gcal_write.service_account_email,
+    "settings._env_file_path": _REAL_ENV_FILE_PATH,
 }
 
 # 외부 연동은 전부 끈다(구글 호출·AppleScript 권한창·AI 과금이 일어나지 않게).
@@ -154,6 +159,12 @@ def real_integrations():
     things.enabled, things.today_tasks = saved["things.enabled"], saved["things.today_tasks"]
     gcal.events_for_date = saved["gcal.events_for_date"]
     ai.enabled, ai.complete = saved["ai.enabled"], saved["ai.complete"]
+
+
+@pytest.fixture
+def real_stubbed():
+    """스텁으로 덮기 전의 진짜 함수 모음. 스텁은 그대로 두고 그 함수만 직접 부를 때 쓴다."""
+    return REAL
 
 
 @pytest.fixture
