@@ -15,3 +15,5 @@ __pycache__/
 secrets/
 *-sa.json
 gcal-sa*.json
+
+.inspector/
