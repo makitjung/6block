@@ -1,0 +1,86 @@
+{
+  "operation": "GET /reflect/api/items",
+  "method": "GET",
+  "path_template": "/reflect/api/items",
+  "fingerprint": "d597ce5f",
+  "case_id": "7mW6Or",
+  "code_sample": "curl -X GET 'http://127.0.0.1:57023/reflect/api/items?sync=1&x-schemathesis-unknown-property=42'",
+  "sequence": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:57023/reflect/api/items?sync=1&x-schemathesis-unknown-property=42",
+      "url_template": "http://127.0.0.1:57023/reflect/api/items",
+      "headers": {
+        "User-Agent": "schemathesis/4.25.0",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "X-Schemathesis-TestCaseId": "7mW6Or"
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "date": "Sat, 22 Aug 2026 11:03:59 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+          "vary": "Accept-Encoding",
+          "transfer-encoding": "chunked"
+        },
+        "body": "{\"ok\":true,\"kinds\":[\"\uace0\ubbfc\",\"\uacb0\uc815\",\"\uac10\uc0ac\"],\"items\":[],\"upcoming\":[],\"tags\":[],\"gcal_on\":false}"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "negative_data_rejection",
+          "status": "failure",
+          "message": "API accepted schema-violating request\n\nInvalid data should have been rejected\nExpected: 400, 401, 403, 404, 405, 406, 409, 422, 428, 5xx\nInvalid component: in query - object with unexpected properties"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 1.9666003936436027e-05,
+          "mode": "negative"
+        },
+        "components": {
+          "QUERY": "negative"
+        },
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "Object with unexpected properties",
+            "location": null,
+            "parameter": null,
+            "parameter_location": "QUERY",
+            "scenario": "object_unexpected_properties"
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {
+          "QUERY": {
+            "sync": 1,
+            "x-schemathesis-unknown-property": 42
+          }
+        }
+      },
+      "path": "/reflect/api/items",
+      "path_parameters": {},
+      "query": {
+        "sync": "1",
+        "x-schemathesis-unknown-property": "42"
+      },
+      "case_headers": {},
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null
+    }
+  ]
+}

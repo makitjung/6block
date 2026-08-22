@@ -1,0 +1,77 @@
+{
+  "operation": "POST /plan/item/reparent",
+  "method": "POST",
+  "path_template": "/plan/item/reparent",
+  "fingerprint": "c57575c5",
+  "case_id": "5FMTTC",
+  "code_sample": "curl -X POST http://127.0.0.1:57023/plan/item/reparent",
+  "sequence": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:57023/plan/item/reparent",
+      "url_template": "http://127.0.0.1:57023/plan/item/reparent",
+      "headers": {
+        "User-Agent": "schemathesis/4.25.0",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "X-Schemathesis-TestCaseId": "5FMTTC",
+        "Content-Length": "0"
+      },
+      "response": {
+        "status_code": 400,
+        "headers": {
+          "date": "Sat, 22 Aug 2026 11:03:57 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+          "vary": "Accept-Encoding",
+          "transfer-encoding": "chunked"
+        },
+        "body": "{\"ok\":false,\"error\":\"bad-input\"}"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "status_code_conformance",
+          "status": "failure",
+          "message": "Undocumented HTTP status code\n\nReceived: 400\nDocumented: 200"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 1.5792000340297818e-05,
+          "mode": "positive"
+        },
+        "components": {},
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "Default positive test case",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "scenario": "default_positive_test"
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {}
+      },
+      "path": "/plan/item/reparent",
+      "path_parameters": {},
+      "query": {},
+      "case_headers": {},
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null
+    }
+  ]
+}

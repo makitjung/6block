@@ -1,0 +1,90 @@
+{
+  "operation": "POST /reflect/update/{item_id}",
+  "method": "POST",
+  "path_template": "/reflect/update/{item_id}",
+  "fingerprint": "ac334261",
+  "case_id": "mmyGrd",
+  "code_sample": "curl -X POST http://127.0.0.1:57023/reflect/update/9223372036854775806",
+  "sequence": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:57023/reflect/update/9223372036854775806",
+      "url_template": "http://127.0.0.1:57023/reflect/update/{item_id}",
+      "headers": {
+        "User-Agent": "schemathesis/4.25.0",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "X-Schemathesis-TestCaseId": "mmyGrd",
+        "Content-Length": "0"
+      },
+      "response": {
+        "status_code": 404,
+        "headers": {
+          "date": "Sat, 22 Aug 2026 11:03:59 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+          "vary": "Accept-Encoding",
+          "transfer-encoding": "chunked"
+        },
+        "body": "{\"ok\":false}"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "status_code_conformance",
+          "status": "failure",
+          "message": "Undocumented HTTP status code\n\nReceived: 404\nDocumented: 200, 422"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 6.124995707068592e-06,
+          "mode": "positive"
+        },
+        "components": {
+          "PATH": "positive"
+        },
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "Near-boundary number",
+            "location": null,
+            "parameter": "item_id",
+            "parameter_location": "PATH",
+            "scenario": "near_boundary_number"
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [
+          [
+            "path",
+            "item_id"
+          ]
+        ],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {
+          "PATH": {
+            "item_id": 9223372036854775806
+          }
+        }
+      },
+      "path": "/reflect/update/{item_id}",
+      "path_parameters": {
+        "item_id": "9223372036854775806"
+      },
+      "query": {},
+      "case_headers": {},
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null
+    }
+  ]
+}

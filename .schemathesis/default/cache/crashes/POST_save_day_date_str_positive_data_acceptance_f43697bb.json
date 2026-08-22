@@ -1,0 +1,85 @@
+{
+  "operation": "POST /save/day/{date_str}",
+  "method": "POST",
+  "path_template": "/save/day/{date_str}",
+  "fingerprint": "f43697bb",
+  "case_id": "QaLKHC",
+  "code_sample": "curl -X POST http://127.0.0.1:57023/save/day/0",
+  "sequence": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:57023/save/day/0",
+      "url_template": "http://127.0.0.1:57023/save/day/{date_str}",
+      "headers": {
+        "User-Agent": "schemathesis/4.25.0",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "X-Schemathesis-TestCaseId": "QaLKHC",
+        "Content-Length": "0"
+      },
+      "response": {
+        "status_code": 400,
+        "headers": {
+          "date": "Sat, 22 Aug 2026 11:03:58 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+          "vary": "Accept-Encoding",
+          "transfer-encoding": "chunked"
+        },
+        "body": "{\"ok\":false,\"error\":\"bad-date\"}"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "positive_data_acceptance",
+          "status": "failure",
+          "message": "API rejected schema-compliant request\n\nValid data should have been accepted\nExpected: 2xx, 401, 403, 404, 409, 5xx"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 0.898207292004372,
+          "mode": "positive"
+        },
+        "components": {
+          "PATH": "positive"
+        },
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "Default positive test case",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "scenario": "default_positive_test"
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {
+          "PATH": {
+            "date_str": "0"
+          }
+        }
+      },
+      "path": "/save/day/{date_str}",
+      "path_parameters": {
+        "date_str": "0"
+      },
+      "query": {},
+      "case_headers": {},
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null
+    }
+  ]
+}
