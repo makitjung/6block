@@ -2,6 +2,7 @@
 # 하루 골격 생성, 3칸 입력 처리, 계획 자동 세분화를 모아 둔다.
 import json
 import time
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -338,12 +339,38 @@ def lt_leaves(rows) -> list[dict]:
     return out
 
 
+def is_period_span(start: str, end: str) -> bool:
+    """기간이 달력의 한 해·한 분기·한 달과 딱 맞나.
+
+    그렇다면 그것은 '중점' 이다 — 아래에 하위 기간을 만들어 구체적인 할 일을 담는
+    자리라, 주간 목록에는 세우지 않는다(2026-08-24, 사용자 요청). 하위가 아직
+    없어도 마찬가지다. 하위가 있으면 어차피 lt_leaves() 에서 빠진다.
+
+    Dashboard 의 program_stats.py 에 같은 규칙이 하나 더 있다. 두 프로그램이 같은
+    자료로 같은 목록을 그리므로 한쪽만 고치면 두 화면이 어긋난다.
+    """
+    try:
+        s, e = date.fromisoformat(start), date.fromisoformat(end)
+    except (TypeError, ValueError):
+        return False           # 날짜 꼴이 깨진 것은 판단하지 않고 그대로 보낸다
+    if s > e or s.year != e.year or s.day != 1:
+        return False
+    if (s.month, e.month, e.day) == (1, 12, 31):
+        return True                                       # 한 해
+    last = monthrange(e.year, e.month)[1]
+    if s.month in (1, 4, 7, 10) and e.month == s.month + 2:
+        return e.day == last                              # 한 분기
+    return s.month == e.month and e.day == last           # 한 달
+
+
 def week_lt_items(conn, week_start_str: str) -> list[dict]:
     """그 주에 걸친 장기 항목(활성 영역만) 중 최하위 것만. 상위 제목을 함께 준다.
 
     장기 탭에서 '가리기'를 건 항목(masked)은 여기서 뺀다. 누른 막대 하나만 대상이라
     하위는 그대로 남고, 상위를 가려도 has_children 판정은 원래대로여서 상위가 대신
     올라오지 않는다.
+
+    연·분기·달 중점도 뺀다 — is_period_span() 참고. 장기 탭 간트에는 그대로 그린다.
     """
     d0 = datetime.strptime(week_start_str, "%Y-%m-%d").date()
     sunday = (d0 + timedelta(days=6)).strftime("%Y-%m-%d")
@@ -357,7 +384,8 @@ def week_lt_items(conn, week_start_str: str) -> list[dict]:
         "ORDER BY a.display_order, i.start_date, i.id",
         (sunday, week_start_str),
     ).fetchall()
-    return lt_leaves(rows)
+    return [it for it in lt_leaves(rows)
+            if not is_period_span(it["start_date"], it["end_date"])]
 
 
 def week_todos(conn, week_start_str: str) -> list[dict]:
