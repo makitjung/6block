@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pytest
 
 from app.config import (
-   DEFAULT_SETTINGS, AREA_TONE_ORDER, hhmm_to_min, slots_for_day, area_tone,
-    cat_tone,
+    CATEGORIES, DEFAULT_SETTINGS, AREA_TONE_ORDER, LT_AREAS, hhmm_to_min,
+    slots_for_day, area_tone, cat_tone,
 )
 from app.db import (
    BLOCK_TIMES_WD_KEY, WEEKDAY_CONCEPTS_KEY, _apply_times, _parse_times,
@@ -52,28 +52,22 @@ class TestHhmmToMinEdgeCases:
             hhmm_to_min("ab:cd")
 
     def test_missing_colon(self):
-        """'0730' 콜론 없음."""
-        try:
-            result = hhmm_to_min("0730")
-            # 인덱싱이 잘못되면?
-        except (ValueError, IndexError):
-            pass
+        r"""'0730' 은 막히지 않고 07:00 으로 조용히 읽힌다(자리로만 자르기 때문).
+
+        이 함수 자체는 형식을 검사하지 않는다. 막는 곳은 설정 저장
+        (/settings/blocktimes 의 _valid_hhmm, ^\d{2}:\d{2}$)이다.
+        그 검사를 없애면 이 조용한 오답이 화면까지 올라온다.
+        """
+        assert hhmm_to_min("0730") == 7 * 60      # '07' 과 '0' → 07:00
 
     def test_negative_hours_via_string(self):
-        """'-01:30' 음수 시간."""
-        try:
-            result = hhmm_to_min("-01:30")
-            # int() 파싱이 음수를 허용하면 조용한 오답
-        except ValueError:
-            pass
+        """'-01:30' 은 조용한 오답이 아니라 ValueError 로 걸린다."""
+        with pytest.raises(ValueError):
+            hhmm_to_min("-01:30")
 
     def test_very_long_string(self):
-        """매우 긴 문자열."""
-        long_str = "07" + "0" * 10000 + ":30"
-        try:
-            result = hhmm_to_min(long_str)
-        except (ValueError, IndexError):
-            pass
+        """앞 다섯 자리만 보므로 아무리 길어도 07:00 이 되고 터지지는 않는다."""
+        assert hhmm_to_min("07" + "0" * 10000 + ":30") == 7 * 60
 
     def test_unicode_digits(self):
         """'０７:３０' 한글 숫자나 유니코드 숫자."""
@@ -82,11 +76,8 @@ class TestHhmmToMinEdgeCases:
         assert result == 450  # 7*60 + 30
 
     def test_newline_in_string(self):
-        """'07:\n30' 개행 포함."""
-        try:
-            result = hhmm_to_min("07:\n30")
-        except (ValueError, IndexError):
-            pass
+        """'07:\n30' 은 07:03 으로 조용히 읽힌다(개행이 숫자 자리를 한 칸 밀어낸다)."""
+        assert hhmm_to_min("07:\n30") == 7 * 60 + 3
 
 
 # ===== 슬롯 생성 엣지케이스 =====
@@ -630,14 +621,14 @@ class TestConcurrentSettingsCache:
                 try:
                     s = get_settings()
                     shared_list.append(len(s))
-                except Exception as e:
+                except Exception:
                     shared_list.append(None)
 
         def writer():
             for i in range(50):
                 try:
                     set_setting(f"concurrent_{i}", f"val_{i}")
-                except Exception as e:
+                except Exception:
                     pass
 
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -664,11 +655,17 @@ class TestDeadlockPrevention:
         test_db = tmp_path / "test.db"
         monkeypatch.setattr(db_module, "DB_PATH", test_db)
 
-        # init_db를 여러 번 호출 (동시성 시뮬레이션)
+        # 세 번 불러도 결과가 같아야 한다(멱등). 멈추면 여기서 테스트가 끝나지 않는다.
         db_module.init_db()
         db_module.init_db()
         db_module.init_db()
-        # 예외나 무한 대기 없이 완료됨
+
+        with sqlite3.connect(test_db) as c:
+            c.row_factory = sqlite3.Row
+            assert c.execute("PRAGMA user_version").fetchone()[0] == db_module.SCHEMA_VERSION
+            # 시드가 세 번 겹쳐 들어가지 않았는지
+            assert c.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == len(CATEGORIES)
+            assert c.execute("SELECT COUNT(*) FROM lt_area").fetchone()[0] == len(LT_AREAS)
 
     def test_get_settings_doesnt_hang(self, fresh_db):
         """get_settings가 DB 접근으로 인해 멈추지 않는지."""
@@ -713,7 +710,6 @@ class TestDataIntegrityRoundTrip:
         """유니코드 정규화 문제가 없는지."""
         # 조합 모음과 미리 조합된 한글
         val1 = "한"  # 완성된 한글
-        val2 = "갑"  # 같은 문자, 코드포인트 다름 가능
         set_setting("unicode_test", val1)
         import app.db as db_module
         db_module._settings_cache = None
@@ -761,15 +757,12 @@ class TestSettingValueEdgeCases:
         assert result == "value"
 
     def test_null_byte_in_value(self, fresh_db):
-        """값에 NULL 바이트."""
-        try:
-            set_setting("null_byte", "test\x00value")
-            import app.db as db_module
-            db_module._settings_cache = None
-            result = get_settings()["null_byte"]
-            # Python 문자열에는 NULL이 포함될 수 있지만 SQLite는 처리 가능
-        except (ValueError, sqlite3.IntegrityError):
-            pass
+        """값에 NULL 바이트가 있어도 그대로 저장·복원돼야 한다(잘리면 조용한 손실)."""
+        import app.db as db_module
+
+        set_setting("null_byte", "test\x00value")
+        db_module._settings_cache = None
+        assert get_settings()["null_byte"] == "test\x00value"
 
     def test_control_characters_in_value(self, fresh_db):
         """값에 제어문자."""

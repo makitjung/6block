@@ -368,7 +368,7 @@ class TestWeekViewIntegration:
             "end": friday.strftime("%Y-%m-%d"),
             "area_id": str(area_id)
         })
-        item_id = item_resp.json()["id"]
+        assert item_resp.json()["id"]
 
         # 주간 뷰 조회
         week_resp = client.get(f"/week/{monday.strftime('%Y-%m-%d')}")

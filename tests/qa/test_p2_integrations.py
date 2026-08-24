@@ -138,7 +138,9 @@ class TestGcalWriteBuildDescriptionRoundTrip:
         tags = "진로"
         desc = gcal_write._build_description(content, tags)
         parsed_content, parsed_tags = gcal_write.parse_description(desc)
-        # 구분 로직(parse_description의 splitlines)이 연속 개행을 어떻게 처리하는가?
+        # 연속 개행은 그대로 살아 돌아온다(고결감 본문의 문단 구분이 무너지면 안 된다).
+        assert parsed_content == content
+        assert parsed_tags == tags
 
     def test_roundtrip_content_with_trailing_newlines(self):
         """끝에 개행이 있으면?"""
@@ -146,7 +148,9 @@ class TestGcalWriteBuildDescriptionRoundTrip:
         tags = "진로"
         desc = gcal_write._build_description(content, tags)
         parsed_content, parsed_tags = gcal_write.parse_description(desc)
-        # strip() 때문에 끝 개행은 제거되므로 왕복 불일치
+        # 끝의 빈 줄은 strip 으로 떨어진다(왕복이 완전히 같지는 않다). 내용은 보존된다.
+        assert parsed_content == "내용"
+        assert parsed_tags == tags
 
     def test_roundtrip_tags_with_special_chars(self):
         """태그에 특수 문자나 이모지."""
@@ -154,7 +158,9 @@ class TestGcalWriteBuildDescriptionRoundTrip:
         tags = "진로​경력, 건강🚀"  # 제로폭 + 이모지
         desc = gcal_write._build_description(content, tags)
         parsed_content, parsed_tags = gcal_write.parse_description(desc)
-        # 왕복 일치하는가?
+        assert parsed_content == content
+        # 태그는 해시태그로 나갔다가 공백으로 갈라져 돌아온다(쉼표는 사라진다).
+        assert parsed_tags == "진로\u200b경력 건강🚀"
 
 
 # ============================================================================
@@ -235,20 +241,25 @@ class TestGcalWriteParseDescriptionEdges:
         """마커가 약간 다르면?"""
         desc = "내용\n\n(6block 고결감)" + "\n(6block 고결감)"  # 중복
         content, tags = gcal_write.parse_description(desc)
-        # 두 번째 마커는 남아 있음
+        # 마커가 두 번 있어도 둘 다 걷히고 내용만 남는다.
+        assert content == "내용"
+        assert tags == ""
 
     def test_parse_description_mixed_newlines(self):
         """개행이 섞여 있으면: \\n + \\r\\n + \\r."""
         desc = "첫 줄\n두 번째\r\n세 번째\r네 번째\n\n(6block 고결감)"
         content, tags = gcal_write.parse_description(desc)
-        # splitlines() 는 여러 개행 스타일을 모두 처리하지만
-        # 보존 확인 필요
+        # \r\n·\r 도 모두 \n 한 가지로 모여 돌아온다(줄 수가 늘거나 줄지 않는다).
+        assert content == "첫 줄\n두 번째\n세 번째\n네 번째"
+        assert tags == ""
 
     def test_parse_description_tag_line_with_spaces(self):
         """태그 줄에 띄어쓰기가 섞여 있으면?"""
         desc = "내용\n\n  #진로  #건강  \n\n(6block 고결감)"
         content, tags = gcal_write.parse_description(desc)
-        # fullmatch r"\\s*(#\\S+\\s*)+  로 매칭되는 줄은 제거됨
+        # 태그 줄은 앞뒤 공백이 있어도 태그 줄로 잡혀 본문에서 빠진다.
+        assert content == "내용"
+        assert tags == "진로 건강"
 
     def test_parse_description_very_long_content(self):
         """매우 긴 내용(100만 글자)."""
@@ -637,8 +648,9 @@ class TestAiCfgEdges:
         with mock.patch("app.integrations.ai.get_settings") as mock_settings:
             mock_settings.return_value = {"ai_base_url": "", "ai_model": ""}
             key, base, model = ai._cfg()
-            # (s.get("ai_base_url") or AI_BASE_URL) or "" → AI_BASE_URL 아니면 ""
-            # 테스트 환경에서 AI_BASE_URL 가 빈 값
+            # 설정이 비면 .env 값으로 내려가고, 그것도 비면 빈 문자열이다(=AI 꺼짐).
+            assert (key, base, model) == ("", "", "")
+            assert ai.enabled() is False
 
 
 # ============================================================================
@@ -671,13 +683,35 @@ class TestConcurrency:
         # 캐시가 None이어야 함
         assert gcal_write._list_cache["items"] is None
 
-    def test_things_cache_concurrent_refresh(self):
-        """_refresh_later 와 동시 호출."""
-        # things._cache 와 _refreshing 의 동시성
-        # _refresh_lock 이 있으므로 레이스 조건은 없어야 하지만
-        # 타임아웃 등의 이슈가 있을 수 있음
+    def test_things_cache_concurrent_refresh(self, monkeypatch):
+        """_refresh_later 를 동시에 여러 번 불러도 실제 읽기는 한 번만 돈다.
 
-        # 이 테스트는 실제 AppleScript 실행이 필요하므로 스킵 가능
+        AppleScript 는 한 번에 0.5초쯤 걸린다. 겹쳐 돌면 그만큼 맥이 붙잡힌다.
+        _refreshing 표시가 그것을 막는지 확인한다(실제 AppleScript 는 부르지 않는다).
+        """
+        import app.integrations.things as th
+
+        calls = []
+
+        def fake_fetch():
+            calls.append(1)
+            time.sleep(0.05)
+            th._cache["items"] = []
+            th._cache["at"] = time.time()
+            return []
+
+        monkeypatch.setattr(th, "_fetch_into_cache", fake_fetch)
+        th._refreshing = False
+
+        threads = [threading.Thread(target=th._refresh_later) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        time.sleep(0.2)
+
+        assert len(calls) == 1, f"동시에 {len(calls)}번 읽었다"
+        assert th._refreshing is False, "읽기 표시가 안 풀렸다"
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from app.db import get_conn
 
 
 class TestHhmmToMinValidation:
-    """
+    r"""
     Item 1: No input format validation: malformed times parsed silently as valid
 
     보고: hhmm_to_min('0800')이 '08:00'과 같은 480을 반환한다.

@@ -1,5 +1,6 @@
 # 설정(config.py) + DB(db.py) 계층의 1단계 유닛 테스트
 import json
+import pathlib
 
 
 from app.config import (
@@ -31,11 +32,33 @@ class TestConfigDetectCloudDir:
         # 최소한 절대경로여야 한다.
         assert cfg.CLOUD_DIR.is_absolute()
 
-    def test_fallback_to_onedrive_personal(self, monkeypatch):
-        """환경변수 없을 때 OneDrive-Personal 을 찾는다."""
-        # 실제 경로를 건드리지 않고 로직만 검증.
-        # 6block은 conftest에서 SIXBLOCK_CLOUD_DIR을 비운 상태가 없으므로 스킵.
-        pass
+    def test_fallback_to_onedrive_personal(self, monkeypatch, tmp_path):
+        """환경변수가 비면 홈의 CloudStorage 에서 OneDrive 폴더를 찾는다.
+
+        맥을 바꾸면 폴더 이름이 'OneDrive-개인' 이 아니라 'OneDrive-Personal' 일 수
+        있다. 그때 백업이 조용히 홈 밑으로 떨어지지 않는지 확인한다.
+        """
+        import app.config as cfg
+
+        monkeypatch.setenv("SIXBLOCK_CLOUD_DIR", "")
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+
+        # 아무 OneDrive 폴더도 없으면 홈 밑으로 떨어진다
+        assert cfg._detect_cloud_dir() == tmp_path / "AI_data" / "6block"
+
+        # 영문 이름만 있으면 그것을 쓴다
+        eng = tmp_path / "Library" / "CloudStorage" / "OneDrive-Personal"
+        eng.mkdir(parents=True)
+        assert cfg._detect_cloud_dir() == eng / "AI_data" / "6block"
+
+        # 한글 이름이 함께 있으면 한글 쪽이 이긴다(운영 맥이 그것을 쓴다)
+        kor = tmp_path / "Library" / "CloudStorage" / "OneDrive-개인"
+        kor.mkdir(parents=True)
+        assert cfg._detect_cloud_dir() == kor / "AI_data" / "6block"
+
+        # 환경변수가 있으면 무조건 그것이 이긴다
+        monkeypatch.setenv("SIXBLOCK_CLOUD_DIR", str(tmp_path / "직접지정"))
+        assert cfg._detect_cloud_dir() == tmp_path / "직접지정"
 
 
 class TestConfigCatTone:

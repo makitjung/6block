@@ -43,6 +43,8 @@ class FakeGoogleEventsResource:
 
     def execute(self):
         method = self._pending.get("method")
+        # 무엇을 보냈는지 남겨 둔다. 안 그러면 '터지지 않았다'까지밖에 확인할 수 없다.
+        self.service.calls.append(dict(self._pending))
 
         if method == "insert":
             body = self._pending["body"]
@@ -58,6 +60,15 @@ class FakeGoogleEventsResource:
         elif method == "delete":
             return {}
         elif method == "list":
+            pages = getattr(self.service, "list_pages", None)
+            if pages:
+                token = self._pending.get("pageToken")
+                idx = 0 if token is None else int(token)
+                items, nxt = pages[idx]
+                out = {"items": items}
+                if nxt is not None:
+                    out["nextPageToken"] = str(nxt)
+                return out
             return {"items": getattr(self.service, "list_items", [])}
 
         return {}
@@ -68,6 +79,8 @@ class FakeGoogleService:
 
     def __init__(self):
         self.list_items = []
+        self.list_pages = None      # 정하면 list() 가 이 페이지들을 차례로 돌려준다
+        self.calls = []
 
     def events(self):
         return FakeGoogleEventsResource(self)
@@ -222,14 +235,17 @@ class TestCreateEvent:
         assert len(summary) <= 125  # '[종류] ' 포함 120자
 
     def test_title_truncated_at_120_chars(self, mock_svc):
-        """제목이 120자에서 잘린다."""
+        """제목이 120자에서 잘린다.
+
+        예전에는 테스트가 자기 손으로 만든 문자열 길이를 재고 있었다(무슨 일이 있어도
+        통과). 실제로 구글에 나간 summary 를 본다.
+        """
         long_title = "x" * 200
         event_id = gcal_write.create_event("결정", long_title, "", "", "2026-08-20")
+        assert event_id
 
-        # 내부 로직: summary = f"[{kind}] {(title or '').strip()[:120]}"
-        kind = "결정"
-        summary = f"[{kind}] {long_title[:120]}"
-        assert len(summary) == len(f"[{kind}] ") + 120
+        summary = mock_svc.calls[-1]["body"]["summary"]
+        assert summary == "[결정] " + "x" * 120
 
     def test_all_event_fields_set(self, mock_svc):
         """이벤트에 필수 필드가 있다."""
@@ -248,9 +264,17 @@ class TestCreateEvent:
         assert event_id is not None
 
     def test_extended_properties_set(self, mock_svc):
-        """extendedProperties에 sixblock과 kind를 기록한다."""
+        """extendedProperties 에 sixblock·kind 를 기록한다.
+
+        역방향 동기화(_import_gcal_reflections)가 '6block 이 만든 것'을 이 표시로
+        가려낸다. 빠지면 구글에서 만든 것과 구분이 안 된다.
+        """
         gcal_write.create_event("감사", "제목", "", "", "2026-08-20")
-        # 로직 검증: extendedProperties.private.sixblock = "reflection", kind = "감사"
+
+        body = mock_svc.calls[-1]["body"]
+        private = body["extendedProperties"]["private"]
+        assert private["sixblock"] == "reflection"
+        assert private["kind"] == "감사"
 
     def test_description_roundtrip(self, mock_svc):
         """설명이 build_description으로 만들어지고 parse_description으로 복원된다."""
@@ -404,10 +428,16 @@ class TestCreateCalendarEvent:
         assert event_id is not None
 
     def test_timed_event_duration_one_hour(self, mock_svc):
-        """시간 블록은 1시간이다(또는 남은 시간이 1시간 미만이면 그것)."""
-        # 14:30 시작 → 15:30 종료
-        # 23:30 시작 → 23:59 종료(남은 시간이 1시간 미만)
-        pass
+        """시간 블록은 1시간, 자정을 넘길 때는 23:59 에서 멈춘다."""
+        gcal_write.create_calendar_event("회의", "2026-08-20", "14:30")
+        body = mock_svc.calls[-1]["body"]
+        assert body["start"]["dateTime"] == "2026-08-20T14:30:00"
+        assert body["end"]["dateTime"] == "2026-08-20T15:30:00"
+
+        gcal_write.create_calendar_event("늦은 회의", "2026-08-20", "23:30")
+        body = mock_svc.calls[-1]["body"]
+        assert body["start"]["dateTime"] == "2026-08-20T23:30:00"
+        assert body["end"]["dateTime"] == "2026-08-20T23:59:00", "날짜를 넘어가면 안 된다"
 
     def test_title_truncated_at_200_chars(self, mock_svc):
         """제목이 200자에서 잘린다."""
@@ -590,10 +620,33 @@ class TestListReflectionEvents:
         assert event["date"] == "2026-08-20"  # dateTime의 첫 10자
 
     def test_list_pagination(self, fake_service, monkeypatch):
-        """pagination을 처리한다(pageToken이 있으면 여러 번 호출)."""
-        # 현재 구현은 mock이므로 pageToken이 None이 되면 루프를 나간다
-        # 실제 구현을 테스트하려면 더 복잡한 mock이 필요하다
-        pass
+        """페이지가 나뉘어 오면 끝까지 따라가 전부 모아야 한다.
+
+        한 페이지만 읽고 끝내면 고결감 탭에서 옛 기록이 통째로 사라진다.
+        """
+        def ev(i):
+            return {
+                "id": f"e{i}",
+                "summary": f"[고민] 제목{i}",
+                "description": "내용\n\n(6block 고결감)",
+                "start": {"date": "2026-08-20"},
+                "extendedProperties": {"private": {"sixblock": "reflection"}},
+            }
+
+        fake_service.list_pages = [
+            ([ev(1), ev(2)], 1),
+            ([ev(3)], 2),
+            ([ev(4)], None),
+        ]
+        monkeypatch.setattr("app.integrations.gcal_write._svc", lambda: fake_service)
+        monkeypatch.setattr("app.integrations.gcal_write.enabled", lambda: True)
+        monkeypatch.setattr("app.integrations.gcal_write.calendar_id", lambda x: "cal")
+
+        result = gcal_write.list_reflection_events(date(2026, 8, 1), date(2026, 8, 31))
+
+        assert [r["id"] for r in result] == ["e1", "e2", "e3", "e4"]
+        tokens = [c["pageToken"] for c in fake_service.calls if c["method"] == "list"]
+        assert tokens == [None, "1", "2"], tokens
 
     def test_list_caches_results(self, fake_service, monkeypatch):
         """결과를 캐시한다(5분 동안 같은 요청은 캐시 반환)."""

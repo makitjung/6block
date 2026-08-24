@@ -214,18 +214,26 @@ def measure_endpoint(client, path, runs=6):
 
 
 def count_queries_in_request(conn, client, path):
-    """한 요청 동안 실행된 SQL 쿼리 수를 센다."""
+    """한 요청 동안 실행된 SQL 쿼리 수를 센다.
+
+    예전에는 테스트가 자기 연결(conn)에만 추적을 걸어 놓고 앱을 불렀다. 앱은 요청마다
+    자기 연결을 새로 열므로 언제나 0 이 나왔고, 그래서 N+1 을 하나도 못 잡았다.
+    앱이 여는 연결에 붙이려면 sqlite3.connect 를 잠깐 감싸야 한다.
+    """
     query_count = [0]
+    real_connect = sqlite3.connect
 
-    def trace_callback(sql):
-        query_count[0] += 1
+    def counting_connect(*args, **kwargs):
+        c = real_connect(*args, **kwargs)
+        c.set_trace_callback(lambda sql: query_count.__setitem__(0, query_count[0] + 1))
+        return c
 
-    conn.set_trace_callback(trace_callback)
+    sqlite3.connect = counting_connect
     try:
         response = client.get(path)
         assert response.status_code == 200, f"{path} returned {response.status_code}"
     finally:
-        conn.set_trace_callback(None)
+        sqlite3.connect = real_connect
 
     return query_count[0]
 
@@ -280,8 +288,10 @@ def test_p4_today_query_count(conn, client, fresh_db, days, description):
         query_count = count_queries_in_request(conn3, client, "/today")
 
     print(f"\nGET /today ({description}) SQL queries: {query_count}")
-    # 데이터가 10배 늘어도 쿼리가 10배 이상 늘어나면 N+1 의심
-    # 30일과 365일에서 쿼리 수 비율이 1:1~1:3 사이면 정상
+    # 쿼리 수는 그날 화면이 그리는 것으로만 정해지고 쌓인 날짜 수와 무관해야 한다.
+    # 30일이든 365일이든 같은 범위면 N+1 이 없는 것이다. 여유를 두어 60으로 잡는다.
+    assert query_count > 0, "쿼리를 하나도 못 셌다(계수기가 앱 연결에 안 붙었다)"
+    assert query_count <= 60, f"{description}: 한 요청에 쿼리가 {query_count}개다"
 
 
 # ==============================================================================

@@ -697,7 +697,6 @@ class TestRoundTrips:
         title = "진로"
         content = "좋은 경험"
         tags = "진로, 경력"
-        date_str = "2024-01-15"
 
         # create_event가 만드는 summary
         summary = f"[{kind}] {title}"

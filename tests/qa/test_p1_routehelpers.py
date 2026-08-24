@@ -396,10 +396,15 @@ class TestSettings:
 class TestDay:
     """day.py 순수 함수 테스트"""
 
-    def test_hidden_task_titles_empty(self):
-        """설정 없으면 빈 집합."""
-        # 이 함수는 get_settings()를 호출하므로 DB 필요
-        pass
+    def test_hidden_task_titles_empty(self, fresh_db):
+        """설정이 비면 빈 집합. 값이 있으면 쉼표로 갈라 정확히 같은 제목만 거른다."""
+        from app.db import set_setting
+
+        set_setting("hide_task_titles", "")
+        assert day._hidden_task_titles() == set()
+
+        set_setting("hide_task_titles", " 체크/잡일(2분) , 물 마시기 ,, ")
+        assert day._hidden_task_titles() == {"체크/잡일(2분)", "물 마시기"}
 
     def test_distribute_no_timed_items(self):
         """시각 항목이 없으면 빈 dict + 빈 leftover."""

@@ -29,7 +29,8 @@ def test_p3_day_flow_basic_scenario(client, fresh_db):
     # 기본 구조: 6개 코어 블록 + 각 블록당 슬롯들
     assert len(blocks) > 0, "블록이 생성되지 않았다"
     assert len(slots) > 0, "슬롯이 생성되지 않았다"
-    # meta는 아직 create되지 않을 수도 있음 (첫 /save/day까지)
+    # 화면을 여는 것만으로 daily_meta 까지 만들지는 않는다(첫 저장 때 생긴다).
+    assert meta is None, "화면만 열었는데 daily_meta 가 생겼다"
 
 
 def test_p3_day_save_field_single_slot_do(client, fresh_db):

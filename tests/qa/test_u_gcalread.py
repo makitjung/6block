@@ -215,6 +215,8 @@ def test_cache_after_ttl_returns_old_immediately(real_integrations):
         start = time.time()
         result1 = gcal.events_for_date(date(2026, 8, 16))
         first_time = time.time() - start
+        # 캐시가 아예 없는 첫 호출은 기다린다(이 값이 커야 아래 비교가 뜻이 있다)
+        assert first_time >= 2, f"첫 호출이 {first_time:.2f}초라 비교가 성립하지 않는다"
 
         # TTL을 강제로 만료
         gcal._cache["http://test.ics"]["at"] = time.time() - 200

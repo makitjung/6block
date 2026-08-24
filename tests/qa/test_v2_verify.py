@@ -96,17 +96,27 @@ class TestRealImpactAnalysis:
             # 모든 기본 블록이 30분 배수여야 함
             assert duration_min % 30 == 0, f"{label}: {start}~{end}는 {duration_min}분 (30의 배수 아님)"
 
-    def test_slots_for_day_called_only_with_validated_blocks(self):
-        """slots_for_day는 설정 API를 거쳐 검증된 블록으로만 호출된다.
+    def test_slots_for_day_called_only_with_validated_blocks(self, client, fresh_db):
+        """30분 배수가 아닌 블록은 설정 저장에서 막혀 slots_for_day 까지 못 간다.
 
-        따라서 실제로 30분 배수가 아닌 블록이 slots_for_day에 도달하지 않는다.
+        예전에는 이 사실을 주석으로만 적어 두고 아무것도 눌러 보지 않았다.
+        실제로 저장을 시도해 거절되는지, 그리고 값이 안 바뀌었는지 확인한다.
         """
-        # 검증 로직:
-        # 1. 사용자가 /settings/blocktimes POST
-        # 2. 서버가 "블록 길이가 30분 단위여야 합니다" 검증
-        # 3. 통과한 블록만 저장됨
-        # 4. get_day_blocks()로 읽을 때 검증된 블록만 나옴
-        # 5. ensure_day_skeleton -> slots_for_day 호출
+        from app.db import BLOCK_TIMES_KEY, get_settings
 
-        # 따라서 슬롯 범위 초과는 코드 상으로는 가능하지만, 실제 실행 경로에서는 발생하지 않음
-        pass
+        before = get_settings().get(BLOCK_TIMES_KEY)
+
+        form = {}
+        for i in range(8):
+            form[f"start_{i}"] = "07:00"
+            form[f"end_{i}"] = "07:40"      # 40분 = 30의 배수가 아니다
+        r = client.post("/settings/blocktimes", data=form)
+        assert r.status_code == 400, r.text
+        assert "30분" in r.json()["error"]
+        assert get_settings().get(BLOCK_TIMES_KEY) == before, "거절했는데 값이 바뀌었다"
+
+        # 형식이 아예 틀린 것도 막힌다
+        form["start_0"] = "0700"
+        r = client.post("/settings/blocktimes", data=form)
+        assert r.status_code == 400
+        assert "HH:MM" in r.json()["error"]

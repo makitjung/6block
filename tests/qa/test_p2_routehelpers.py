@@ -238,8 +238,9 @@ class TestMaskUnmaskEnv:
         """새로 입력한 값은 유지."""
         original = "KEY1=secret1\nKEY2=secret2\n"
         masked = settings._mask_env_text(original)
+        assert masked == "KEY1=********\nKEY2=********\n"
         # 마스크된 값 그대로 반환하면 기존값 복원, 새 값 입력하면 그대로 유지
-        new_content = "KEY1=newsecret\nKEY2=********\n"
+        new_content = masked.replace("KEY1=********", "KEY1=newsecret")
         restored = settings._unmask_env_text(new_content, original)
         assert "newsecret" in restored
         assert "secret2" in restored
