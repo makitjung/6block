@@ -219,3 +219,60 @@ def test_지운_날을_다시_열면_그대로_다시_만든다(client, fresh_db
         purge_empty_days(conn)
     assert client.get(f"/day/{d}").status_code == 200
     assert len(_rows("SELECT id FROM blocks WHERE date = ?", (d,))) == 8
+
+
+# -- 결함 8. 장기 탭이 열지도 않은 편집칸 36개를 화면에 세워 두던 것 -----------------
+
+
+def _plan_with_bars(client):
+    """장기 항목 세 개를 만들어 막대가 있는 장기 탭을 얻는다."""
+    area = _rows("SELECT id FROM lt_area ORDER BY display_order LIMIT 1")[0]["id"]
+    for i in range(3):
+        r = client.post("/plan/item/add", data={
+            "title": f"항목{i}", "start": "2026-08-01", "end": "2026-08-31",
+            "area_id": str(area),
+        })
+        assert r.json()["ok"], r.text
+    html = client.get("/plan").text
+    assert "항목0" in html
+    return html
+
+
+def test_장기_편집칸은_template_안에_있다(client, fresh_db):
+    """template 안의 내용은 문서에 서지 않아 배치·스타일 계산을 받지 않는다.
+
+    2026-08-24 실측 · 실데이터 사본(막대 36개)에서 DOM 노드 2,642 → 724개,
+    input 219 → 50개, DOMContentLoaded 331ms → 116ms.
+    """
+    html = _plan_with_bars(client)
+    assert html.count('<template class="gt-edit-tpl"') == 3, "편집칸이 template 이 아니다"
+    # 살아 있는 편집칸은 하나도 없어야 한다(전부 template 안)
+    for chunk in html.split('<template class="gt-edit-tpl"')[:1]:
+        assert 'class="gt-edit"' not in chunk, "template 밖에 편집칸이 서 있다"
+
+
+def test_장기_항목이_늘어도_화면에_서는_입력칸은_그대로다(client, fresh_db):
+    """편집칸을 다 세우던 시절에는 막대 하나마다 입력칸 여섯 개가 문서에 들어왔다.
+
+    지금 남는 것은 블록 줄마다 하나씩인 '추가 폼'뿐이라 항목 수와 무관하다.
+    """
+    import re
+
+    def live_inputs(html):
+        live = re.sub(r"<template class=\"gt-edit-tpl\".*?</template>", "", html, flags=re.S)
+        return live.count("<input")
+
+    _plan_with_bars(client)
+    few = live_inputs(client.get("/plan").text)
+
+    area = _rows("SELECT id FROM lt_area ORDER BY display_order LIMIT 1")[0]["id"]
+    for i in range(12):
+        client.post("/plan/item/add", data={
+            "title": f"더{i}", "start": "2026-08-01", "end": "2026-08-31",
+            "area_id": str(area),
+        })
+    many_html = client.get("/plan").text
+    many = live_inputs(many_html)
+
+    assert many_html.count('<template class="gt-edit-tpl"') == 15, "막대가 15개가 아니다"
+    assert many == few, f"항목이 3개에서 15개가 되자 입력칸이 {few} → {many} 로 늘었다"

@@ -174,7 +174,14 @@
         </div>
         {% for b in row.bars %}
         {# 편집칸 머리줄에 영역 › 상위 › 제목 경로를 적어, 여러 막대 중 어느 것을 고쳤는지
-           바로 알 수 있게 한다. 세로 순서(↑↓)와 저장·삭제·닫기는 오른쪽 위에 모은다. #}
+           바로 알 수 있게 한다. 세로 순서(↑↓)와 저장·삭제·닫기는 오른쪽 위에 모은다.
+
+           <template> 안에 둔다. 막대 하나마다 이 칸이 통째로 딸려 있어서, 예전에는 열지도
+           않은 편집칸 36개가 화면에 그대로 서 있었다(장기 탭 HTML 228KB · 노드 2,642개 중
+           숨은 것이 176KB · 그 안에 입력칸 219개와 체크박스 288개). template 안의 내용은
+           문서에 서지 않으므로 브라우저가 배치·스타일 계산을 하지 않는다. 막대를 처음
+           누를 때 app.js 가 이 자리에 그대로 세운다(openEdit). #}
+        <template class="gt-edit-tpl" data-id="{{ b.id }}">
         <div class="gt-edit" data-id="{{ b.id }}" data-block="{{ row.key }}" data-area="{{ b.area_id }}"
              data-parent="{{ b.parent_id or '' }}" data-root="{{ b.root_id }}" hidden>
             <div class="gt-e-head">
@@ -222,6 +229,7 @@
                 </span>
             </div>
         </div>
+        </template>
         {% endfor %}
         </div>
         {% endfor %}

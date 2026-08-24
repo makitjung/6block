@@ -2175,9 +2175,26 @@
 
         // 막대를 누르면 그 줄의 편집칸이 열린다. 어느 막대의 것인지 알 수 있게 막대에
         // 테두리를 두르고 그 묶음을 밝힌 채로 둔다(편집칸이 줄 아래라 멀어 보이던 것).
+        // 편집칸은 <template> 안에 들어 있다(plan.html 참고). 처음 누를 때 그 자리에
+        // 세우고 그때 손잡이를 붙인다. 막대 하나마다 입력칸 여섯 줄이 딸려 있어서,
+        // 미리 다 세워 두면 열지도 않은 칸 수십 개가 배치·스타일 계산을 받는다.
+        const editBoxFor = (bar) => {
+            const group = bar.closest('.gt-group');
+            if (!group) return null;
+            const sel = '[data-id="' + bar.dataset.id + '"]';
+            const live = group.querySelector('.gt-edit' + sel);
+            if (live) return live;
+            const tpl = group.querySelector('template.gt-edit-tpl' + sel);
+            if (!tpl) return null;
+            const box = tpl.content.firstElementChild.cloneNode(true);
+            tpl.replaceWith(box);          // 템플릿이 있던 자리에 그대로 세운다(줄 순서 유지)
+            bindEditBox(box);
+            bindDateParts();               // 새로 선 날짜 칸도 한 칸 입력으로 감싼다
+            return box;
+        };
+
         const openEdit = (bar) => {
-            const box = bar.closest('.gt-group')
-                ?.querySelector('.gt-edit[data-id="' + bar.dataset.id + '"]');
+            const box = editBoxFor(bar);
             if (!box) return;
             const wasOpen = !box.hidden;
             closeAll();
@@ -2264,7 +2281,7 @@
             restorePlanScroll();   // 다른 화면에서 돌아온 것이면 보던 자리로
         }
 
-        gantt.querySelectorAll('.gt-edit').forEach((box) => {
+        function bindEditBox(box) {
             const id = box.dataset.id;
             box.querySelector('.gt-e-save')?.addEventListener('click', () => {
                 const data = { id: id, title: (box.querySelector('.gt-e-title').value || '').trim() };
@@ -2318,7 +2335,9 @@
                            parent: b.dataset.parent, title: b.dataset.title,
                            start: b.dataset.start, end: b.dataset.end });
             });
-        });
+        }
+        // 이미 서 있는 편집칸(부분 새로고침 전에 열어 두었던 것)에도 붙인다.
+        gantt.querySelectorAll('.gt-edit').forEach(bindEditBox);
 
         // 부분 새로고침 전에 열려 있던 칸을 그대로 다시 연다(연달아 넣기·순서 바꾸기)
         if (pendingForm) {
