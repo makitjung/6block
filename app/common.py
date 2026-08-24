@@ -232,24 +232,38 @@ def ensure_day_skeleton(conn, date_str: str):
     ).fetchone()
     etc_id = etc_row["id"] if etc_row else None
     default_cat = {"점심": etc_id, "저녁": etc_id}
-    block_ids = {}
+    # 같은 날짜를 두 요청이 동시에 처음 열면 둘 다 '골격 없음'을 보고 둘 다 넣으려 든다.
+    # 그러면 UNIQUE(date, block_order) 에 걸려 진 쪽이 500 이 됐다(폰과 맥이 함께 열려
+    # 있고 자정을 넘겨 새 날짜를 폴링할 때가 그 자리다. 10개를 동시에 던지면 9개가 500).
+    # 넣기는 ON CONFLICT DO NOTHING 으로, 슬롯이 물 블록 id 는 넣은 뒤에 다시 읽어서
+    # 잡는다. 그러면 내가 만든 것이든 상대가 만든 것이든 같은 결과가 된다.
     for order, (label, is_core, start, end) in enumerate(day_blocks):
-        cur = conn.execute(
+        conn.execute(
             """
             INSERT INTO blocks (date, block_order, block_label, is_core,
                                 start_time, end_time, category_id, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, block_order) DO NOTHING
             """,
             (date_str, order, label, 1 if is_core else 0, start, end,
              default_cat.get(label), now),
         )
-        block_ids[label] = cur.lastrowid
+    block_ids = {
+        r["block_label"]: r["id"]
+        for r in conn.execute(
+            "SELECT id, block_label FROM blocks WHERE date = ? ORDER BY block_order",
+            (date_str,),
+        )
+    }
     for slot_idx, label, s_t, e_t in slots_for_day(day_blocks):
+        if label not in block_ids:
+            continue          # 상대가 지우는 중이면 다음 요청이 마저 만든다
         conn.execute(
             """
             INSERT INTO slots (date, block_id, slot_index, start_time, end_time,
                                updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, slot_index) DO NOTHING
             """,
             (date_str, block_ids[label], slot_idx, s_t, e_t, now),
         )

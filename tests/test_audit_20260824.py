@@ -140,3 +140,40 @@ def test_매니페스트가_버전을_붙이는_아이콘은_전부_VERSIONED_AS
         and i["src"].rsplit("/", 1)[-1] not in VERSIONED_ASSETS
     ]
     assert not missing, f"VERSIONED_ASSETS 에 빠진 아이콘: {missing}"
+
+
+# -- 결함 6. 같은 날짜를 동시에 처음 열면 하나만 살고 나머지는 500 이었다 -----------
+
+
+def test_새_날짜를_동시에_열어도_500이_없다(client, fresh_db):
+    """폰과 맥이 함께 열려 있고 자정을 넘겨 새 날짜를 폴링할 때 나던 자리다.
+
+    예전에는 UNIQUE(date, block_order) 에 걸려 진 쪽이 IntegrityError 로 500 이 됐다.
+    HTTP 로 10개를 동시에 던지면 9개가 500 이었다.
+    """
+    import concurrent.futures
+
+    target = "2027-03-15"
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        codes = [f.result() for f in [
+            ex.submit(lambda: client.get(f"/day/{target}").status_code)
+            for _ in range(10)
+        ]]
+    assert codes == [200] * 10, f"200 이 아닌 응답: {sorted(set(codes))}"
+
+    blocks = _rows("SELECT block_order FROM blocks WHERE date = ?", (target,))
+    slots = _rows("SELECT slot_index FROM slots WHERE date = ?", (target,))
+    assert len(blocks) == 8, f"블록이 {len(blocks)}개다"
+    assert len({b["block_order"] for b in blocks}) == 8, "블록 순서가 겹친다"
+    assert len(slots) == len({s["slot_index"] for s in slots}), "슬롯 번호가 겹친다"
+
+
+def test_같은_주를_동시에_열어도_500이_없다(client, fresh_db):
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        codes = [f.result() for f in [
+            ex.submit(lambda: client.get("/week/2027-03-15").status_code)
+            for _ in range(8)
+        ]]
+    assert codes == [200] * 8, f"200 이 아닌 응답: {sorted(set(codes))}"
