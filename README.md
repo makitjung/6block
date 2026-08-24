@@ -157,7 +157,8 @@ tail -f ~/6block-data/uvicorn.err.log
 ```bash
 # 백업 (launchd io.6block.backup 로도 매일 자동 실행)
 .venv/bin/python scripts/backup.py
-# 덤프 위치: ~/6block-data/backups/blocks-YYYYMMDD.sql, 그리고 OneDrive/AI/6block-backups
+# 덤프 위치: ~/6block-data/backups/blocks-YYYYMMDD.sql
+#          ~/Library/CloudStorage/OneDrive-개인/AI_data/6block/backups/blocks-YYYYMMDD.sql
 
 # 복원
 sqlite3 ~/6block-data/blocks.db < ~/6block-data/backups/blocks-YYYYMMDD.sql
@@ -194,8 +195,13 @@ scripts/
   backup.py            SQLite .sql 덤프 백업 + 30일 지난 덤프 자동 정리 + 서버 로그 잘라내기
   make_icons.py        앱 아이콘을 코드로 그린다(--preview 후보 3안 / --build 확정)
 tests/
+  conftest.py          테스트 격리 장치(임시 DB·임시 .env·외부연동 끔·실데이터 접근 차단)
+  test_*.py            pytest 통합·유닛 테스트
+  qa/                  기계가 만든 세밀한 엣지케이스 묶음
   run_smoke.py         전체 스모크 테스트(임시 서버·임시 DB로 실행)
-  smoke_server.py      테스트용 서버(운영 DB·8000 포트를 건드리지 않음)
+  smoke_server.py      스모크용 서버(운영 DB·8000 포트를 건드리지 않음)
+  serve_isolated.py    눈으로 확인할 때 쓰는 격리 서버(임시 DB, 기본 8024 포트)
+pytest.ini
 requirements.txt
 .env.example
 ```
@@ -204,14 +210,22 @@ requirements.txt
 
 ## 6. 테스트
 
-코드를 고친 뒤에는 아래 한 줄로 전체를 확인합니다. 추가 설치 없이 표준 라이브러리만 씁니다.
+코드를 고친 뒤에는 아래 두 가지를 모두 돌립니다.
 
 ```bash
+# 1. pytest 전체 (1,737개, 약 40초). 먼저 pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
+
+# 2. 실제 HTTP 스모크 (208개). 추가 설치 없이 표준 라이브러리만 씁니다
 .venv/bin/python tests/run_smoke.py
 ```
 
-임시 폴더에 새 DB를 만들고 127.0.0.1:8011에 테스트 서버를 띄워 실제 HTTP 요청으로 158개 항목을
-확인한 뒤, 서버를 내리고 임시 폴더를 지웁니다. **운영 DB(`~/6block-data/blocks.db`)와 8000 포트는
+pytest 는 `tests/conftest.py` 가 임시 DB·임시 `.env` 로 갈아끼우고, 실제
+`~/6block-data` 를 여는 순간 그 자리에서 실패시킵니다. 외부 연동(구글·Things3·AI)도
+전부 꺼집니다. `pytest.ini` 가 starlette 의 구식 TemplateResponse 경고를 실패로 잡습니다.
+
+스모크는 임시 폴더에 새 DB를 만들고 127.0.0.1:8011에 테스트 서버를 띄워 실제 HTTP 요청으로
+208개 항목을 확인한 뒤, 서버를 내리고 임시 폴더를 지웁니다. **운영 DB(`~/6block-data/blocks.db`)와 8000 포트는
 건드리지 않습니다.** 구글 캘린더·Things3 연동은 테스트에서 꺼집니다. 모두 통과하면 종료코드 0,
 하나라도 실패하면 1을 돌려주므로 배포 전 확인이나 자동화에 그대로 쓸 수 있습니다.
 

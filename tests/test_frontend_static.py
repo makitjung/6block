@@ -154,3 +154,36 @@ def test_날짜칸은_8자리를_다_쳐야_값이_선다():
     assert "length === 10" in APP_JS, (
         "10자리(YYYY-MM-DD)가 다 차기 전에 값을 넘기면 0026 같은 연도가 저장된다"
     )
+
+
+# -- 압축 효과 (main.py 주석의 실측치가 낡지 않게 못 박는다) ----------------------
+
+
+@pytest.mark.parametrize("path", ["/today", "/week", "/plan"])
+def test_화면_HTML은_압축하면_15분의_1_아래로_준다(client, path):
+    """폰에서 테일스케일로 붙으면 이 비율이 그대로 탭 전환 체감이 된다.
+
+    2026-08-24 실측 · 오늘 134KB→8.8KB(6.6%), 주간 120KB→6.3KB(5.2%),
+    장기 235KB→12.9KB(5.5%). 숫자는 코드가 자라면 낡으므로 비율만 지킨다.
+    """
+    import gzip
+
+    raw = client.get(path, headers={"Accept-Encoding": "identity"}).content
+    assert len(raw) > 5000, f"{path} 가 너무 작아 비교가 뜻이 없다: {len(raw)}B"
+    packed = len(gzip.compress(raw))
+    assert packed < len(raw) / 6.6, (
+        f"{path} 압축 효과가 떨어졌다: {len(raw)}B → {packed}B "
+        f"({packed / len(raw):.1%}). 반복되는 표가 아니라 서로 다른 내용이 늘었는지 본다."
+    )
+
+
+def test_정적_번들이_한없이_커지지_않는다():
+    """모든 화면이 이 둘을 통째로 받는다. 늘어나면 첫 방문이 그만큼 느려진다.
+
+    2026-08-24 실측 · app.js 219KB, style.css 117KB (gzip 56KB + 27KB).
+    지금의 1.5배를 상한으로 둔다. 넘으면 화면별로 나눌 때가 된 것이다.
+    """
+    js = (STATIC / "app.js").stat().st_size
+    css = (STATIC / "style.css").stat().st_size
+    assert js < 340_000, f"app.js 가 {js // 1024}KB 다(2026-08-24 기준 219KB)"
+    assert css < 180_000, f"style.css 가 {css // 1024}KB 다(2026-08-24 기준 117KB)"
