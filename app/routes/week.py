@@ -135,25 +135,29 @@ def _week_view(request: Request, monday: date):
             """,
             dates,
         ).fetchall()
+        # 코어 칸과 PLAN → DO 달성률은 '계획(PLAN)을 적은 코어 블록'을 센다. 분모(total_core)가
+        # 한 주 코어 블록 수(6×7=42)라 분자도 블록이어야 한다. 예전에는 슬롯을 세어 블록 하나가
+        # 4로 잡혔고, 그래서 코어 칸이 정확히 4배로 부풀고 11블록만 채워도 42를 넘었다.
+        # 판정 기준은 분석 탭의 PLAN→DO(analytics._exec_funnel 아래 pd_rows)와 같게 맞춘다.
+        # 두 화면이 같은 이름의 지표를 서로 다르게 계산하던 것을 여기서 일원화한다.
         plan_total = conn.execute(
             f"""
-            SELECT COUNT(s.id) FROM slots s
-            JOIN blocks b ON b.id = s.block_id
+            SELECT COUNT(*) FROM blocks b
             WHERE b.date IN ({placeholders}) AND b.is_core = 1
-              AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
+              AND TRIM(COALESCE(b.plan_text, '')) != ''
             """,
             dates,
         ).fetchone()[0]
         # 고정 할일이 채운 칸(is_routine=1)은 사람이 세운 계획이 아니므로 달성으로 세지 않는다.
-        # 체크(done)는 사람이 한 행동이라 그대로 센다.
+        # 체크(done)는 사람이 한 행동이라 그대로 센다. 그 블록의 슬롯 중 하나라도 해당하면 달성.
         achieved = conn.execute(
             f"""
-            SELECT COUNT(s.id) FROM slots s
-            JOIN blocks b ON b.id = s.block_id
+            SELECT COUNT(*) FROM blocks b
             WHERE b.date IN ({placeholders}) AND b.is_core = 1
-              AND b.plan_text IS NOT NULL AND TRIM(b.plan_text) != ''
-              AND (s.done = 1 OR (s.do_text IS NOT NULL AND TRIM(s.do_text) != ''
-                                  AND s.is_routine = 0))
+              AND TRIM(COALESCE(b.plan_text, '')) != ''
+              AND EXISTS (SELECT 1 FROM slots s WHERE s.block_id = b.id
+                          AND (s.done = 1 OR (TRIM(COALESCE(s.do_text, '')) != ''
+                                              AND s.is_routine = 0)))
             """,
             dates,
         ).fetchone()[0]

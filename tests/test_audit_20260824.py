@@ -1,5 +1,10 @@
 # 2026-08-24 감사에서 확인한 결함들을 못 박는 회귀 테스트. 고치기 전에는 전부 실패한다.
+import datetime
+
 import app.db as db
+from app.common import week_start
+
+MONDAY = week_start(datetime.date.today()).strftime("%Y-%m-%d")
 
 
 # -- 결함 1. slots(block_id) 인덱스가 없어 블록별 슬롯 조회가 전체 스캔이었다 -------
@@ -52,3 +57,50 @@ def test_마이그레이션이_스키마와_같은_표를_또_만들지_않는�
     body = src[src.index("def _migrate("):]
     body = body[: body.index("\n@contextmanager")]
     assert "CREATE TABLE" not in body, "_migrate 안에 CREATE TABLE 이 남아 있다"
+
+
+def _rows(sql, params=()):
+    with db.get_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+# -- 결함 4. 주간 KPI 가 블록이 아니라 슬롯을 세어 4배로 부풀었다 -----------------
+
+
+def _plan_one_core_block(client):
+    """이번 주 월요일 B1 에 PLAN 을 적고, 그 블록의 슬롯 하나에 DO 를 적는다."""
+    client.get(f"/week/{MONDAY}")
+    b1 = _rows("SELECT id FROM blocks WHERE date = ? AND block_label = 'B1'",
+               (MONDAY,))[0]
+    with db.get_conn() as c:
+        c.execute("UPDATE blocks SET plan_text = '한 블록만 계획' WHERE id = ?", (b1["id"],))
+        s = c.execute(
+            "SELECT id FROM slots WHERE block_id = ? ORDER BY slot_index LIMIT 1",
+            (b1["id"],),
+        ).fetchone()
+        c.execute("UPDATE slots SET do_text = '한 칸만 실행' WHERE id = ?", (s["id"],))
+    return b1["id"]
+
+
+def test_주간_코어_KPI가_슬롯이_아니라_블록을_센다(client):
+    """블록 하나에 슬롯이 4개라, 슬롯을 세면 1블록이 4로 잡혀 정확히 4배 부풀었다."""
+    _plan_one_core_block(client)
+    html = client.get(f"/week/{MONDAY}").text
+    assert "<strong>1</strong>/42" in html, "코어 칸이 블록 수(1)가 아니다"
+
+
+def test_주간과_분석의_PLAN_DO_달성률이_같다(client):
+    """두 화면이 같은 이름의 지표를 서로 다른 단위로 계산하던 것을 막는다."""
+    _plan_one_core_block(client)
+    week_html = client.get(f"/week/{MONDAY}").text
+    assert "<strong>100</strong>%" in week_html, "주간 달성률이 100% 가 아니다"
+    analytics_html = client.get("/analytics?days=30").text
+    assert analytics_html.count("100") > 0
+    # 주간이 세는 계획 블록 수와 분석이 세는 계획 블록 수가 같아야 한다.
+    planned = _rows(
+        "SELECT COUNT(*) n FROM blocks WHERE is_core = 1 "
+        "AND TRIM(COALESCE(plan_text, '')) != '' AND date BETWEEN ? AND ?",
+        (MONDAY, (week_start(datetime.date.today())
+                  + datetime.timedelta(days=6)).strftime("%Y-%m-%d")),
+    )[0]["n"]
+    assert planned == 1
