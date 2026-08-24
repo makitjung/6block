@@ -3,7 +3,7 @@ import datetime
 import json
 
 import app.db as db
-from app.common import week_start
+from app.common import today_str, week_start
 
 MONDAY = week_start(datetime.date.today()).strftime("%Y-%m-%d")
 
@@ -177,3 +177,45 @@ def test_같은_주를_동시에_열어도_500이_없다(client, fresh_db):
             for _ in range(8)
         ]]
     assert codes == [200] * 8, f"200 이 아닌 응답: {sorted(set(codes))}"
+
+
+# -- 결함 7. 달력을 넘겨 보기만 해도 빈 골격이 끝없이 쌓이던 것 ---------------------
+
+
+def test_빈_껍데기_날짜만_지우고_적어_둔_날은_남긴다(client, fresh_db):
+    """화면을 여는 것만으로 그 날짜의 블록 8행·슬롯 30여 행이 생긴다.
+
+    2026-08-24 실데이터에서 블록이 있는 날짜 106일 중 31일(29%)이 껍데기였다.
+    """
+    from app.common import purge_empty_days
+
+    far_empty = "2020-03-04"      # 오늘 ±180일 바깥, 아무것도 안 적음
+    far_filled = "2020-03-05"     # 오늘 ±180일 바깥이지만 적어 둔 것이 있음
+    near_empty = today_str()      # 오늘 ±180일 안쪽 → 건드리지 않는다
+
+    for d in (far_empty, far_filled, near_empty):
+        assert client.get(f"/day/{d}").status_code == 200
+    with db.get_conn() as conn:
+        b = conn.execute("SELECT id FROM blocks WHERE date = ? AND is_core = 1 LIMIT 1",
+                         (far_filled,)).fetchone()
+        conn.execute("UPDATE blocks SET plan_text = '남겨야 한다' WHERE id = ?", (b["id"],))
+
+    with db.get_conn() as conn:
+        removed = purge_empty_days(conn)
+
+    assert removed == 1, f"{removed}일을 지웠다"
+    assert not _rows("SELECT id FROM blocks WHERE date = ?", (far_empty,))
+    assert not _rows("SELECT id FROM slots WHERE date = ?", (far_empty,))
+    assert _rows("SELECT id FROM blocks WHERE date = ?", (far_filled,)), "적어 둔 날을 지웠다"
+    assert _rows("SELECT id FROM blocks WHERE date = ?", (near_empty,)), "가까운 날을 지웠다"
+
+
+def test_지운_날을_다시_열면_그대로_다시_만든다(client, fresh_db):
+    from app.common import purge_empty_days
+
+    d = "2020-03-04"
+    client.get(f"/day/{d}")
+    with db.get_conn() as conn:
+        purge_empty_days(conn)
+    assert client.get(f"/day/{d}").status_code == 200
+    assert len(_rows("SELECT id FROM blocks WHERE date = ?", (d,))) == 8

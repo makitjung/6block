@@ -269,6 +269,36 @@ def ensure_day_skeleton(conn, date_str: str):
         )
 
 
+def purge_empty_days(conn, keep_days: int = 180) -> int:
+    """적어 둔 내용이 하나도 없는 날의 빈 골격을 지운다. 지운 날 수를 돌려준다.
+
+    화면을 여는 것만으로 그 날짜의 블록 8행과 슬롯 30여 행이 생긴다(ensure_day_skeleton).
+    달력을 앞뒤로 넘겨 보기만 해도 쌓이므로, 실제로 2026-08-24 기준 블록이 있는 날짜
+    106일 중 31일(29%)이 아무것도 안 적힌 껍데기였다.
+
+    keep_days 안쪽(오늘 ±180일)은 건드리지 않는다. 그 바깥의 빈 날만 지운다. 지워도
+    잃는 것이 없다 — 다시 열면 그때 설정으로 새로 만들어지고, 그것이 세션 시간을
+    바꿨을 때 원래 기대하는 동작이다. 판정은 _day_has_content 하나만 쓴다(기준이
+    갈리면 사람이 적어 둔 것을 지우게 된다).
+    """
+    today = datetime.now(KST).date()
+    lo = (today - timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    hi = (today + timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    dates = [
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT date FROM blocks WHERE date < ? OR date > ?", (lo, hi)
+        )
+    ]
+    removed = 0
+    for d in dates:
+        if _day_has_content(conn, d):
+            continue
+        conn.execute("DELETE FROM slots WHERE date = ?", (d,))
+        conn.execute("DELETE FROM blocks WHERE date = ?", (d,))
+        removed += 1
+    return removed
+
+
 def _name_override(value, inherited: str):
     """블록 이름 입력값을 주간 상속과 비교해 덮어쓰기 값(없으면 None)을 돌려준다.
 

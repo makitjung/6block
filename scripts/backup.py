@@ -76,10 +76,30 @@ def _rotate(target: Path, now: datetime):
         print(f"[rotate] removed {removed} old backup(s) in {target}")
 
 
+def _purge_empty_days():
+    """덤프를 뜨기 전에, 아무것도 안 적힌 채 쌓인 옛·먼 미래 날짜의 골격을 지운다.
+
+    달력을 앞뒤로 넘겨 보기만 해도 그 날짜의 블록 8행·슬롯 30여 행이 생긴다.
+    판정은 app.common.purge_empty_days 하나만 쓴다(기준이 갈리면 사람이 적어 둔
+    것을 지우게 된다). 적어 둔 것이 있는 날과 오늘 ±180일은 건드리지 않는다.
+    """
+    try:
+        from app.common import purge_empty_days
+        from app.db import get_conn
+
+        with get_conn() as conn:
+            n = purge_empty_days(conn)
+        if n:
+            print(f"[purge] removed {n} empty day skeleton(s)")
+    except Exception as e:
+        print(f"[purge] skip: {e}")
+
+
 def dump():
     if not DB_PATH.exists():
         print(f"[skip] DB not found: {DB_PATH}")
         return
+    _purge_empty_days()
     now = datetime.now()
     today = now.strftime("%Y%m%d")
     for target in (BACKUP_DIR, CLOUD_BACKUP_DIR):
