@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def uid_from_created(created: str | None) -> str:
@@ -186,48 +186,15 @@ def _migrate(conn: sqlite3.Connection):
         ).fetchall():
             conn.execute("UPDATE reflection SET uid = ? WHERE id = ?",
                          (uid_from_created(r[1]), r[0]))
-    # GTD 명료화: 수집함 항목 상태(''=미분류·next·wait·someday·ref). 없으면 추가.
+    # 만들다 만 GTD 명료화(next·wait·someday·ref)의 잔재. 넣기만 하고 읽는 코드가
+    # 한 줄도 없어 걷어낸다. 옛 덤프를 복원하면 되살아나므로 여기서 함께 지운다.
     inbox_cols = {r[1] for r in conn.execute("PRAGMA table_info(inbox)").fetchall()}
-    if inbox_cols and "status" not in inbox_cols:
-        conn.execute("ALTER TABLE inbox ADD COLUMN status TEXT NOT NULL DEFAULT ''")
-    # 주간 '목표' 열에서 장기 항목마다 따로 적는 그 주 계획. 옛 덤프 복원용으로 남겨 둔다.
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS weekly_lt_goal (
-            id INTEGER PRIMARY KEY,
-            week_start TEXT NOT NULL,
-            item_id INTEGER NOT NULL REFERENCES lt_item(id) ON DELETE CASCADE,
-            goal_text TEXT,
-            updated_at TEXT NOT NULL,
-            UNIQUE(week_start, item_id)
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_weekly_lt_goal_week ON weekly_lt_goal(week_start)"
-    )
+    if "status" in inbox_cols:
+        conn.execute("ALTER TABLE inbox DROP COLUMN status")
     # 고정 할일이 채운 칸 표시(통계 제외·재적용 시 덮어쓰기 대상). 없으면 추가.
     if "is_routine" not in slot_cols:
         conn.execute(
             "ALTER TABLE slots ADD COLUMN is_routine INTEGER NOT NULL DEFAULT 0")
-    # 구분 템플릿에 딸린 고정 할일 규칙. 옛 덤프 복원용으로 남겨 둔다.
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS routine_rule (
-            id INTEGER PRIMARY KEY,
-            template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,
-            weekdays TEXT NOT NULL DEFAULT '',
-            start_time TEXT NOT NULL,
-            span INTEGER NOT NULL DEFAULT 1,
-            do_text TEXT NOT NULL DEFAULT '',
-            category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-            display_order INTEGER NOT NULL DEFAULT 0
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_routine_rule ON routine_rule(template_id)"
-    )
     # 오늘 탭에서 블록·슬롯을 그 주 할 일 중 어느 것에 잇는지(키만 저장, 글은 직접 입력).
     # 블록은 두 시간짜리라 여러 계획을 담을 수 있어 쉼표로 여러 개를 넣는다.
     if "wk_todo" not in block_cols:

@@ -73,9 +73,11 @@ class TestMigrationConcurrency:
         conn = sqlite3.connect(str(fresh_db))
         try:
             conn.row_factory = sqlite3.Row
-            # 마이그레이션이 끝났으면 user_version 이 6이어야 함
+            # 마이그레이션이 끝났으면 user_version 이 SCHEMA_VERSION 이어야 함
+            # (숫자를 박아 두면 판번호를 올릴 때마다 이 테스트가 함께 깨진다)
             user_version = conn.execute("PRAGMA user_version").fetchone()[0]
-            assert user_version == 6, f"Expected user_version=6, got {user_version}"
+            assert user_version == db.SCHEMA_VERSION, (
+                f"Expected user_version={db.SCHEMA_VERSION}, got {user_version}")
 
             # 주요 테이블이 존재해야 함
             for table_name in ("categories", "daily_meta", "slots", "blocks"):
