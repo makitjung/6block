@@ -241,9 +241,9 @@ def _week_view(request: Request, monday: date):
     ]
 
     return templates.TemplateResponse(
+        request,
         "week.html",
         {
-            "request": request,
             "week_start": week_start_str,
             "week_no": week_no,
             "prev_week": prev_week,

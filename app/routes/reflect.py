@@ -209,7 +209,7 @@ def reflect_view(request: Request, q: str = "", kind: str = ""):
     ctx["q"] = (q or "").strip()
     ctx["request"] = request
     ctx["sig"] = _reflect_sig(ctx)
-    return templates.TemplateResponse("reflect.html", ctx)
+    return templates.TemplateResponse(request, "reflect.html", ctx)
 
 
 @router.get("/reflect/list")

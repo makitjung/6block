@@ -292,9 +292,9 @@ def _day_view(request: Request, date_str: str):
     grat_tags = _split3(meta["grat_tags"] if meta else "")
 
     return templates.TemplateResponse(
+        request,
         "today.html",
         {
-            "request": request,
             "date_str": date_str,
             "prev_date": prev_date,
             "next_date": next_date,

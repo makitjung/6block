@@ -325,7 +325,7 @@ def analytics_view(request: Request, rng: str = "7", q: str = ""):
         "s_blocks": s_blocks,
         "flashback": _on_this_day(data["today"]),
     })
-    return templates.TemplateResponse("analytics.html", ctx)
+    return templates.TemplateResponse(request, "analytics.html", ctx)
 
 
 @router.post("/analytics/ai")

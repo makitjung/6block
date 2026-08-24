@@ -195,9 +195,9 @@ def settings_view(request: Request):
         cat_templates = _load_cat_templates(conn)
     active_categories = [dict(c) for c in cats if c["is_active"]]
     return templates.TemplateResponse(
+        request,
         "settings.html",
         {
-            "request": request,
             "categories": [dict(c) for c in cats],
             "active_categories": active_categories,
             "cat_templates": cat_templates,
@@ -256,9 +256,9 @@ def _data_summary() -> dict:
 def data_view(request: Request):
     """데이터 탭: 요약·백업·내보내기·삭제(설정에서 분리, 화면 2분할)."""
     return templates.TemplateResponse(
+        request,
         "data.html",
         {
-            "request": request,
             "summary": _data_summary(),
             "backup_status": _backup_status(),
             "today": today_str(),

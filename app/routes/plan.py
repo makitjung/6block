@@ -916,9 +916,9 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
     today = datetime.now(KST).date()
     default_start = today if span_start <= today <= span_end else span_start
     return templates.TemplateResponse(
+        request,
         "plan.html",
         {
-            "request": request,
             "level": level,
             "level_label": PLAN_LEVEL_LABELS[level],
             "anchor": a.strftime("%Y-%m-%d"),
