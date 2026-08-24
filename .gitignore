@@ -15,5 +15,13 @@ __pycache__/
 secrets/
 *-sa.json
 gcal-sa*.json
-
+# 점검 도구가 남기는 산출물. 예전에 .schemathesis 96개(1.1MB)와 .coverage 가
+# 자동백업 잡을 타고 그대로 커밋됐다.
 .inspector/
+.schemathesis/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+uvicorn.out.log
+uvicorn.err.log
