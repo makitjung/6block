@@ -1,5 +1,4 @@
 # 2단계 엣지케이스 검증: slots_for_day 슬롯 범위 초과 검증
-import pytest
 from starlette.testclient import TestClient
 
 from app.config import slots_for_day, hhmm_to_min

@@ -1,9 +1,8 @@
 # 하루 기록 흐름 end-to-end 통합 테스트
-import json
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from app.common import today_str
-from app.db import get_conn, init_db
+from app.db import get_conn
 
 
 def test_p3_day_flow_basic_scenario(client, fresh_db):

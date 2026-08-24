@@ -1,15 +1,13 @@
 # 구글 캘린더 수신·캐시 기능: 종일/시간/멀티데이/RRULE/TTL/에러 경로
-import io
 import threading
 import time
 import urllib.error
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from unittest import mock
 from zoneinfo import ZoneInfo
 
 import pytest
 
-import app.config as cfg
 import app.integrations.gcal as gcal
 
 

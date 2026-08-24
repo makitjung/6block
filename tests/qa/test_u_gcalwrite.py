@@ -1,7 +1,5 @@
 # 구글 캘린더 양방향 쓰기 9개 함수를 가짜 서비스 객체로 끝까지 실행·검증한다
-import json
-from datetime import date, timedelta
-from unittest.mock import Mock, MagicMock, patch
+from datetime import date
 
 import pytest
 

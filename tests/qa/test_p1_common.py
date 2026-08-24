@@ -1,22 +1,16 @@
 # app/common.py 공통 도우미 함수의 1단계 유닛 테스트
-import json
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date
 
 import pytest
 
 from app.common import (
-    int_id, opt_id, _ko_weekday, _pretty_date, _short_date, asset_ver,
-    _client_settings, today_str, week_start, _weekday_of,
-    _skeleton_matches_config, _day_has_content, ensure_day_skeleton,
-    _name_override, _split3, _join3, _parse_date,
-    lt_tree_order, lt_leaves, week_lt_items, week_todos,
-    _like_pattern, _rule_distribute, _ai_split,
-    SLOT_HAS_CONTENT, VERSIONED_ASSETS, SQLITE_MAX_INT, RowId,
-    KST, CORE_LABELS,
+   int_id, opt_id, _ko_weekday, _pretty_date, _short_date, asset_ver,
+    _client_settings, today_str, week_start, _weekday_of, _skeleton_matches_config,
+    _day_has_content, ensure_day_skeleton, _name_override, _split3, _join3,
+    _parse_date, lt_tree_order, lt_leaves, week_lt_items, week_todos, _like_pattern,
+    _rule_distribute, _ai_split, SLOT_HAS_CONTENT, VERSIONED_ASSETS, SQLITE_MAX_INT,
 )
 from app.config import DAY_BLOCKS
-from app.db import get_day_blocks
 
 
 class TestIntId:

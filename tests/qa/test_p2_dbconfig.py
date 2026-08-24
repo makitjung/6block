@@ -1,19 +1,18 @@
 # 2단계 엣지케이스 스페셜리스트: 설정·DB 계층의 까다로운 입력값 테스트
 import json
 import sqlite3
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
 from app.config import (
-    DAY_BLOCKS, DEFAULT_SETTINGS, AREA_TONE_ORDER, hhmm_to_min, slots_for_day, area_tone, cat_tone,
+   DEFAULT_SETTINGS, AREA_TONE_ORDER, hhmm_to_min, slots_for_day, area_tone,
+    cat_tone,
 )
 from app.db import (
-    BLOCK_TIMES_KEY, BLOCK_TIMES_WD_KEY, WEEKDAY_CONCEPTS_KEY,
-    _apply_times, _parse_times, get_conn, get_day_blocks, get_settings, get_weekday_overrides,
-    get_weekday_concepts, set_setting, uid_from_created,
+   BLOCK_TIMES_WD_KEY, WEEKDAY_CONCEPTS_KEY, _apply_times, _parse_times,
+    get_day_blocks, get_settings, get_weekday_overrides, get_weekday_concepts,
+    set_setting, uid_from_created,
 )
 
 

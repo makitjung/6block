@@ -1,9 +1,9 @@
 # 3단계 통합 테스트: 장기·주간 계획 흐름 (계획 생성→주간 연결→저장)
 import pytest
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from starlette.testclient import TestClient
 
-from app.common import KST, _parse_date
+from app.common import KST
 
 
 @pytest.fixture

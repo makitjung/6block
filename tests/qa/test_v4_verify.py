@@ -1,6 +1,5 @@
 # 적대적 검증자: 버그 보고 반박 검증 (묶음 4)
 import pytest
-from datetime import date
 
 import app.integrations.gcal_write as gcal_write
 

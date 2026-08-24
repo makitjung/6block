@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.common import KST, today_str, week_start
+from app.common import KST
 from app.config import CATEGORIES, DAY_BLOCKS
 
 
@@ -110,10 +110,10 @@ def create_sample_daily_data(conn, num_days):
             """,
             (
                 date_str,
-                f"Goal line 1\nGoal line 2\nGoal line 3",
-                f"Plan line 1\nPlan line 2\nPlan line 3",
+                "Goal line 1\nGoal line 2\nGoal line 3",
+                "Plan line 1\nPlan line 2\nPlan line 3",
                 f"Day memo {i}",
-                f"Gratitude line 1\nGratitude line 2\nGratitude line 3",
+                "Gratitude line 1\nGratitude line 2\nGratitude line 3",
             ),
         )
 

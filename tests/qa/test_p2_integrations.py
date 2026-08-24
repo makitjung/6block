@@ -1,7 +1,5 @@
 # 2단계 엣지케이스: app/integrations/* 순수 로직 (파싱, 포맷, 왕복, 동시성, 조용한 오답)
-import json
 import subprocess
-import sys
 import threading
 import time
 import unittest.mock as mock

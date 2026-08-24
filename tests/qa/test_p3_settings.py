@@ -1,7 +1,6 @@
 # 설정·데이터·고결감 통합 테스트. 설정 변경이 기존 기록에 미치는 영향을 검증한다
-import pytest
 
-from app.common import ensure_day_skeleton, _day_has_content
+from app.common import ensure_day_skeleton
 from app.db import get_conn
 
 

@@ -1,25 +1,18 @@
 # app/common.py 공통 도우미 함수의 2단계 엣지케이스 테스트 (조용한 오답 중심)
-import json
 import sqlite3
-import threading
 import time
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.common import (
-    int_id, opt_id, _ko_weekday, _pretty_date, _short_date, asset_ver,
-    _client_settings, today_str, week_start, _weekday_of,
-    _skeleton_matches_config, _day_has_content, ensure_day_skeleton,
-    _name_override, _split3, _join3, _parse_date,
-    lt_tree_order, lt_leaves, week_lt_items, week_todos,
-    _like_pattern, _rule_distribute, _ai_split,
-    SLOT_HAS_CONTENT, VERSIONED_ASSETS, SQLITE_MAX_INT, RowId,
-    KST, BASE_DIR,
+   int_id, opt_id, _ko_weekday, _pretty_date, _short_date, asset_ver,
+    _client_settings, today_str, week_start, _weekday_of, _skeleton_matches_config,
+    _day_has_content, ensure_day_skeleton, _name_override, _split3, _join3,
+    _parse_date, lt_tree_order, lt_leaves, week_lt_items, week_todos, _like_pattern,
+    _rule_distribute, _ai_split, SLOT_HAS_CONTENT, VERSIONED_ASSETS, SQLITE_MAX_INT,
+    RowId, KST,
 )
-from app.db import get_conn, init_db, get_day_blocks
 
 
 # ============================================================================
@@ -278,12 +271,11 @@ class TestSkeletonMatchesConfig:
         assert not _skeleton_matches_config(conn, date_str)
 
     def test_matches_nonexistent_date(self, conn):
-        """없는 날짜 (빈 DB)"""
-        # 골격이 없으므로 config와도 맞지 않음? 아니면 false?
-        # 코드 보면: have == want 인데 둘 다 빈 리스트면 True
-        result = _skeleton_matches_config(conn, "2025-01-01")
-        # 현재 설정에 따라 그 요일 블록이 있을 수도, 없을 수도 있음
-        # (DAY_BLOCKS 설정에 따라 월요일 블록이 0개일 수도)
+        """골격이 아예 없는 날짜는 '설정과 같다'가 아니다.
+
+        여기서 True 가 나오면 ensure_day_skeleton 이 그날을 안 만들고 지나간다.
+        """
+        assert _skeleton_matches_config(conn, "2025-01-01") is False
 
 
 # ============================================================================
@@ -320,9 +312,10 @@ class TestDayHasContent:
             "RETURNING id",
             (date_str, date_str),
         ).fetchone()["id"]
-        # 루틴은 do_text만으로는 내용이 아님
-        result = _day_has_content(conn, date_str)
-        # 기존 블록/슬롯이 있으면 다른 내용이 있을 수 있음
+        # 고정 할일이 채운 칸은 사람이 적은 것이 아니라 '내용 있음'이 아니다.
+        # 여기서 True 가 되면 그 날은 세션 시간을 바꿔도 새 시간표로 안 바뀐다.
+        assert slot_id, "루틴 슬롯이 안 들어갔다"
+        assert _day_has_content(conn, date_str) is False
         # 정확히 테스트하려면 다른 내용도 없어야 함
 
     def test_slot_did_text(self, conn):
@@ -423,13 +416,12 @@ class TestDayHasContent:
             "SELECT id FROM blocks WHERE date = ? AND is_core = 0 LIMIT 1",
             (date_str,),
         ).fetchone()
-        if non_core:
-            conn.execute(
-                "UPDATE blocks SET category_id = 1 WHERE id = ?", (non_core["id"],)
-            )
-            # 비코어 블록의 구분만으로는 내용이 아님
-            result = _day_has_content(conn, date_str)
-            # 다른 내용이 없으면 False일 수도
+        assert non_core, "버퍼 블록(점심·저녁)이 없다"
+        conn.execute(
+            "UPDATE blocks SET category_id = 1 WHERE id = ?", (non_core["id"],)
+        )
+        # 버퍼 블록의 구분은 시드로도 채워지므로 사용자 내용으로 세지 않는다.
+        assert _day_has_content(conn, date_str) is False
 
     def test_block_category_core(self, conn):
         """블록 category_id (코어 블록만)"""
@@ -553,39 +545,30 @@ class TestEnsureDaySkeleton:
         assert block_ids_1 == block_ids_2
 
     def test_recreates_when_config_mismatch_and_no_content(self, conn):
-        """설정 불일치 + 내용 없으면 재생성"""
+        """설정과 다른데 적어 둔 내용이 없으면 새 시간표로 다시 만든다."""
         date_str = "2026-08-15"
         ensure_day_skeleton(conn, date_str)
 
-        # 첫 블록의 시간 변경 (설정 불일치)
+        # 첫 블록의 시간만 손으로 어긋나게 한다(설정 불일치)
         conn.execute(
             "UPDATE blocks SET start_time = '09:00' WHERE date = ? AND block_order = 0",
             (date_str,),
         )
+        assert _skeleton_matches_config(conn, date_str) is False
 
-        # 슬롯 id들 기억
-        slot_ids_1 = [
-            r["id"]
-            for r in conn.execute(
-                "SELECT id FROM slots WHERE date = ? ORDER BY id",
-                (date_str,),
-            )
-        ]
-
-        # 다시 호출 (내용 없으므로 재생성)
         ensure_day_skeleton(conn, date_str)
 
-        # 슬롯이 다시 생성되어야 함 (id가 다름)
-        slot_ids_2 = [
-            r["id"]
-            for r in conn.execute(
-                "SELECT id FROM slots WHERE date = ? ORDER BY id",
-                (date_str,),
-            )
-        ]
-
-        # 실제로 다시 생성되었으면 슬롯 id가 달라질 가능성이 높음
-        # (하지만 autoincrement가 계속되므로 더 큰 id일 것)
+        # 지우고 다시 만들었으므로 설정 시간으로 돌아와 있어야 한다.
+        # (행 id 로는 확인할 수 없다. SQLite 가 지운 rowid 를 그대로 다시 준다.)
+        row = conn.execute(
+            "SELECT start_time FROM blocks WHERE date = ? AND block_order = 0",
+            (date_str,),
+        ).fetchone()
+        assert row["start_time"] == "07:30", row["start_time"]
+        assert _skeleton_matches_config(conn, date_str) is True
+        assert conn.execute(
+            "SELECT COUNT(*) FROM slots WHERE date = ?", (date_str,)
+        ).fetchone()[0] == 31
 
     def test_preserves_content_on_config_mismatch(self, conn):
         """설정 불일치지만 내용이 있으면 유지"""
@@ -872,23 +855,20 @@ class TestLtTreeOrder:
         assert result[1]["parent_id"] == parent_id
 
     def test_self_referencing_parent(self):
-        """자기 자신을 부모로 (순환)"""
-        rows = [{"id": 1, "parent_id": 1}]
-        result = lt_tree_order(rows)
-        # 자기 자신이 parent_id인데 같은 리스트에만 있으면?
-        # 코드는 parent_id가 ids에 없으면 None으로 본다고 했음
-        # 근데 자기 자신은 ids에 있으므로... walk 호출 시 무한루프?
-        # 타임아웃 장치 필요
-        # 현재는 순환 체크가 없으므로 무한루프일 수 있음
+        """자기 자신을 부모로 두면 그 항목이 목록에서 사라진다(무한루프는 아니다).
+
+        지금은 /plan/item/reparent 가 자기·하위를 막고 있어 화면에서는 만들 수 없다.
+        그 막는 곳을 손대면 tests/test_known_defects.py 가 먼저 알려 준다.
+        """
+        assert lt_tree_order([{"id": 1, "parent_id": 1}]) == []
 
     def test_circular_parent_child(self):
-        """순환 참조 (1->2->1)"""
+        """1→2→1 순환도 마찬가지로 둘 다 사라진다(무한루프는 아니다)."""
         rows = [
             {"id": 1, "parent_id": 2},
             {"id": 2, "parent_id": 1},
         ]
-        result = lt_tree_order(rows)
-        # 순환 체크가 없으면 무한루프일 수 있음
+        assert lt_tree_order(rows) == []
 
     def test_deep_hierarchy(self):
         """깊은 계층"""
@@ -1152,16 +1132,21 @@ class TestAiSplit:
         assert result is None
 
     def test_ai_split_empty_labels(self):
-        """빈 라벨 리스트"""
-        result = _ai_split("parent", [], "area", "parent")
-        # 0개 라벨은 이상하지만, 코드는 어떻게 처리?
-        # n = len(labels) = 0이므로... (arr + [""] * 0)[:0] = []?
+        """라벨이 0개면 None. 부르는 쪽이 규칙기반 분배로 넘어간다."""
+        assert _ai_split("parent", [], "area", "parent") is None
 
-    def test_ai_split_malformed_json(self, real_integrations):
-        """AI가 잘못된 JSON 반환 (real_integrations로 진짜 코드 실행)"""
-        # 이건 실제 AI 호출이 필요하므로 real_integrations 픽스처 필요
-        # 기본 테스트에서는 스킵
-        pass
+    def test_ai_split_malformed_json(self, monkeypatch):
+        """AI 가 JSON 이 아닌 것을 돌려줘도 터지지 않고 None 이어야 한다.
+
+        None 이면 부르는 쪽이 규칙기반 분배로 넘어간다. 여기서 예외가 새면
+        자동 세분화 버튼 전체가 500 이 된다.
+        """
+        import app.integrations.ai as ai_mod
+
+        for reply in ("그냥 문장입니다", "[깨진 JSON", '{"a": 1}', "", "[]"):
+            monkeypatch.setattr(ai_mod, "complete",
+                                lambda *a, _r=reply, **k: _r)
+            assert _ai_split("parent", ["1월", "2월"], "area", "parent") is None, reply
 
 
 # ============================================================================

@@ -193,7 +193,6 @@ def test_endpoint_latency_scaling(client, days, capsys):
 def test_query_count_per_request(client, capsys):
     """한 요청이 날리는 SQL 개수를 세어 N+1 을 찾는다."""
     import sqlite3
-    import app.db as db
 
     _seed_days(30)
     counts = {}

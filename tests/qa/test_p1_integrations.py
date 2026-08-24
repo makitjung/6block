@@ -1,13 +1,9 @@
 # app/integrations/* 모듈 단위 테스트 (gcal_write, gcal, things, ai)
 import json
-import sys
-import tempfile
 import unittest.mock as mock
 from datetime import date, datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import pytest
 
 import app.integrations.ai as ai
 import app.integrations.gcal as gcal

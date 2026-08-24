@@ -1,14 +1,9 @@
 # 동시성·재시작·마이그레이션 경쟁 테스트. 여러 프로세스/스레드가 같은 DB를 초기화하거나 읽고 쓸 때 데이터 무결성 검증
-import fcntl
-import json
-import pathlib
 import sqlite3
-import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import pytest
 
 
 class TestInitDbConcurrency:

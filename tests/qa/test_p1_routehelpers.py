@@ -1,12 +1,10 @@
 # app/routes 안의 순수 도우미 함수들 유닛 테스트
-import json
 from datetime import date, datetime, timedelta
 
-import pytest
 
 from app.common import KST
 from app.main import _netloc_key, _origin_allowed
-from app.routes import analytics, day, plan, reflect, settings, week
+from app.routes import analytics, day, plan, reflect, settings
 
 
 class TestAnalytics:

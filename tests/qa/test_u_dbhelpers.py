@@ -4,8 +4,7 @@ from datetime import datetime
 import pytest
 
 from app.common import KST
-from app.db import get_conn
-from app.routes import analytics, settings, day, reflect, week
+from app.routes import analytics, settings
 from app.routes.plan import _lt_descendants, _lt_rollup, _lt_root
 
 

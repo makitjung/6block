@@ -1,7 +1,6 @@
 # QA 검증 항목 3: 적대적 반박 세션
 # 다른 페르소나의 버그 보고를 검증하고 심각도를 재평가한다.
 
-import pytest
 import app.integrations.gcal_write as gcal_write
 
 

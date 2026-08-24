@@ -5,7 +5,6 @@ import time
 import unittest.mock
 from datetime import date
 
-import pytest
 
 from app.common import _ai_split
 from app.integrations import ai, things

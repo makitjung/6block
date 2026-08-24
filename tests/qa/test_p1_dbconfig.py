@@ -1,21 +1,16 @@
 # 설정(config.py) + DB(db.py) 계층의 1단계 유닛 테스트
 import json
-import sqlite3
-from datetime import datetime, timedelta
-from pathlib import Path
 
-import pytest
 
 from app.config import (
-    ALARM_SOUNDS, ALARM_SECS, AREA_TONE_ORDER, CAT_TONE, CATEGORIES,
-    CORE_BLOCKS, DAY_BLOCKS, DEFAULT_SETTINGS, LT_AREAS, TONES, TONE_KEYS,
-    WEEK_CORE_BLOCKS, area_tone, cat_tone, hhmm_to_min, slots_for_day,
-    _detect_cloud_dir,
+   AREA_TONE_ORDER, CAT_TONE, CATEGORIES, CORE_BLOCKS, DAY_BLOCKS, DEFAULT_SETTINGS,
+    LT_AREAS, TONES, TONE_KEYS, WEEK_CORE_BLOCKS, area_tone, cat_tone, hhmm_to_min,
+    slots_for_day,
 )
 from app.db import (
-    BLOCK_TIMES_KEY, BLOCK_TIMES_WD_KEY, SCHEMA_VERSION, WEEKDAY_CONCEPTS_KEY,
-    _apply_times, _migrate, _parse_times, _seed_areas, _seed_categories,
-    _seed_settings, get_conn, get_day_blocks, get_settings, get_weekday_concepts,
+   BLOCK_TIMES_KEY, BLOCK_TIMES_WD_KEY, SCHEMA_VERSION, WEEKDAY_CONCEPTS_KEY,
+    _apply_times, _migrate, _parse_times, _seed_categories, _seed_settings,
+    get_conn, get_day_blocks, get_settings, get_weekday_concepts,
     get_weekday_overrides, set_setting, uid_from_created,
 )
 
@@ -423,7 +418,6 @@ class TestDbGetSettings:
             )
 
         # 캐시를 비우고 다시 읽기
-        from app.db import _settings_cache
         import app.db as db_module
         db_module._settings_cache = None
 
