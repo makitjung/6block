@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS slots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_slots_date ON slots(date);
+-- 한 블록에 딸린 슬롯을 찾는 길(내일로 넘기기·수집함 배정·분석의 블록별 실행 판정).
+-- 없으면 그때마다 slots 전체를 훑는다(3천행에서 21배, 1만2천행에서 34배 느렸다).
+CREATE INDEX IF NOT EXISTS idx_slots_block ON slots(block_id);
 
 CREATE TABLE IF NOT EXISTS daily_meta (
     date TEXT PRIMARY KEY,
