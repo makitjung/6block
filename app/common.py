@@ -89,7 +89,10 @@ templates.env.filters["short_date"] = _short_date
 # sw.js 도 넣는다. 서비스워커는 /sw.js?v=<이 값> 으로 등록되므로, 여기 없으면 sw.js 만
 # 고쳤을 때 등록 주소가 그대로라 새 워커가 곧바로 올라오지 않는다.
 VERSIONED_ASSETS = ("app.js", "style.css", "sw.js",
-                    "icon.svg", "icon.png", "icon-192.png", "apple-touch-icon.png")
+                    "icon.svg", "icon.png", "icon-192.png", "apple-touch-icon.png",
+                    # 매니페스트가 ?v= 를 붙여 내보내는 아이콘이라 여기에도 있어야 한다
+                    # (main.py manifest 참고). 빠지면 그림을 바꿔도 폰이 1년 동안 옛것을 쓴다.
+                    "icon-maskable.svg")
 _ASSET_VER_TTL = 10          # 초. 한 페이지를 그리는 동안 stat 을 반복하지 않게만 잡아 둔다.
 _asset_ver_cache: tuple[float, str] | None = None
 

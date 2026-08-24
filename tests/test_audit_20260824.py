@@ -127,3 +127,16 @@ def test_버전이_붙은_아이콘은_1년_캐시로_나간다(client):
     r = client.get(src)
     assert r.status_code == 200
     assert "immutable" in r.headers.get("cache-control", ""), r.headers
+
+
+def test_매니페스트가_버전을_붙이는_아이콘은_전부_VERSIONED_ASSETS에_있다():
+    """빠진 파일에 ?v= 를 붙이면 그림을 바꿔도 폰이 1년 동안 옛것을 쓴다."""
+    from app.common import BASE_DIR, VERSIONED_ASSETS
+
+    data = json.loads((BASE_DIR / "static" / "manifest.json").read_text(encoding="utf-8"))
+    missing = [
+        i["src"] for i in data["icons"]
+        if i["src"].startswith("/static/")
+        and i["src"].rsplit("/", 1)[-1] not in VERSIONED_ASSETS
+    ]
+    assert not missing, f"VERSIONED_ASSETS 에 빠진 아이콘: {missing}"
