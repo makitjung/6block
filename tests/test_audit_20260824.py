@@ -1,5 +1,6 @@
 # 2026-08-24 감사에서 확인한 결함들을 못 박는 회귀 테스트. 고치기 전에는 전부 실패한다.
 import datetime
+import json
 
 import app.db as db
 from app.common import week_start
@@ -104,3 +105,25 @@ def test_주간과_분석의_PLAN_DO_달성률이_같다(client):
                   + datetime.timedelta(days=6)).strftime("%Y-%m-%d")),
     )[0]["n"]
     assert planned == 1
+
+
+# -- 결함 5. 매니페스트 아이콘에 ?v= 가 없어 폰이 화면마다 다시 물었다 -------------
+
+
+def test_매니페스트_아이콘에_버전이_붙는다(client):
+    """?v= 가 없으면 /static 은 no-cache 라 열 때마다 304 왕복이 하나 더 생긴다."""
+    r = client.get("/manifest.webmanifest")
+    assert r.status_code == 200
+    data = json.loads(r.text)
+    icons = [i["src"] for i in data["icons"]]
+    assert icons, "아이콘 목록이 비었다"
+    for src in icons:
+        assert "?v=" in src, f"버전이 없는 아이콘 주소: {src}"
+
+
+def test_버전이_붙은_아이콘은_1년_캐시로_나간다(client):
+    data = json.loads(client.get("/manifest.webmanifest").text)
+    src = data["icons"][0]["src"]
+    r = client.get(src)
+    assert r.status_code == 200
+    assert "immutable" in r.headers.get("cache-control", ""), r.headers

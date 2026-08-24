@@ -1,4 +1,5 @@
 # 6block FastAPI 앱 조립. 화면별 라우터를 모으고 미들웨어·PWA·헬스체크만 여기서 다룬다.
+import json
 import threading
 import urllib.parse
 from contextlib import asynccontextmanager
@@ -153,10 +154,24 @@ def service_worker():
 
 @app.get("/manifest.webmanifest")
 def manifest():
-    return FileResponse(
-        BASE_DIR / "static" / "manifest.json",
-        media_type="application/manifest+json",
+    """매니페스트를 그때그때 만들어 아이콘 주소에 ?v= 를 붙여 내보낸다.
+
+    /static 은 ?v= 가 붙어야 1년 캐시(immutable)로 나간다(위 cache_headers 참고).
+    manifest.json 안의 아이콘 주소에는 그 값을 손으로 적어 둘 수 없어 예전에는 ?v= 없이
+    나갔고, 그래서 화면을 열 때마다 아이콘을 다시 물었다(운영 로그에서 /static/icon.svg
+    1,305회 중 1,284회가 304 재검증이었다). 폰에서 테일스케일로 붙으면 그 왕복 하나하나가
+    그대로 체감이 된다. 아이콘 파일은 VERSIONED_ASSETS 에 들어 있어 그림을 바꾸면 값이
+    저절로 바뀐다.
+    """
+    ver = asset_ver()
+    data = json.loads(
+        (BASE_DIR / "static" / "manifest.json").read_text(encoding="utf-8")
     )
+    for icon in data.get("icons", []):
+        src = icon.get("src", "")
+        if src.startswith("/static/") and "?" not in src:
+            icon["src"] = f"{src}?v={ver}"
+    return JSONResponse(data, media_type="application/manifest+json")
 
 
 # 브라우저와 iOS는 링크 태그와 무관하게 이 두 주소를 뿌리에서 먼저 찾는다. 없으면 404가
