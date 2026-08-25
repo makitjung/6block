@@ -18,12 +18,13 @@ def _detect_cloud_dir() -> Path:
     if env:
         return Path(env)
     base = Path.home() / "Library" / "CloudStorage"
+    sub = Path("0.개발&전산") / "AI_data" / "6block"
     for name in ("OneDrive-개인", "OneDrive-Personal"):
         if (base / name).exists():
-            return base / name / "AI_data" / "6block"
+            return base / name / sub
     matches = sorted(base.glob("OneDrive-*"))
     if matches:
-        return matches[0] / "AI_data" / "6block"
+        return matches[0] / sub
     return Path.home() / "AI_data" / "6block"
 
 

@@ -49,12 +49,12 @@ class TestConfigDetectCloudDir:
         # 영문 이름만 있으면 그것을 쓴다
         eng = tmp_path / "Library" / "CloudStorage" / "OneDrive-Personal"
         eng.mkdir(parents=True)
-        assert cfg._detect_cloud_dir() == eng / "AI_data" / "6block"
+        assert cfg._detect_cloud_dir() == eng / "0.개발&전산" / "AI_data" / "6block"
 
         # 한글 이름이 함께 있으면 한글 쪽이 이긴다(운영 맥이 그것을 쓴다)
         kor = tmp_path / "Library" / "CloudStorage" / "OneDrive-개인"
         kor.mkdir(parents=True)
-        assert cfg._detect_cloud_dir() == kor / "AI_data" / "6block"
+        assert cfg._detect_cloud_dir() == kor / "0.개발&전산" / "AI_data" / "6block"
 
         # 환경변수가 있으면 무조건 그것이 이긴다
         monkeypatch.setenv("SIXBLOCK_CLOUD_DIR", str(tmp_path / "직접지정"))

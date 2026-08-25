@@ -25,4 +25,4 @@ echo "[4/4] launchd 등록"
 bash install_launchd.sh
 
 echo ""
-echo "완료. 코드=이 폴더, 라이브 데이터=~/6block-data, 오프사이트 백업=OneDrive(AI_data/6block)."
+echo "완료. 코드=이 폴더, 라이브 데이터=~/6block-data, 오프사이트 백업=OneDrive(0.개발&전산/AI_data/6block)."

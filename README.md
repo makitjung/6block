@@ -158,7 +158,7 @@ tail -f ~/6block-data/uvicorn.err.log
 # 백업 (launchd io.6block.backup 로도 매일 자동 실행)
 .venv/bin/python scripts/backup.py
 # 덤프 위치: ~/6block-data/backups/blocks-YYYYMMDD.sql
-#          ~/Library/CloudStorage/OneDrive-개인/AI_data/6block/backups/blocks-YYYYMMDD.sql
+#          ~/Library/CloudStorage/OneDrive-개인/0.개발&전산/AI_data/6block/backups/blocks-YYYYMMDD.sql
 
 # 복원
 sqlite3 ~/6block-data/blocks.db < ~/6block-data/backups/blocks-YYYYMMDD.sql
