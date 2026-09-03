@@ -1598,7 +1598,34 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .set-tpl-grid { display: grid; grid-template-columns: auto repeat(var(--cols), minmax(60px, 1fr)); gap: 6px; align-items: center; overflow-x: auto; }
 .set-tpl-blabel { font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: center; }
 .set-tpl-daytype { font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; padding-right: 6px; }
-.set-tpl-cell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
+.set-tpl-cell, .set-tpl-pcell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
+/* 템플릿이 담고 있는 부분. 담은 것만 진하게 — 개별 템플릿인지 종합인지 한눈에 보인다. */
+.set-tpl-parts { display: flex; gap: 4px; }
+.set-tpl-part { font-size: 11px; padding: 2px 7px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-subtle); }
+.set-tpl-part.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+/* 부분 탭. 지금 보는 하나만 세운다(넷을 다 세우면 템플릿 하나가 화면 한 장을 넘는다) */
+.set-tpl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.set-tpl-tab { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-pill); padding: 4px 12px; cursor: pointer; }
+.set-tpl-tab:hover { color: var(--text); }
+.set-tpl-tab.is-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.set-tpl-pane-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.set-tpl-pmode { margin-left: auto; }
+.set-tpl-pmode.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+/* 칸 단위 격자. 줄 이름이 'B1p4' 라 블록 격자보다 왼쪽 칸이 조금 넓다 */
+.set-tpl-pgrid { display: grid; grid-template-columns: auto repeat(var(--cols), minmax(60px, 1fr)); gap: 6px; align-items: center; overflow-x: auto; }
+.set-tpl-gap { text-align: center; color: var(--text-subtle); }
+/* 템플릿 안 세션시간 편집기. 설정 위쪽 것과 같은 모양이되 저장은 템플릿 안으로만 간다 */
+.set-tt-state { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.set-tt-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.set-tt-tab { position: relative; font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-pill); padding: 4px 12px; cursor: pointer; }
+.set-tt-tab:hover { color: var(--text); }
+.set-tt-tab.is-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.set-tt-tab.is-over::after { content: ''; position: absolute; top: 2px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--warm); }
+.set-tt-drop { margin-left: auto; }
+/* 블록 이름 6칸 */
+.set-tpl-names { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.set-tpl-nrow { display: flex; align-items: center; gap: 8px; }
+.set-tpl-bname { flex: 1; width: auto; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 /* 고정 할일 규칙 줄. 한 줄이 요일 여러 개를 덮으므로 격자가 아니라 목록으로 쌓는다. */
 .set-rt { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .set-rt-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }

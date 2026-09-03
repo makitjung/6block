@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def uid_from_created(created: str | None) -> str:
@@ -227,6 +227,11 @@ def _migrate(conn: sqlite3.Connection):
             "SELECT id FROM lt_area ORDER BY display_order, id"
         ).fetchall()):
             conn.execute("UPDATE lt_area SET tone = ? WHERE id = ?", (area_tone(i), r[0]))
+    # 주간 템플릿이 세션시간과 블록 이름까지 담는다(예전에는 구분 42칸만 담았다).
+    tpl_cols = {r[1] for r in conn.execute("PRAGMA table_info(cat_template)").fetchall()}
+    for new_col in ("times_common", "times_wd", "block_names"):
+        if new_col not in tpl_cols:
+            conn.execute(f"ALTER TABLE cat_template ADD COLUMN {new_col} TEXT")
     # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
     conn.execute("DROP TABLE IF EXISTS weekday_concept")
     # 장기 계획은 간트(lt_item) 하나로 일원화했다. 표로 적던 lt_plan 은 코드에서 사라졌다.
@@ -359,12 +364,97 @@ def get_weekday_concepts() -> list[str]:
     return [str(x or "").strip() for x in (list(data) + [""] * 7)[:7]]
 
 
-def get_day_blocks(weekday: int | None = None):
+# 그 주에만 쓰는 세션시간(week_block_time). 주간 탭에서 세션시간을 담은 템플릿을
+# 고르면 7요일을 모두 풀어서 적힌다. 설정처럼 거의 안 바뀌고 날마다 여러 번 읽히므로
+# 통째로 캐시하고 저장할 때 비운다.
+_week_times_cache: dict | None = None
+
+
+def get_week_block_times() -> dict:
+    """주별 세션시간 전체. {"2026-09-07": {"0": [{start,end}...], ...}} 형태."""
+    global _week_times_cache
+    if _week_times_cache is not None:
+        return _week_times_cache
+    out: dict = {}
+    try:
+        with get_conn() as conn:
+            for r in conn.execute("SELECT week_start, times FROM week_block_time"):
+                try:
+                    data = json.loads(r["times"])
+                except ValueError:
+                    continue
+                if isinstance(data, dict):
+                    out[r["week_start"]] = data
+    except Exception:
+        return {}       # 실패하면 설정값만 쓰고 캐시하지 않는다(다음에 재시도)
+    _week_times_cache = out
+    return out
+
+
+def set_week_block_times(week_start_str: str, times: dict):
+    """그 주 세션시간을 적는다(7요일을 모두 풀어서). times 가 비면 그 주 줄을 지운다."""
+    global _week_times_cache
+    with get_conn() as conn:
+        if times:
+            conn.execute(
+                "INSERT INTO week_block_time (week_start, times, updated_at) "
+                "VALUES (?, ?, datetime('now')) "
+                "ON CONFLICT(week_start) DO UPDATE SET "
+                "times = excluded.times, updated_at = excluded.updated_at",
+                (week_start_str, json.dumps(times)),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM week_block_time WHERE week_start = ?", (week_start_str,)
+            )
+    _week_times_cache = None
+
+
+def _json_obj(raw) -> dict:
+    """JSON 문자열을 dict 로. 비었거나 형식이 다르면 빈 dict."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def template_has_times(times_common, times_wd) -> bool:
+    """이 템플릿이 세션시간을 담고 있는가(공통이든 요일이든 하나라도 적혀 있으면)."""
+    return bool(_parse_times(times_common) or _json_obj(times_wd))
+
+
+def template_day_blocks(times_common, times_wd, weekday: int):
+    """템플릿이 담은 세션시간으로 그 요일의 8블록. 안 담은 템플릿이면 지금 설정 그대로.
+
+    세션시간을 담은 템플릿은 그 템플릿만으로 시간표가 정해진다(설정의 요일 덮어쓰기를
+    섞지 않는다). 안 그러면 템플릿을 고를 때마다 설정 쪽 사정이 조용히 딸려 온다.
+    """
+    common = _parse_times(times_common)
+    wd_map = _json_obj(times_wd)
+    if not common and not wd_map:
+        return get_day_blocks(weekday)
+    base = _apply_times(DAY_BLOCKS, common) if common else get_day_blocks()
+    return _apply_times(base, _parse_times(wd_map.get(str(weekday))))
+
+
+def get_day_blocks(weekday: int | None = None, week_start_str: str | None = None):
     """효과적인 하루 8블록 목록. 공통 시간 위에 그 요일 덮어쓰기가 있으면 덧입힌다.
 
     weekday 는 date.weekday() (0=월 ~ 6=일). None 이면 공통 시간만 쓴다.
+    week_start_str 를 주고 그 주에 따로 적어 둔 시간표가 있으면 그것만 쓴다(설정을 안 본다).
+    한 주에 적용해 둔 시간표가 설정을 고칠 때마다 흔들리면 안 되기 때문이다.
     """
     base = _apply_times(DAY_BLOCKS, _parse_times(get_settings().get(BLOCK_TIMES_KEY)))
     if weekday is None:
         return base
+    if week_start_str:
+        wk = get_week_block_times().get(week_start_str)
+        times = _parse_times((wk or {}).get(str(weekday)))
+        if times:
+            return _apply_times(DAY_BLOCKS, times)
     return _apply_times(base, _parse_times(get_weekday_overrides().get(str(weekday))))

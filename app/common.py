@@ -150,6 +150,16 @@ def _weekday_of(date_str: str) -> int:
     return datetime.strptime(date_str, "%Y-%m-%d").date().weekday()
 
 
+def day_blocks_for(date_str: str):
+    """그 날짜의 효과적인 8블록. 그 주에 따로 적어 둔 시간표가 있으면 그것이 이긴다.
+
+    주간 탭에서 세션시간을 담은 템플릿을 고르면 그 주에만 시간표가 적힌다(week_block_time).
+    골격을 만들고 견주는 곳은 모두 이 함수 하나를 봐야, 화면마다 다른 시간표를 그리지 않는다.
+    """
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    return get_day_blocks(_weekday_of(date_str), week_start(d).strftime("%Y-%m-%d"))
+
+
 def _skeleton_matches_config(conn, date_str: str) -> bool:
     """DB의 그날 블록 골격이 현재 효과적 설정(요일별 시간 편집 반영)과 정확히 같은지."""
     have = [
@@ -162,7 +172,7 @@ def _skeleton_matches_config(conn, date_str: str) -> bool:
     ]
     want = [
         (label, start, end)
-        for (label, _core, start, end) in get_day_blocks(_weekday_of(date_str))
+        for (label, _core, start, end) in day_blocks_for(date_str)
     ]
     return have == want
 
@@ -225,7 +235,7 @@ def ensure_day_skeleton(conn, date_str: str):
         conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
         conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
-    day_blocks = get_day_blocks(_weekday_of(date_str))
+    day_blocks = day_blocks_for(date_str)
     # 점심·저녁 버퍼 블록은 기본 구분을 '기타'로 시드해 시간 분포 통계에 잡히게 한다.
     etc_row = conn.execute(
         "SELECT id FROM categories WHERE name = '기타' LIMIT 1"

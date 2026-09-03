@@ -10,6 +10,7 @@ from app.common import (
     KST,
     SLOT_HAS_CONTENT,
     _ai_split,
+    _day_has_content,
     _join3,
     _name_override,
     _off_loop,
@@ -26,7 +27,14 @@ from app.common import (
     week_start,
 )
 from app.config import WEEK_CORE_BLOCKS, hhmm_to_min, slots_for_day
-from app.db import get_conn, get_day_blocks
+from app.db import (
+    _json_obj,
+    get_conn,
+    get_day_blocks,
+    set_week_block_times,
+    template_day_blocks,
+    template_has_times,
+)
 from app.integrations import ai, gcal
 
 router = APIRouter()
@@ -257,7 +265,7 @@ def _week_view(request: Request, monday: date):
             "achieve_pct": achieve_pct,
             # 요일마다 블록 시간이 다를 수 있으므로 7일치 슬롯 수를 각각 세어 합친다.
             "week_total_hours": sum(
-                len(slots_for_day(get_day_blocks(i))) for i in range(7)
+                len(slots_for_day(get_day_blocks(i, week_start_str))) for i in range(7)
             ) * 0.5,
             "wmeta": wmeta,
             # 목표 열의 자유 란 3개(장기와 무관한 그 주만의 목표)
@@ -365,11 +373,20 @@ async def save_week(week_start_str: str, request: Request):
 
 @router.post("/week/apply-template")
 async def week_apply_template(request: Request):
-    """선택한 구분 템플릿을 그 주 7일에 일괄 적용한다. 블록 구분 42칸 + 고정 할일 규칙.
+    """고른 템플릿을 그 주 7일에 적용한다. 템플릿이 담은 부분만 손댄다.
 
-    빈 셀은 건너뛰어 기존 구분을 덮지 않는다. 블록 구분은 빈 슬롯에 자동 상속된다.
-    고정 할일은 지난번에 넣어 둔 칸(is_routine=1)을 먼저 비우고 새 규칙대로 다시 채우므로,
-    규칙을 고치고 다시 골라도 옛 문구가 남지 않는다. 사람이 쓴 칸은 어느 쪽도 건드리지 않는다.
+    네 부분이다. 세션시간(그 주만의 시간표), 블록 이름(B1~B6 그 주 이름),
+    구분(블록 단위 42칸 + 칸 단위 B1p4), 고정 할일. 셋을 다 담은 종합 템플릿도,
+    하나만 담은 개별 템플릿도 같은 길로 적용된다.
+
+    세션시간을 먼저 적용한다. 시간표가 바뀌면 그 날 골격이 다시 만들어지므로, 구분을
+    먼저 넣으면 방금 넣은 것이 지워진다. 이미 적어 둔 것이 있는 날은 골격을 다시
+    만들면 칸이 어긋나 글이 사라지므로 건너뛰고, 몇 날을 건너뛰었는지 알려 준다.
+
+    빈 셀은 건너뛰어 기존 구분을 덮지 않는다. 블록 구분은 빈 슬롯에 자동 상속되고,
+    칸 단위 구분을 적어 둔 칸만 그 위에 덮어쓴다. 고정 할일은 지난번에 넣어 둔
+    칸(is_routine=1)을 먼저 비우고 새 규칙대로 다시 채우므로, 규칙을 고치고 다시 골라도
+    옛 문구가 남지 않는다. 사람이 쓴 칸은 어느 쪽도 건드리지 않는다.
     """
     form = await request.form()
     ws = (form.get("week_start") or "").strip()
@@ -380,6 +397,12 @@ async def week_apply_template(request: Request):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        tpl = conn.execute(
+            "SELECT times_common, times_wd, block_names FROM cat_template WHERE id = ?",
+            (tid,),
+        ).fetchone()
+        if not tpl:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         cells: dict[tuple[int, str], int] = {}
         for r in conn.execute(
             "SELECT weekday, block_label, category_id FROM cat_template_cell "
@@ -388,6 +411,16 @@ async def week_apply_template(request: Request):
         ):
             if r["category_id"] is not None:
                 cells[(r["weekday"], r["block_label"])] = r["category_id"]
+        slot_cells: dict[int, list] = {}
+        for r in conn.execute(
+            "SELECT weekday, block_label, p, category_id FROM cat_template_slot "
+            "WHERE template_id = ? ORDER BY p",
+            (tid,),
+        ):
+            if r["category_id"] is not None:
+                slot_cells.setdefault(r["weekday"], []).append(
+                    (r["block_label"], r["p"], r["category_id"])
+                )
         rules = [
             dict(r)
             for r in conn.execute(
@@ -397,15 +430,40 @@ async def week_apply_template(request: Request):
             )
             if (r["do_text"] or "").strip() and (r["weekdays"] or "").strip()
         ]
-        if not cells and not rules:
+        names = {
+            k: v for k, v in _json_obj(tpl["block_names"]).items()
+            if k in CORE_LABELS and str(v or "").strip()
+        }
+        has_times = template_has_times(tpl["times_common"], tpl["times_wd"])
+        if not cells and not slot_cells and not rules and not names and not has_times:
             return JSONResponse(
                 {"ok": False, "error": "empty-template"}, status_code=400
             )
-        applied = 0
-        filled = 0
+
+        # 1) 세션시간. 7요일을 모두 풀어 그 주에만 적는다(나중에 설정을 고쳐도 안 흔들리게).
+        days = skipped_days = 0
+        if has_times:
+            set_week_block_times(ws, {
+                str(w): [
+                    {"start": s_, "end": e_}
+                    for _l, _c, s_, e_ in template_day_blocks(
+                        tpl["times_common"], tpl["times_wd"], w
+                    )
+                ]
+                for w in range(7)
+            })
+
+        applied = filled = named = slotted = 0
         for i in range(7):
             d = monday + timedelta(days=i)
             ds = d.strftime("%Y-%m-%d")
+            if has_times:
+                # 적어 둔 것이 있는 날은 골격을 다시 만들지 않는다(ensure_day_skeleton 과
+                # 같은 기준). 그 날만 옛 시간표로 남고, 비운 뒤 다시 고르면 반영된다.
+                if _day_has_content(conn, ds):
+                    skipped_days += 1
+                else:
+                    days += 1
             ensure_day_skeleton(conn, ds)
             for label in CORE_LABELS:
                 cid = cells.get((d.weekday(), label))
@@ -417,6 +475,22 @@ async def week_apply_template(request: Request):
                     (cid, now, ds, label),
                 )
                 applied += 1
+            # 칸 단위 구분(B1p4). 그 블록의 p번째 칸에만 놓는다. 요일마다 블록 길이가
+            # 달라 그 칸이 없는 날은 건너뛴다.
+            for label, p, cid in slot_cells.get(d.weekday(), []):
+                row = conn.execute(
+                    "SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+                    "WHERE b.date = ? AND b.block_label = ? "
+                    "ORDER BY s.slot_index LIMIT 1 OFFSET ?",
+                    (ds, label, p - 1),
+                ).fetchone()
+                if not row:
+                    continue
+                conn.execute(
+                    "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
+                    (cid, now, row["id"]),
+                )
+                slotted += 1
             if not rules:
                 continue
             conn.execute(
@@ -449,7 +523,22 @@ async def week_apply_template(request: Request):
                     ),
                 )
                 filled += cur.rowcount
-    return JSONResponse({"ok": True, "applied": applied, "filled": filled})
+
+        # 2) 블록 이름. 그 주 이름(weekly_block_themes)에 적어 둔 칸만 덮어쓴다.
+        for label, text in names.items():
+            conn.execute(
+                "INSERT INTO weekly_block_themes "
+                "(week_start, block_label, theme_text, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(week_start, block_label) DO UPDATE SET "
+                "theme_text = excluded.theme_text, updated_at = excluded.updated_at",
+                (ws, label, str(text).strip(), now),
+            )
+            named += 1
+    return JSONResponse({
+        "ok": True, "applied": applied, "filled": filled,
+        "days": days, "skipped_days": skipped_days,
+        "names": named, "slots": slotted,
+    })
 
 
 @router.post("/week/item-to-theme")

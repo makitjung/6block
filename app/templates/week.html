@@ -132,10 +132,11 @@
         <div class="wk7-head">
             <h2 class="card-title">7일 보기</h2>
             {% if cat_templates %}
-            {# 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다) #}
+            {# 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다).
+               템플릿이 담은 부분(구분·세션시간·블록 이름·고정 할일)만 손댄다. #}
             <div class="wk-tpl-inline">
-                <select id="wk-apply-tpl-sel" data-week="{{ week_start }}" aria-label="적용할 구분 템플릿">
-                    <option value="">구분 템플릿</option>
+                <select id="wk-apply-tpl-sel" data-week="{{ week_start }}" aria-label="적용할 주간 템플릿">
+                    <option value="">템플릿</option>
                     {% for t in cat_templates %}
                     <option value="{{ t.id }}">{{ t.name }}</option>
                     {% endfor %}
@@ -145,7 +146,7 @@
             </div>
             {% else %}
             <div class="wk-tpl-inline">
-                <a class="ghost-btn" href="/settings#set-tpl-list">구분 템플릿 만들기</a>
+                <a class="ghost-btn" href="/settings#set-tpl-list">템플릿 만들기</a>
                 <button type="button" class="ghost-btn" id="wk-names-toggle"
                         aria-expanded="false" aria-controls="wk-names">블록이름</button>
             </div>

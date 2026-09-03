@@ -38,11 +38,14 @@ from app.db import (
     BLOCK_TIMES_KEY,
     BLOCK_TIMES_WD_KEY,
     WEEKDAY_CONCEPTS_KEY,
+    _json_obj,
+    _parse_times,
     get_conn,
     get_day_blocks,
     get_settings,
     get_weekday_concepts,
     get_weekday_overrides,
+    template_has_times,
     set_setting,
 )
 from app.integrations import ai, gcal, gcal_write, things
@@ -157,12 +160,17 @@ def _routine_times() -> list[str]:
 
 
 def _load_cat_templates(conn) -> list[dict]:
-    """구분 템플릿 목록을 셀(요일 0~6 × 코어블록 → 구분)과 고정 할일 규칙까지 채워 돌려준다."""
+    """주간 템플릿 목록을 네 부분까지 채워 돌려준다.
+
+    cells 는 블록 단위 구분 42칸(요일 0~6 × 코어블록), slots 는 칸 단위 구분
+    (요일 × 코어블록 × p), times/names 는 세션시간과 블록 이름, rules 는 고정 할일이다.
+    화면에는 이 JSON 만 실어 보내고 격자는 app.js 가 그린다(카드가 무거워지지 않게).
+    """
     templates_ = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, name, display_order FROM cat_template "
-            "ORDER BY display_order, id"
+            "SELECT id, name, display_order, times_common, times_wd, block_names "
+            "FROM cat_template ORDER BY display_order, id"
         )
     ]
     cmap: dict[int, dict[int, dict[str, int]]] = {}
@@ -172,6 +180,15 @@ def _load_cat_templates(conn) -> list[dict]:
         cmap.setdefault(r["template_id"], {}).setdefault(r["weekday"], {})[
             r["block_label"]
         ] = r["category_id"]
+    smap: dict[int, dict[int, dict[str, dict[int, int]]]] = {}
+    for r in conn.execute(
+        "SELECT template_id, weekday, block_label, p, category_id FROM cat_template_slot"
+    ):
+        if r["category_id"] is None:
+            continue
+        smap.setdefault(r["template_id"], {}).setdefault(r["weekday"], {}).setdefault(
+            r["block_label"], {}
+        )[r["p"]] = r["category_id"]
     rmap: dict[int, list] = {}
     for r in conn.execute(
         "SELECT id, template_id, weekdays, start_time, span, do_text, category_id "
@@ -180,7 +197,13 @@ def _load_cat_templates(conn) -> list[dict]:
         rmap.setdefault(r["template_id"], []).append(dict(r))
     for t in templates_:
         t["cells"] = cmap.get(t["id"], {})
+        t["slots"] = smap.get(t["id"], {})
         t["rules"] = rmap.get(t["id"], [])
+        t["has_times"] = template_has_times(t["times_common"], t["times_wd"])
+        # 화면이 쓰기 좋게 풀어 둔다(문자열 JSON 이 아니라 값 그대로)
+        t["times_common"] = _parse_times(t["times_common"])
+        t["times_wd"] = _json_obj(t["times_wd"])
+        t["names"] = _json_obj(t.pop("block_names"))
     return templates_
 
 
@@ -201,6 +224,19 @@ def settings_view(request: Request):
             "categories": [dict(c) for c in cats],
             "active_categories": active_categories,
             "cat_templates": cat_templates,
+            # 템플릿 안 세션시간 편집기가 쓸 뼈대. 8블록의 이름·코어여부와, 지금 설정의
+            # 효과적인 시간표(공통 '' + 요일 '0'~'6')다. 템플릿이 세션시간을 안 담았으면
+            # 이 값을 보여 주고 시작한다.
+            "block_defs": [
+                {"label": lbl, "is_core": bool(core)} for lbl, core, _s, _e in DAY_BLOCKS
+            ],
+            "base_scopes": {
+                key: [
+                    {"start": s_, "end": e_}
+                    for _l, _c, s_, e_ in get_day_blocks(None if key == "" else int(key))
+                ]
+                for key in ("", "0", "1", "2", "3", "4", "5", "6")
+            },
             "routine_times": _routine_times(),
             "core_labels": CORE_LABELS,
             "weekdays": list(enumerate(KO_WEEKDAYS)),
@@ -302,6 +338,31 @@ def _parse_scope(raw) -> tuple[bool, int | None]:
     return False, None
 
 
+def _parse_block_times(form) -> tuple[list | None, str]:
+    """폼의 start_0..end_7 을 길이 8 시간표로. 잘못됐으면 (None, 사람이 읽는 이유).
+
+    30분 배수·앞뒤 겹침까지 여기서 본다. 설정의 세션시간과 템플릿의 세션시간이
+    같은 규칙을 쓰도록 한 곳에 모았다.
+    """
+    times = []
+    prev_end = None
+    for i in range(len(DAY_BLOCKS)):
+        s = (form.get(f"start_{i}") or "").strip()
+        e = (form.get(f"end_{i}") or "").strip()
+        label = DAY_BLOCKS[i][0]
+        if not _valid_hhmm(s) or not _valid_hhmm(e):
+            return None, f"{label} 시간 형식이 잘못됨(HH:MM)"
+        if hhmm_to_min(s) >= hhmm_to_min(e):
+            return None, f"{label}: 시작이 끝보다 빨라야 합니다"
+        if (hhmm_to_min(e) - hhmm_to_min(s)) % 30 != 0:
+            return None, f"{label}: 블록 길이가 30분 단위여야 합니다(세션 30분 유지)"
+        if prev_end is not None and hhmm_to_min(s) < prev_end:
+            return None, f"{label}이 앞 블록과 겹칩니다"
+        prev_end = hhmm_to_min(e)
+        times.append({"start": s, "end": e})
+    return times, ""
+
+
 @router.post("/settings/blocktimes")
 async def settings_blocktimes(request: Request):
     """8블록의 시작·끝 시간을 저장한다(라벨·코어여부·개수 고정). 30분 경계·겹침을 검증한다.
@@ -312,34 +373,9 @@ async def settings_blocktimes(request: Request):
     ok_scope, weekday = _parse_scope(form.get("scope"))
     if not ok_scope:
         return JSONResponse({"ok": False, "error": "요일 값이 잘못됨"}, status_code=400)
-    n = len(DAY_BLOCKS)
-    times = []
-    prev_end = None
-    for i in range(n):
-        s = (form.get(f"start_{i}") or "").strip()
-        e = (form.get(f"end_{i}") or "").strip()
-        label = DAY_BLOCKS[i][0]
-        if not _valid_hhmm(s) or not _valid_hhmm(e):
-            return JSONResponse(
-                {"ok": False, "error": f"{label} 시간 형식이 잘못됨(HH:MM)"},
-                status_code=400,
-            )
-        if hhmm_to_min(s) >= hhmm_to_min(e):
-            return JSONResponse(
-                {"ok": False, "error": f"{label}: 시작이 끝보다 빨라야 합니다"},
-                status_code=400,
-            )
-        if (hhmm_to_min(e) - hhmm_to_min(s)) % 30 != 0:
-            return JSONResponse(
-                {"ok": False, "error": f"{label}: 블록 길이가 30분 단위여야 합니다(세션 30분 유지)"},
-                status_code=400,
-            )
-        if prev_end is not None and hhmm_to_min(s) < prev_end:
-            return JSONResponse(
-                {"ok": False, "error": f"{label}이 앞 블록과 겹칩니다"}, status_code=400
-            )
-        prev_end = hhmm_to_min(e)
-        times.append({"start": s, "end": e})
+    times, why = _parse_block_times(form)
+    if times is None:
+        return JSONResponse({"ok": False, "error": why}, status_code=400)
     if weekday is None:
         set_setting(BLOCK_TIMES_KEY, json.dumps(times))
     else:
@@ -608,6 +644,149 @@ async def settings_template_cell(request: Request):
             "ON CONFLICT(template_id, weekday, block_label) DO UPDATE SET "
             "category_id = excluded.category_id",
             (tid, weekday, label, cid),
+        )
+    return JSONResponse({"ok": True})
+
+
+# -- 템플릿의 세션시간·블록 이름·칸 단위 구분 --------------------------------
+
+
+def _template_row(conn, tid: int):
+    return conn.execute(
+        "SELECT id, times_common, times_wd, block_names FROM cat_template WHERE id = ?",
+        (tid,),
+    ).fetchone()
+
+
+@router.post("/settings/template/times")
+async def settings_template_times(request: Request):
+    """템플릿이 담을 세션시간 한 벌을 저장한다. scope 가 비면 공통, '0'~'6' 이면 그 요일.
+
+    검사는 설정의 세션시간과 똑같다(_parse_block_times). 한 칸이라도 적히면 그때부터
+    이 템플릿은 세션시간을 담은 것이 되어, 주간 탭에서 고를 때 그 주 시간표가 바뀐다.
+    """
+    form = await request.form()
+    try:
+        tid = int_id(form.get("template_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    ok_scope, weekday = _parse_scope(form.get("scope"))
+    if not ok_scope:
+        return JSONResponse({"ok": False, "error": "요일 값이 잘못됨"}, status_code=400)
+    times, why = _parse_block_times(form)
+    if times is None:
+        return JSONResponse({"ok": False, "error": why}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = _template_row(conn, tid)
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if weekday is None:
+            conn.execute(
+                "UPDATE cat_template SET times_common = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(times), now, tid),
+            )
+        else:
+            wd = _json_obj(row["times_wd"])
+            wd[str(weekday)] = times
+            conn.execute(
+                "UPDATE cat_template SET times_wd = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(wd), now, tid),
+            )
+    return JSONResponse({"ok": True, "scope": "" if weekday is None else str(weekday)})
+
+
+@router.post("/settings/template/times/clear")
+async def settings_template_times_clear(request: Request):
+    """scope 가 비면 이 템플릿에서 세션시간을 통째로 뺀다('안 담음'으로 되돌리기).
+
+    '0'~'6' 이면 그 요일 덮어쓰기만 지워 템플릿 공통을 따르게 한다.
+    """
+    form = await request.form()
+    try:
+        tid = int_id(form.get("template_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    ok_scope, weekday = _parse_scope(form.get("scope"))
+    if not ok_scope:
+        return JSONResponse({"ok": False, "error": "요일 값이 잘못됨"}, status_code=400)
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = _template_row(conn, tid)
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if weekday is None:
+            conn.execute(
+                "UPDATE cat_template SET times_common = NULL, times_wd = NULL, "
+                "updated_at = ? WHERE id = ?",
+                (now, tid),
+            )
+        else:
+            wd = _json_obj(row["times_wd"])
+            wd.pop(str(weekday), None)
+            conn.execute(
+                "UPDATE cat_template SET times_wd = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(wd) if wd else None, now, tid),
+            )
+    return JSONResponse({"ok": True})
+
+
+@router.post("/settings/template/blockname")
+async def settings_template_blockname(request: Request):
+    """템플릿의 블록 이름 한 칸(B1~B6)을 저장한다. 비우면 그 칸은 안 담는다."""
+    form = await request.form()
+    try:
+        tid = int_id(form.get("template_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    label = (form.get("block_label") or "").strip()
+    if label not in CORE_LABELS:
+        return JSONResponse({"ok": False, "error": "bad-block"}, status_code=400)
+    name = (form.get("name") or "").strip().replace("\n", " ")
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = _template_row(conn, tid)
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        names = _json_obj(row["block_names"])
+        if name:
+            names[label] = name
+        else:
+            names.pop(label, None)
+        conn.execute(
+            "UPDATE cat_template SET block_names = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(names, ensure_ascii=False) if names else None, now, tid),
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.post("/settings/template/slot-cell")
+async def settings_template_slot_cell(request: Request):
+    """템플릿의 칸 단위 구분 한 칸을 저장한다(B1p4 = 요일 × B1 × 네 번째 세션).
+
+    비우면 그 칸은 블록 구분을 그대로 상속한다(오늘 탭의 빈 슬롯과 같은 규칙).
+    """
+    form = await request.form()
+    try:
+        tid = int_id(form.get("template_id"))
+        weekday = int(form.get("weekday"))
+        p = int(form.get("p"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
+    label = (form.get("block_label") or "").strip()
+    # p 상한 16은 8시간짜리 블록까지 받는다는 뜻이다(30분 × 16).
+    if not (0 <= weekday <= 6) or label not in CORE_LABELS or not (1 <= p <= 16):
+        return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
+    cid = opt_id(form.get("category_id"))
+    with get_conn() as conn:
+        if not _template_row(conn, tid):
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        conn.execute(
+            "INSERT INTO cat_template_slot "
+            "(template_id, weekday, block_label, p, category_id) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(template_id, weekday, block_label, p) DO UPDATE SET "
+            "category_id = excluded.category_id",
+            (tid, weekday, label, p, cid),
         )
     return JSONResponse({"ok": True})
 

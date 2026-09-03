@@ -242,36 +242,70 @@
             </div>
     </section>
 
-    {# 격자는 템플릿 하나당 42칸(요일 7 × 코어블록 6)이고 칸마다 구분 목록이 통째로 들어간다.
+    {# 템플릿 하나가 네 부분(구분·세션시간·블록 이름·고정 할일)을 담고 각각 비울 수 있다.
+       구분 격자만도 42칸(요일 7 × 코어블록 6)이고 칸마다 구분 목록이 통째로 들어간다.
        서버에서 미리 그리면 템플릿 하나가 40KB 넘게 붙어, 템플릿을 늘릴수록 설정 화면이
-       계속 무거워진다. 뼈대와 값만 JSON 으로 보내고 카드를 펼칠 때 app.js 가 그린다. #}
+       계속 무거워진다. 뼈대와 값만 JSON 으로 보내고 카드를 펼칠 때 app.js 가 그린다.
+       부분은 탭으로 나눠, 지금 보고 있는 하나만 화면에 선다. #}
     <details class="card set-template-card" id="set-tpl-card">
-        <summary class="card-title">구분 템플릿 <span class="card-sub">요일별(월~일) 42칸 세트와 고정 할일을 만들어 두면 주간 탭에서 한 번에 채웁니다</span></summary>
+        <summary class="card-title">주간 템플릿 <span class="card-sub">구분 · 세션시간 · 블록 이름 · 고정 할일을 담아 두면 주간 탭에서 한 번에 적용합니다 · 담은 부분만 적용되므로 개별 템플릿도 됩니다</span></summary>
         <script>
             window.__tplCells = {{ cat_templates | map(attribute='cells') | list | tojson }};
+            window.__tplSlots = {{ cat_templates | map(attribute='slots') | list | tojson }};
             window.__tplRules = {{ cat_templates | map(attribute='rules') | list | tojson }};
+            window.__tplNames = {{ cat_templates | map(attribute='names') | list | tojson }};
+            window.__tplTimesCommon = {{ cat_templates | map(attribute='times_common') | list | tojson }};
+            window.__tplTimesWd = {{ cat_templates | map(attribute='times_wd') | list | tojson }};
             window.__tplCats = {{ active_categories | tojson }};
             window.__tplBlocks = {{ core_labels | tojson }};
             window.__tplWeekdays = {{ weekdays | tojson }};
             window.__tplTimes = {{ routine_times | tojson }};
+            {# 세션시간 편집기가 쓸 뼈대. 8블록의 이름·코어여부와, 지금 설정의 요일별 시간. #}
+            window.__btBlocks = {{ block_defs | tojson }};
+            window.__btScopes = {{ base_scopes | tojson }};
         </script>
         <div id="set-tpl-list">
             {% for t in cat_templates %}
-            <div class="set-tpl" data-id="{{ t.id }}">
+            <div class="set-tpl" data-id="{{ t.id }}" data-idx="{{ loop.index0 }}">
                 <div class="set-tpl-head">
                     <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" autocomplete="off" aria-label="템플릿 이름">
+                    <span class="set-tpl-parts" aria-label="담고 있는 부분"></span>
                     <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
                 </div>
-                <div class="set-tpl-grid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}"></div>
+                <div class="set-tpl-tabs" role="group" aria-label="{{ t.name }} 부분 고르기">
+                    <button type="button" class="set-tpl-tab is-active" data-part="cats">구분</button>
+                    <button type="button" class="set-tpl-tab" data-part="times">세션시간</button>
+                    <button type="button" class="set-tpl-tab" data-part="names">블록 이름</button>
+                    <button type="button" class="set-tpl-tab" data-part="rt">고정 할일</button>
+                </div>
+
+                <div class="set-tpl-pane" data-part="cats">
+                    <div class="set-tpl-pane-head">
+                        <span class="set-rt-title">구분</span>
+                        <button type="button" class="hint" data-hint="블록 단위로 정한 구분은 그 블록의 빈 칸이 그대로 물려받습니다. '칸 단위'를 켜면 B1p4(1블록의 네 번째 30분 칸)처럼 칸마다 따로 정할 수 있고, 정한 칸만 블록 구분 위에 덮어씁니다. 칸을 비워 두면 블록 구분을 그대로 씁니다. 칸 수는 이 템플릿의 세션시간을 따르므로 블록이 세 시간이면 p6까지 섭니다." aria-label="설명">?</button>
+                        <button type="button" class="set-mini-btn set-tpl-pmode" data-tpl="{{ t.id }}" aria-pressed="false">칸 단위</button>
+                    </div>
+                    <div class="set-tpl-grid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}"></div>
+                    <div class="set-tpl-pgrid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}" hidden></div>
+                </div>
+
+                {# 세션시간은 설정 위쪽의 편집기와 같은 모양이다(공통 1벌 + 요일별 덮어쓰기).
+                   담지 않은 템플릿이면 지금 설정값을 보여 주고, 값을 고치면 그때부터 담는다. #}
+                <div class="set-tpl-pane" data-part="times" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" hidden></div>
+
+                <div class="set-tpl-pane" data-part="names" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" hidden></div>
+
                 {# 고정 할일은 격자로 만들면 요일 7 × 하루 31칸 = 217칸이 된다. 규칙 한 줄이
                    여러 요일을 덮으므로 목록으로 둔다. 줄도 app.js 가 그린다. #}
-                <div class="set-rt" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}">
-                    <div class="set-rt-head">
-                        <span class="set-rt-title">고정 할일</span>
-                        <button type="button" class="hint" data-hint="이 템플릿을 주간 탭에서 고를 때 30분 칸에 자동으로 들어갈 일과입니다. 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라 월화수목금 07:30 두 칸이면 열 칸이 채워집니다. 비어 있는 칸과 지난번 고정 할일이 들어간 칸만 채우고 직접 쓰신 글은 건드리지 않습니다. 자동으로 들어간 칸은 달성률·구체화율 통계에서 빠지고, 그 칸을 직접 고치면 그때부터 계획으로 잡힙니다." aria-label="설명">?</button>
-                        <button type="button" class="set-mini-btn set-rt-add" data-tpl="{{ t.id }}">규칙 추가</button>
+                <div class="set-tpl-pane" data-part="rt" hidden>
+                    <div class="set-rt" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}">
+                        <div class="set-rt-head">
+                            <span class="set-rt-title">고정 할일</span>
+                            <button type="button" class="hint" data-hint="이 템플릿을 주간 탭에서 고를 때 30분 칸에 자동으로 들어갈 일과입니다. 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라 월화수목금 07:30 두 칸이면 열 칸이 채워집니다. 비어 있는 칸과 지난번 고정 할일이 들어간 칸만 채우고 직접 쓰신 글은 건드리지 않습니다. 자동으로 들어간 칸은 달성률·구체화율 통계에서 빠지고, 그 칸을 직접 고치면 그때부터 계획으로 잡힙니다." aria-label="설명">?</button>
+                            <button type="button" class="set-mini-btn set-rt-add" data-tpl="{{ t.id }}">규칙 추가</button>
+                        </div>
+                        <div class="set-rt-list"></div>
                     </div>
-                    <div class="set-rt-list"></div>
                 </div>
             </div>
             {% endfor %}

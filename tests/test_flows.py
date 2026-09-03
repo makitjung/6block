@@ -745,6 +745,197 @@ def test_템플릿_요일_범위_검증(client, weekday):
     assert res.status_code in (400, 422), f"weekday={weekday} 가 통과했다"
 
 
+# -- 주간 템플릿: 세션시간 · 블록 이름 · 칸 단위 구분 ---------------------------
+
+
+def _새_템플릿(client, 이름="T"):
+    client.get("/settings")
+    return client.post("/settings/template/add", data={"name": 이름}).json()["id"]
+
+
+def _시간표(tid, scope="", **바꿀것):
+    """8블록 기본 시간표에 바꿀 칸만 얹어 폼 데이터로 만든다."""
+    from app.config import DAY_BLOCKS
+
+    data = {"template_id": tid, "scope": scope}
+    for i, (_l, _c, s, e) in enumerate(DAY_BLOCKS):
+        data[f"start_{i}"] = 바꿀것.get(f"start_{i}", s)
+        data[f"end_{i}"] = 바꿀것.get(f"end_{i}", e)
+    return data
+
+
+def _블록시각(날짜, 라벨):
+    return _one("SELECT start_time, end_time FROM blocks WHERE date = ? AND block_label = ?",
+                (날짜, 라벨))
+
+
+def test_템플릿_세션시간이_그_주에만_적용된다(client):
+    tid = _새_템플릿(client, "늦게 시작하는 주")
+    # B1 을 08:00~09:30 으로(30분 배수 유지). 뒤 블록은 그대로 두어 겹치지 않는다.
+    res = client.post("/settings/template/times",
+                      data=_시간표(tid, "", start_0="08:00"))
+    assert res.status_code == 200, res.text
+
+    client.get(f"/week/{MONDAY}")
+    res = client.post("/week/apply-template",
+                      data={"week_start": MONDAY, "template_id": tid})
+    assert res.status_code == 200, res.text
+    d = res.json()
+    assert d["days"] == 7 and d["skipped_days"] == 0
+
+    assert _블록시각(MONDAY, "B1")["start_time"] == "08:00"
+    # 그 주에만 적힌다. 다음 주는 설정값 그대로.
+    다음주 = (datetime.date.fromisoformat(MONDAY) + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+    client.get(f"/day/{다음주}")
+    assert _블록시각(다음주, "B1")["start_time"] == "07:30"
+
+
+def test_적어_둔_것이_있는_날은_세션시간을_안_바꾼다(client):
+    """골격을 다시 만들면 칸이 어긋나 글이 사라진다. 건너뛰고 몇 날인지 알려 준다."""
+    tid = _새_템플릿(client, "시간표만")
+    client.post("/settings/template/times", data=_시간표(tid, "", start_0="08:00"))
+    client.get(f"/day/{MONDAY}")
+    칸 = _one("SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
+             "WHERE b.date = ? AND b.block_label = 'B1' ORDER BY s.slot_index LIMIT 1",
+             (MONDAY,))
+    client.post("/save/field", data={"entity": "slot", "id": 칸["id"],
+                                     "field": "do_text", "value": "지키고 싶은 글"})
+
+    res = client.post("/week/apply-template",
+                      data={"week_start": MONDAY, "template_id": tid})
+    d = res.json()
+    assert d["skipped_days"] == 1 and d["days"] == 6
+    assert _블록시각(MONDAY, "B1")["start_time"] == "07:30", "적어 둔 날인데 시간표를 바꿨다"
+    assert _one("SELECT do_text FROM slots WHERE id = ?", (칸["id"],))["do_text"] == "지키고 싶은 글"
+
+
+def test_템플릿_세션시간_빼기(client):
+    tid = _새_템플릿(client, "뺄 것")
+    client.post("/settings/template/times", data=_시간표(tid, "", start_0="08:00"))
+    client.post("/settings/template/times/clear",
+                data={"template_id": tid, "scope": ""})
+    row = _one("SELECT times_common, times_wd FROM cat_template WHERE id = ?", (tid,))
+    assert row["times_common"] is None and row["times_wd"] is None
+    # 세션시간만 담았던 템플릿이라 이제 담은 것이 없다
+    res = client.post("/week/apply-template",
+                      data={"week_start": MONDAY, "template_id": tid})
+    assert res.status_code == 400 and res.json()["error"] == "empty-template"
+
+
+def test_템플릿_요일_세션시간은_그_요일만_바꾼다(client):
+    tid = _새_템플릿(client, "수요일만 늦게")
+    client.post("/settings/template/times", data=_시간표(tid, "2", start_0="09:00"))
+    client.post("/week/apply-template", data={"week_start": MONDAY, "template_id": tid})
+    수요일 = (datetime.date.fromisoformat(MONDAY) + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+    assert _블록시각(수요일, "B1")["start_time"] == "09:00"
+    assert _블록시각(MONDAY, "B1")["start_time"] == "07:30", "월요일까지 따라 바뀌었다"
+
+
+def test_템플릿_블록_이름이_그_주_이름으로_들어간다(client):
+    tid = _새_템플릿(client, "이름만")
+    res = client.post("/settings/template/blockname",
+                      data={"template_id": tid, "block_label": "B1", "name": "아침 공부"})
+    assert res.status_code == 200, res.text
+    client.post("/settings/template/blockname",
+                data={"template_id": tid, "block_label": "B3", "name": "본업"})
+    res = client.post("/week/apply-template",
+                      data={"week_start": MONDAY, "template_id": tid})
+    assert res.json()["names"] == 2
+    이름 = {r["block_label"]: r["theme_text"] for r in
+           _rows("SELECT block_label, theme_text FROM weekly_block_themes WHERE week_start = ?",
+                 (MONDAY,))}
+    assert 이름["B1"] == "아침 공부" and 이름["B3"] == "본업"
+    assert "B2" not in 이름, "비워 둔 칸까지 덮어썼다"
+
+
+def test_템플릿_블록_이름_비우면_안_담는다(client):
+    tid = _새_템플릿(client, "이름 지우기")
+    client.post("/settings/template/blockname",
+                data={"template_id": tid, "block_label": "B1", "name": "아침"})
+    client.post("/settings/template/blockname",
+                data={"template_id": tid, "block_label": "B1", "name": "  "})
+    assert _one("SELECT block_names FROM cat_template WHERE id = ?", (tid,))["block_names"] is None
+
+
+def test_템플릿_칸_단위_구분이_그_칸에만_들어간다(client):
+    """B1p4 = 1블록의 네 번째 30분 칸. 시각이 아니라 순번으로 잡는다."""
+    tid = _새_템플릿(client, "칸 구분")
+    cid = _one("SELECT id FROM categories WHERE name = '점검'")["id"]
+    res = client.post("/settings/template/slot-cell", data={
+        "template_id": tid, "weekday": 0, "block_label": "B1", "p": 4,
+        "category_id": cid})
+    assert res.status_code == 200, res.text
+    res = client.post("/week/apply-template",
+                      data={"week_start": MONDAY, "template_id": tid})
+    assert res.json()["slots"] == 1
+    칸들 = _rows("SELECT s.category_id FROM slots s JOIN blocks b ON b.id = s.block_id "
+               "WHERE b.date = ? AND b.block_label = 'B1' ORDER BY s.slot_index", (MONDAY,))
+    assert [c["category_id"] for c in 칸들] == [None, None, None, cid]
+
+
+def test_템플릿_블록_구분과_칸_구분이_함께_간다(client):
+    """블록 구분은 빈 칸이 상속하고, 적어 둔 칸만 그 위에 덮어쓴다."""
+    tid = _새_템플릿(client, "종합")
+    코어 = _one("SELECT id FROM categories WHERE name = '코어'")["id"]
+    점검 = _one("SELECT id FROM categories WHERE name = '점검'")["id"]
+    client.post("/settings/template/cell", data={
+        "template_id": tid, "weekday": 0, "block_label": "B1", "category_id": 코어})
+    client.post("/settings/template/slot-cell", data={
+        "template_id": tid, "weekday": 0, "block_label": "B1", "p": 2,
+        "category_id": 점검})
+    res = client.post("/week/apply-template",
+                      data={"week_start": MONDAY, "template_id": tid})
+    d = res.json()
+    assert d["applied"] == 1 and d["slots"] == 1
+    assert _one("SELECT category_id FROM blocks WHERE date = ? AND block_label = 'B1'",
+                (MONDAY,))["category_id"] == 코어
+    칸들 = _rows("SELECT s.category_id FROM slots s JOIN blocks b ON b.id = s.block_id "
+               "WHERE b.date = ? AND b.block_label = 'B1' ORDER BY s.slot_index", (MONDAY,))
+    assert [c["category_id"] for c in 칸들][:2] == [None, 점검], "빈 칸은 블록 구분을 상속해야 한다"
+
+
+def test_템플릿_세션시간이_구분보다_먼저_적용된다(client):
+    """시간표가 바뀌면 골격이 다시 만들어진다. 구분을 먼저 넣으면 그것이 지워진다."""
+    tid = _새_템플릿(client, "시간표+구분")
+    코어 = _one("SELECT id FROM categories WHERE name = '코어'")["id"]
+    client.post("/settings/template/times", data=_시간표(tid, "", start_0="08:00"))
+    client.post("/settings/template/cell", data={
+        "template_id": tid, "weekday": 0, "block_label": "B1", "category_id": 코어})
+    client.post("/week/apply-template", data={"week_start": MONDAY, "template_id": tid})
+    row = _one("SELECT start_time, category_id FROM blocks "
+               "WHERE date = ? AND block_label = 'B1'", (MONDAY,))
+    assert row["start_time"] == "08:00"
+    assert row["category_id"] == 코어, "시간표를 다시 만들며 구분이 지워졌다"
+
+
+@pytest.mark.parametrize("p", ["0", "-1", "17", "abc"])
+def test_템플릿_칸_번호_범위_검증(client, p):
+    tid = _새_템플릿(client, "범위")
+    res = client.post("/settings/template/slot-cell", data={
+        "template_id": tid, "weekday": 0, "block_label": "B1", "p": p,
+        "category_id": ""})
+    assert res.status_code in (400, 422), f"p={p} 가 통과했다"
+
+
+def test_템플릿_세션시간_30분_배수가_아니면_거절한다(client):
+    tid = _새_템플릿(client, "잘못된 시간")
+    res = client.post("/settings/template/times",
+                      data=_시간표(tid, "", end_0="09:20"))
+    assert res.status_code == 400
+    assert "30분" in res.json()["error"]
+
+
+def test_템플릿을_지우면_칸_구분도_함께_지워진다(client):
+    tid = _새_템플릿(client, "지울 것")
+    cid = _one("SELECT id FROM categories WHERE name = '코어'")["id"]
+    client.post("/settings/template/slot-cell", data={
+        "template_id": tid, "weekday": 0, "block_label": "B1", "p": 1,
+        "category_id": cid})
+    client.post("/settings/template/delete", data={"id": tid})
+    assert _one("SELECT COUNT(*) AS c FROM cat_template_slot WHERE template_id = ?",
+                (tid,))["c"] == 0
+
+
 # -- 고결감 -----------------------------------------------------------------
 
 

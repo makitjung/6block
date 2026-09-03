@@ -170,11 +170,20 @@ CREATE INDEX IF NOT EXISTS idx_reflection_kind ON reflection(kind, id);
 CREATE INDEX IF NOT EXISTS idx_reflection_date ON reflection(event_date);
 CREATE INDEX IF NOT EXISTS idx_reflection_source ON reflection(source_id);
 
--- 구분 템플릿(요일 월~일 × 코어블록 구분). 주별로 골라 42칸(7일×6블록) 블록 구분을 일괄 입력한다.
+-- 주간 템플릿. 세 부분(세션시간·블록이름·구분)을 담고 각각 비워 둘 수 있어,
+-- 셋을 다 채우면 종합 템플릿이고 하나만 채우면 개별 템플릿이 된다.
+-- 주간 탭에서 하나를 고르면 그 안에 든 부분만 그 주에 적용된다.
 CREATE TABLE IF NOT EXISTS cat_template (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     display_order INTEGER NOT NULL DEFAULT 0,
+    -- 세션시간. 설정 화면과 같은 모양이다. 공통은 길이 8 JSON 배열 [{start,end}...],
+    -- 요일 덮어쓰기는 {"0": [...], ...} 로 덮어쓴 요일만. 둘 다 비면 이 템플릿은
+    -- 세션시간을 안 담는다(주간 탭에서 골라도 시간표는 그대로 둔다).
+    times_common TEXT,
+    times_wd TEXT,
+    -- 블록 이름. {"B1": "이름", ...} 로 적은 것만. 비면 이름을 안 담는다.
+    block_names TEXT,
     updated_at TEXT NOT NULL
 );
 
@@ -189,6 +198,31 @@ CREATE TABLE IF NOT EXISTS cat_template_cell (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cat_template_cell ON cat_template_cell(template_id);
+
+-- 템플릿의 칸 단위 구분: (템플릿, 요일 0~6, 코어블록, 블록 안 몇 번째 세션) → 구분.
+-- p 는 1부터 세는 세션 번호다(B1p4 = 1블록의 네 번째 30분 칸). 시각으로 잡지 않으므로
+-- 요일마다 블록 시작시각이 달라도 같은 자리를 가리킨다. 비어 있으면 블록 구분을 상속한다.
+CREATE TABLE IF NOT EXISTS cat_template_slot (
+    id INTEGER PRIMARY KEY,
+    template_id INTEGER NOT NULL REFERENCES cat_template(id) ON DELETE CASCADE,
+    weekday INTEGER NOT NULL,            -- 0=월 ~ 6=일 (date.weekday())
+    block_label TEXT NOT NULL,           -- B1..B6
+    p INTEGER NOT NULL,                  -- 1부터. B1p4 의 4
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    UNIQUE(template_id, weekday, block_label, p)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cat_template_slot ON cat_template_slot(template_id);
+
+-- 그 주에만 쓰는 세션시간. 주간 탭에서 세션시간을 담은 템플릿을 고르면 여기에 적힌다.
+-- times 는 7요일을 모두 풀어 둔 {"0": [{start,end} × 8], ... "6": [...]} 이다.
+-- 풀어서 적는 이유는, 나중에 설정의 공통 시간을 고쳐도 이미 적용해 둔 주가 조용히
+-- 달라지지 않게 하기 위해서다. 이 표에 줄이 없는 주는 설정값을 그대로 따른다.
+CREATE TABLE IF NOT EXISTS week_block_time (
+    week_start TEXT PRIMARY KEY,         -- 그 주 월요일 YYYY-MM-DD
+    times TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 
 -- 구분 템플릿에 딸린 고정 할일 규칙. 주간 탭에서 템플릿을 고르면 이 규칙대로 30분 칸을 채운다.
 -- 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라서 스무 줄이면 한 주의 고정 일과가 다 덮인다

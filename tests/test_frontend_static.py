@@ -211,3 +211,33 @@ def test_장기_자동저장은_칸마다_다시_그리지_않는다():
     start = APP_JS.index("function saveItemField(")
     body = APP_JS[start:start + 600]
     assert "refreshGantt" not in body, "한 칸 저장이 곧바로 격자를 다시 그린다"
+
+
+# -- 주간 템플릿의 부분들 -------------------------------------------------------
+
+
+def test_템플릿_부분마다_그리는_함수가_있다():
+    """구분·세션시간·블록 이름·고정 할일 네 부분을 담고 각각 비울 수 있다."""
+    for fn in ("buildTplTimes", "buildTplNames", "buildTplPGrid",
+               "paintTplParts", "showTplPane"):
+        assert f"function {fn}(" in APP_JS, f"{fn} 이 없다"
+
+
+def test_템플릿_세션시간은_설정_편집기와_클래스가_겹치지_않는다():
+    """bindBlockTimes 가 .set-bt-panel 을 문서 전체에서 찾아 물기 때문이다.
+
+    템플릿 안 편집기가 같은 클래스를 쓰면 설정의 공통 시간이 템플릿 값으로 덮인다.
+    """
+    start = APP_JS.index("function buildTplTimes(")
+    body = APP_JS[start:APP_JS.index("function redrawTplTimes(")]
+    for bad in ("'set-bt-panel", "'set-bt-tab", "'set-bt-reset"):
+        assert bad not in body, f"템플릿 세션시간이 {bad} 을 쓴다(설정 편집기와 충돌)"
+    assert "set-tt-panel" in body and "set-tt-tab" in body
+
+
+def test_칸_단위_구분은_시각이_아니라_순번으로_보낸다():
+    """B1p4 는 '1블록의 네 번째 칸'이다. 요일마다 블록 시작시각이 달라도 같은 자리다."""
+    start = APP_JS.index("/settings/template/slot-cell")
+    body = APP_JS[start:start + 400]
+    assert "block_label" in body and "p:" in body
+    assert "start_time" not in body, "칸 단위 구분을 시각으로 보내고 있다"
