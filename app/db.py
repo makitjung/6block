@@ -25,7 +25,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # PRAGMA table_info 8회와 조건 검사 20여 개를 다시 돌리지 않기 위함이다.
 # .sql 덤프에는 user_version 이 담기지 않으므로, 옛 백업을 복원하면 0에서 시작해
 # 마이그레이션이 처음부터 한 번 더 돈다(그래서 복원 호환성은 그대로다).
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def uid_from_created(created: str | None) -> str:
@@ -232,6 +232,20 @@ def _migrate(conn: sqlite3.Connection):
     for new_col in ("times_common", "times_wd", "block_names"):
         if new_col not in tpl_cols:
             conn.execute(f"ALTER TABLE cat_template ADD COLUMN {new_col} TEXT")
+    # 템플릿을 다섯 종류(S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간)로 나눈다.
+    if "kind" not in tpl_cols:
+        conn.execute("ALTER TABLE cat_template ADD COLUMN kind TEXT NOT NULL DEFAULT 'W'")
+        conn.execute("ALTER TABLE cat_template ADD COLUMN no INTEGER NOT NULL DEFAULT 0")
+        for col in ("s_id", "t_id", "n_id", "c_id"):
+            conn.execute(f"ALTER TABLE cat_template ADD COLUMN {col} INTEGER")
+        # 옛 템플릿은 모두 주간(W)이 된다. 번호는 보이던 차례대로 1부터.
+        for i, r in enumerate(conn.execute(
+            "SELECT id FROM cat_template ORDER BY display_order, id"
+        ).fetchall(), start=1):
+            conn.execute("UPDATE cat_template SET no = ? WHERE id = ?", (i, r[0]))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_template_kind_no "
+                 "ON cat_template(kind, no)")
+    _split_old_templates(conn)
     # 요일 컨셉은 주간 블록테마(weekly_block_themes)로 일원화했다. 남은 테이블을 정리한다.
     conn.execute("DROP TABLE IF EXISTS weekday_concept")
     # 장기 계획은 간트(lt_item) 하나로 일원화했다. 표로 적던 lt_plan 은 코드에서 사라졌다.
@@ -246,6 +260,72 @@ def _migrate(conn: sqlite3.Connection):
         "WHERE block_label IN ('점심', '저녁') AND category_id IS NULL "
         "AND EXISTS (SELECT 1 FROM categories WHERE name = '기타')"
     )
+
+
+def _next_no(conn, kind: str) -> int:
+    """그 종류의 다음 번호. 지운 번호는 다시 쓰지 않는다(가장 큰 번호 + 1)."""
+    return conn.execute(
+        "SELECT COALESCE(MAX(no), 0) + 1 FROM cat_template WHERE kind = ?", (kind,)
+    ).fetchone()[0]
+
+
+def _new_tpl(conn, kind: str, name: str = "") -> int:
+    """빈 템플릿 한 줄을 만들고 id 를 돌려준다."""
+    cur = conn.execute(
+        "INSERT INTO cat_template (kind, no, name, display_order, updated_at) "
+        "VALUES (?, ?, ?, 0, datetime('now'))",
+        (kind, _next_no(conn, kind), name),
+    )
+    return cur.lastrowid
+
+
+def _split_old_templates(conn):
+    """한 줄이 네 부분을 다 담던 옛 템플릿을 종류별로 쪼갠다.
+
+    옛 줄은 주간(W)으로 남고, 담고 있던 세션시간·고정할일·블록이름·구분이 각각
+    S·T·N·C 한 줄이 되어 s_id·t_id·n_id·c_id 로 이어진다. 안 담았던 부분은 안 만든다.
+    쪼갠 뒤에는 W 줄에 내용도 자식도 없으므로 몇 번을 돌려도 결과가 같다(멱등).
+    """
+    for w in conn.execute(
+        "SELECT id, times_common, times_wd, block_names FROM cat_template "
+        "WHERE kind = 'W'"
+    ).fetchall():
+        wid = w[0]
+        if w[1] or w[2]:
+            sid = _new_tpl(conn, "S")
+            conn.execute(
+                "UPDATE cat_template SET times_common = ?, times_wd = ? WHERE id = ?",
+                (w[1], w[2], sid),
+            )
+            conn.execute(
+                "UPDATE cat_template SET times_common = NULL, times_wd = NULL, "
+                "s_id = ? WHERE id = ?",
+                (sid, wid),
+            )
+        if w[3]:
+            nid = _new_tpl(conn, "N")
+            conn.execute(
+                "UPDATE cat_template SET block_names = ? WHERE id = ?", (w[3], nid))
+            conn.execute(
+                "UPDATE cat_template SET block_names = NULL, n_id = ? WHERE id = ?",
+                (nid, wid),
+            )
+        if conn.execute("SELECT 1 FROM routine_rule WHERE template_id = ? LIMIT 1",
+                        (wid,)).fetchone():
+            tid = _new_tpl(conn, "T")
+            conn.execute("UPDATE routine_rule SET template_id = ? WHERE template_id = ?",
+                         (tid, wid))
+            conn.execute("UPDATE cat_template SET t_id = ? WHERE id = ?", (tid, wid))
+        if conn.execute("SELECT 1 FROM cat_template_cell WHERE template_id = ? LIMIT 1",
+                        (wid,)).fetchone() or conn.execute(
+                "SELECT 1 FROM cat_template_slot WHERE template_id = ? LIMIT 1",
+                (wid,)).fetchone():
+            cid = _new_tpl(conn, "C")
+            conn.execute("UPDATE cat_template_cell SET template_id = ? "
+                         "WHERE template_id = ?", (cid, wid))
+            conn.execute("UPDATE cat_template_slot SET template_id = ? "
+                         "WHERE template_id = ?", (cid, wid))
+            conn.execute("UPDATE cat_template SET c_id = ? WHERE id = ?", (cid, wid))
 
 
 @contextmanager
@@ -370,15 +450,30 @@ def get_weekday_concepts() -> list[str]:
 _week_times_cache: dict | None = None
 
 
-def get_week_block_times() -> dict:
+@contextmanager
+def _conn_or(conn):
+    """이미 열린 연결이 있으면 그것을, 없으면 새 연결을 쓴다.
+
+    적용 도중에는 바깥 라우트가 이미 쓰기 트랜잭션을 잡고 있다. 거기서 또 연결을 열면
+    같은 파일을 두 연결이 쓰려 해 'database is locked' 가 나고, 읽더라도 바깥이 아직
+    커밋하지 않은 줄을 못 본다(방금 적은 시간표를 못 보고 옛 골격을 만든다).
+    """
+    if conn is not None:
+        yield conn
+        return
+    with get_conn() as c:
+        yield c
+
+
+def get_week_block_times(conn=None) -> dict:
     """주별 세션시간 전체. {"2026-09-07": {"0": [{start,end}...], ...}} 형태."""
     global _week_times_cache
     if _week_times_cache is not None:
         return _week_times_cache
     out: dict = {}
     try:
-        with get_conn() as conn:
-            for r in conn.execute("SELECT week_start, times FROM week_block_time"):
+        with _conn_or(conn) as c:
+            for r in c.execute("SELECT week_start, times FROM week_block_time"):
                 try:
                     data = json.loads(r["times"])
                 except ValueError:
@@ -391,12 +486,60 @@ def get_week_block_times() -> dict:
     return out
 
 
-def set_week_block_times(week_start_str: str, times: dict):
+# 그 날에만 쓰는 세션시간(day_block_time). 주간 탭 날짜 머리의 ⋯ 에서 고르면 적힌다.
+_day_times_cache: dict | None = None
+
+
+def get_day_block_times(conn=None) -> dict:
+    """날짜별 세션시간 전체. {"2026-09-08": [{start,end} × 8]} 형태."""
+    global _day_times_cache
+    if _day_times_cache is not None:
+        return _day_times_cache
+    out: dict = {}
+    try:
+        with _conn_or(conn) as c:
+            for r in c.execute("SELECT date, times FROM day_block_time"):
+                t = _parse_times(r["times"])
+                if t:
+                    out[r["date"]] = t
+    except Exception:
+        return {}       # 실패하면 주·설정값만 쓰고 캐시하지 않는다(다음에 재시도)
+    _day_times_cache = out
+    return out
+
+
+def set_day_block_times(date_str: str, times, conn=None):
+    """그 날 세션시간을 적는다. times 가 비면 그 날 줄을 지워 주·설정값을 따르게 한다."""
+    global _day_times_cache
+    with _conn_or(conn) as c:
+        if times:
+            c.execute(
+                "INSERT INTO day_block_time (date, times, updated_at) "
+                "VALUES (?, ?, datetime('now')) "
+                "ON CONFLICT(date) DO UPDATE SET "
+                "times = excluded.times, updated_at = excluded.updated_at",
+                (date_str, json.dumps(times)),
+            )
+        else:
+            c.execute("DELETE FROM day_block_time WHERE date = ?", (date_str,))
+    if conn is None:
+        _day_times_cache = None
+        return
+    # 바깥 트랜잭션 안이면 캐시를 그 자리에서 고친다. 비워 두면 다음 읽기가 새 연결로
+    # 가서 아직 커밋 안 된 줄을 못 보고, 방금 적은 시간표가 골격에 안 반영된다.
+    cache = get_day_block_times(conn)
+    if times:
+        cache[date_str] = times
+    else:
+        cache.pop(date_str, None)
+
+
+def set_week_block_times(week_start_str: str, times: dict, conn=None):
     """그 주 세션시간을 적는다(7요일을 모두 풀어서). times 가 비면 그 주 줄을 지운다."""
     global _week_times_cache
-    with get_conn() as conn:
+    with _conn_or(conn) as c:
         if times:
-            conn.execute(
+            c.execute(
                 "INSERT INTO week_block_time (week_start, times, updated_at) "
                 "VALUES (?, ?, datetime('now')) "
                 "ON CONFLICT(week_start) DO UPDATE SET "
@@ -404,10 +547,17 @@ def set_week_block_times(week_start_str: str, times: dict):
                 (week_start_str, json.dumps(times)),
             )
         else:
-            conn.execute(
+            c.execute(
                 "DELETE FROM week_block_time WHERE week_start = ?", (week_start_str,)
             )
-    _week_times_cache = None
+    if conn is None:
+        _week_times_cache = None
+        return
+    cache = get_week_block_times(conn)
+    if times:
+        cache[week_start_str] = times
+    else:
+        cache.pop(week_start_str, None)
 
 
 def _json_obj(raw) -> dict:
@@ -442,16 +592,21 @@ def template_day_blocks(times_common, times_wd, weekday: int):
     return _apply_times(base, _parse_times(wd_map.get(str(weekday))))
 
 
-def get_day_blocks(weekday: int | None = None, week_start_str: str | None = None):
-    """효과적인 하루 8블록 목록. 공통 시간 위에 그 요일 덮어쓰기가 있으면 덧입힌다.
+def get_day_blocks(weekday: int | None = None, week_start_str: str | None = None,
+                   date_str: str | None = None):
+    """효과적인 하루 8블록 목록. 정하는 차례는 그 날 → 그 주 → 설정 요일 → 설정 공통이다.
 
     weekday 는 date.weekday() (0=월 ~ 6=일). None 이면 공통 시간만 쓴다.
-    week_start_str 를 주고 그 주에 따로 적어 둔 시간표가 있으면 그것만 쓴다(설정을 안 본다).
-    한 주에 적용해 둔 시간표가 설정을 고칠 때마다 흔들리면 안 되기 때문이다.
+    그 날이나 그 주에 따로 적어 둔 시간표가 있으면 그것만 쓴다(설정을 안 본다).
+    걸어 둔 시간표가 설정을 고칠 때마다 흔들리면 안 되기 때문이다.
     """
     base = _apply_times(DAY_BLOCKS, _parse_times(get_settings().get(BLOCK_TIMES_KEY)))
     if weekday is None:
         return base
+    if date_str:
+        times = get_day_block_times().get(date_str)
+        if times:
+            return _apply_times(DAY_BLOCKS, times)
     if week_start_str:
         wk = get_week_block_times().get(week_start_str)
         times = _parse_times((wk or {}).get(str(weekday)))

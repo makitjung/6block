@@ -15,12 +15,15 @@ from app.common import (
     CORE_LABELS,
     KO_WEEKDAYS,
     KST,
+    TPL_KIND_KEYS,
+    TPL_KINDS,
     _off_loop,
     asset_ver,
     int_id,
     opt_id,
     templates,
     today_str,
+    tpl_title,
 )
 from app.config import (
     ALARM_SECS,
@@ -160,17 +163,18 @@ def _routine_times() -> list[str]:
 
 
 def _load_cat_templates(conn) -> list[dict]:
-    """주간 템플릿 목록을 네 부분까지 채워 돌려준다.
+    """템플릿 다섯 종류를 각자의 내용까지 채워 한 목록으로 돌려준다.
 
-    cells 는 블록 단위 구분 42칸(요일 0~6 × 코어블록), slots 는 칸 단위 구분
-    (요일 × 코어블록 × p), times/names 는 세션시간과 블록 이름, rules 는 고정 할일이다.
+    종류마다 쓰는 것이 다르다. S 는 times_common·times_wd, N 은 names, T 는 rules,
+    C 는 cells(42칸)와 slots(칸 단위), W 는 s_id·t_id·n_id·c_id 로 넷을 고르기만 한다.
     화면에는 이 JSON 만 실어 보내고 격자는 app.js 가 그린다(카드가 무거워지지 않게).
     """
     templates_ = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, name, display_order, times_common, times_wd, block_names "
-            "FROM cat_template ORDER BY display_order, id"
+            "SELECT id, kind, no, name, display_order, times_common, times_wd, "
+            "block_names, s_id, t_id, n_id, c_id "
+            "FROM cat_template ORDER BY kind, no"
         )
     ]
     cmap: dict[int, dict[int, dict[str, int]]] = {}
@@ -196,6 +200,7 @@ def _load_cat_templates(conn) -> list[dict]:
     ):
         rmap.setdefault(r["template_id"], []).append(dict(r))
     for t in templates_:
+        t["title"] = tpl_title(t["kind"], t["no"], t["name"])
         t["cells"] = cmap.get(t["id"], {})
         t["slots"] = smap.get(t["id"], {})
         t["rules"] = rmap.get(t["id"], [])
@@ -224,6 +229,7 @@ def settings_view(request: Request):
             "categories": [dict(c) for c in cats],
             "active_categories": active_categories,
             "cat_templates": cat_templates,
+            "tpl_kinds": TPL_KINDS,
             # 템플릿 안 세션시간 편집기가 쓸 뼈대. 8블록의 이름·코어여부와, 지금 설정의
             # 효과적인 시간표(공통 '' + 요일 '0'~'6')다. 템플릿이 세션시간을 안 담았으면
             # 이 값을 보여 주고 시작한다.
@@ -573,47 +579,103 @@ async def settings_save(request: Request):
 
 @router.post("/settings/template/add")
 async def settings_template_add(request: Request):
-    """새 구분 템플릿을 빈 상태로 추가하고 생성된 id를 돌려준다."""
+    """그 종류의 빈 템플릿을 하나 만든다(kind = S·T·N·C·W).
+
+    번호는 그 종류에서 쓴 가장 큰 번호 다음이고 지운 번호는 다시 쓰지 않는다. 중간을
+    지웠을 때 남은 것의 번호가 밀리면 주간이 무엇을 골라 뒀는지 알 수 없게 된다.
+    """
     form = await request.form()
-    name = (form.get("name") or "").strip()
-    if not name:
-        return JSONResponse({"ok": False, "error": "no-name"}, status_code=400)
+    kind = (form.get("kind") or "").strip().upper()
+    if kind not in TPL_KIND_KEYS:
+        return JSONResponse({"ok": False, "error": "bad-kind"}, status_code=400)
+    # 별도명칭은 주간(W)만 쓴다. 나머지 종류는 번호가 곧 이름이다.
+    name = (form.get("name") or "").strip() if kind == "W" else ""
     now = datetime.now(KST).isoformat(timespec="seconds")
+    # 번호는 그 종류에서 지금까지 쓴 가장 큰 값 다음이다. 지금 있는 것들의 최댓값이
+    # 아니라 따로 세어 두는 이유는, 가운데를 지웠을 때 그 번호가 다른 템플릿에
+    # 다시 붙으면 'S2 는 아침용'이라고 외워 둔 것이 어긋나기 때문이다.
+    seq_key = f"tpl_seq_{kind}"
     with get_conn() as conn:
-        order = conn.execute(
-            "SELECT COALESCE(MAX(display_order), -1) + 1 FROM cat_template"
+        used = conn.execute(
+            "SELECT COALESCE(MAX(no), 0) FROM cat_template WHERE kind = ?", (kind,)
         ).fetchone()[0]
+        try:
+            seen = int(get_settings().get(seq_key) or 0)
+        except ValueError:
+            seen = 0
+        no = max(used, seen) + 1
         cur = conn.execute(
-            "INSERT INTO cat_template (name, display_order, updated_at) "
-            "VALUES (?, ?, ?)",
-            (name, order, now),
+            "INSERT INTO cat_template (kind, no, name, display_order, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (kind, no, name, no, now),
         )
-    return JSONResponse({"ok": True, "id": cur.lastrowid})
+    set_setting(seq_key, str(no))
+    return JSONResponse({"ok": True, "id": cur.lastrowid, "kind": kind, "no": no,
+                         "title": tpl_title(kind, no, name)})
 
 
 @router.post("/settings/template/rename")
 async def settings_template_rename(request: Request):
-    """구분 템플릿 이름을 바꾼다."""
+    """주간(W) 템플릿의 별도명칭을 바꾼다. 비우면 번호만 남는다(W1)."""
     form = await request.form()
     try:
         tid = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False}, status_code=400)
     name = (form.get("name") or "").strip()
-    if not name:
-        return JSONResponse({"ok": False, "error": "no-name"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        row = conn.execute(
+            "SELECT kind, no FROM cat_template WHERE id = ?", (tid,)).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if row["kind"] != "W":
+            return JSONResponse({"ok": False, "error": "name-w-only"}, status_code=400)
         conn.execute(
             "UPDATE cat_template SET name = ?, updated_at = ? WHERE id = ?",
             (name, now, tid),
+        )
+    return JSONResponse({"ok": True, "title": tpl_title(row["kind"], row["no"], name)})
+
+
+@router.post("/settings/template/pick")
+async def settings_template_pick(request: Request):
+    """주간(W) 템플릿이 고른 한 부분을 저장한다. part 는 s·t·n·c, 빈 값이면 안 고름.
+
+    고른 것이 나중에 지워지면 그 칸은 저절로 비고(ON DELETE SET NULL) 그 부분만 빠진다.
+    """
+    form = await request.form()
+    try:
+        tid = int_id(form.get("id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400)
+    part = (form.get("part") or "").strip().lower()
+    if part not in ("s", "t", "n", "c"):
+        return JSONResponse({"ok": False, "error": "bad-part"}, status_code=400)
+    picked = opt_id(form.get("value"))
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT kind FROM cat_template WHERE id = ?", (tid,)).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if row["kind"] != "W":
+            return JSONResponse({"ok": False, "error": "pick-w-only"}, status_code=400)
+        if picked is not None:
+            got = conn.execute(
+                "SELECT kind FROM cat_template WHERE id = ?", (picked,)).fetchone()
+            if not got or got["kind"] != part.upper():
+                return JSONResponse({"ok": False, "error": "bad-pick"}, status_code=400)
+        conn.execute(
+            f"UPDATE cat_template SET {part}_id = ?, updated_at = ? WHERE id = ?",
+            (picked, now, tid),
         )
     return JSONResponse({"ok": True})
 
 
 @router.post("/settings/template/delete")
 async def settings_template_delete(request: Request):
-    """구분 템플릿과 그 셀을 함께 삭제한다."""
+    """템플릿과 거기 딸린 것(구분 칸·고정할일 규칙)을 함께 삭제한다."""
     form = await request.form()
     try:
         tid = int_id(form.get("id"))
@@ -626,7 +688,7 @@ async def settings_template_delete(request: Request):
 
 @router.post("/settings/template/cell")
 async def settings_template_cell(request: Request):
-    """템플릿 한 칸(요일 0~6 × 코어블록)의 구분을 저장한다. 값이 비면 미지정."""
+    """구분(C) 템플릿 한 칸(요일 0~6 × 코어블록)의 구분을 저장한다. 값이 비면 미지정."""
     form = await request.form()
     try:
         tid = int_id(form.get("template_id"))
@@ -638,6 +700,8 @@ async def settings_template_cell(request: Request):
         return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
     cid = opt_id(form.get("category_id"))
     with get_conn() as conn:
+        if not _template_row(conn, tid, "C"):
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         conn.execute(
             "INSERT INTO cat_template_cell "
             "(template_id, weekday, block_label, category_id) VALUES (?, ?, ?, ?) "
@@ -651,11 +715,16 @@ async def settings_template_cell(request: Request):
 # -- 템플릿의 세션시간·블록 이름·칸 단위 구분 --------------------------------
 
 
-def _template_row(conn, tid: int):
-    return conn.execute(
-        "SELECT id, times_common, times_wd, block_names FROM cat_template WHERE id = ?",
+def _template_row(conn, tid: int, kind: str | None = None):
+    """템플릿 한 줄. kind 를 주면 그 종류가 아닐 때 None 을 돌려준다(칸이 섞이지 않게)."""
+    row = conn.execute(
+        "SELECT id, kind, no, name, times_common, times_wd, block_names "
+        "FROM cat_template WHERE id = ?",
         (tid,),
     ).fetchone()
+    if row and kind and row["kind"] != kind:
+        return None
+    return row
 
 
 @router.post("/settings/template/times")
@@ -678,7 +747,7 @@ async def settings_template_times(request: Request):
         return JSONResponse({"ok": False, "error": why}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
-        row = _template_row(conn, tid)
+        row = _template_row(conn, tid, "S")
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         if weekday is None:
@@ -712,7 +781,7 @@ async def settings_template_times_clear(request: Request):
         return JSONResponse({"ok": False, "error": "요일 값이 잘못됨"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
-        row = _template_row(conn, tid)
+        row = _template_row(conn, tid, "S")
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         if weekday is None:
@@ -745,7 +814,7 @@ async def settings_template_blockname(request: Request):
     name = (form.get("name") or "").strip().replace("\n", " ")
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
-        row = _template_row(conn, tid)
+        row = _template_row(conn, tid, "N")
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         names = _json_obj(row["block_names"])
@@ -779,7 +848,7 @@ async def settings_template_slot_cell(request: Request):
         return JSONResponse({"ok": False, "error": "bad-cell"}, status_code=400)
     cid = opt_id(form.get("category_id"))
     with get_conn() as conn:
-        if not _template_row(conn, tid):
+        if not _template_row(conn, tid, "C"):
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         conn.execute(
             "INSERT INTO cat_template_slot "
@@ -811,6 +880,8 @@ async def settings_routine_add(request: Request):
         return JSONResponse({"ok": False}, status_code=400)
     times = _routine_times()
     with get_conn() as conn:
+        if not _template_row(conn, tid, "T"):
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         order = conn.execute(
             "SELECT COALESCE(MAX(display_order), -1) + 1 FROM routine_rule "
             "WHERE template_id = ?",

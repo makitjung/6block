@@ -170,22 +170,38 @@ CREATE INDEX IF NOT EXISTS idx_reflection_kind ON reflection(kind, id);
 CREATE INDEX IF NOT EXISTS idx_reflection_date ON reflection(event_date);
 CREATE INDEX IF NOT EXISTS idx_reflection_source ON reflection(source_id);
 
--- 주간 템플릿. 세 부분(세션시간·블록이름·구분)을 담고 각각 비워 둘 수 있어,
--- 셋을 다 채우면 종합 템플릿이고 하나만 채우면 개별 템플릿이 된다.
--- 주간 탭에서 하나를 고르면 그 안에 든 부분만 그 주에 적용된다.
+-- 템플릿. 한 표가 다섯 종류를 모두 담는다(표 이름은 옛 '구분 템플릿'에서 왔다).
+--   S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간
+-- 화면 이름은 kind + no 로 짓는다(S1 · T2 · N1 · C1). 주간만 별도명칭을 붙여 W1(집중주)
+-- 처럼 쓰고, 그 명칭이 name 칸이다. no 는 그 종류 안에서 만들 때 매기고 지운 번호는
+-- 다시 쓰지 않는다 — 중간을 지웠을 때 남은 것의 번호가 밀리면 무엇을 골라 뒀는지
+-- 알 수 없게 되기 때문이다.
+-- 종류마다 쓰는 칸이 다르다. S 는 times_common·times_wd, N 은 block_names,
+-- T 는 routine_rule, C 는 cat_template_cell·cat_template_slot 을 쓰고,
+-- W 는 아무 내용도 없이 s_id·t_id·n_id·c_id 로 넷을 골라 묶기만 한다(안 고른 것은 NULL).
 CREATE TABLE IF NOT EXISTS cat_template (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'W',      -- S | T | N | C | W
+    no INTEGER NOT NULL DEFAULT 1,       -- 그 종류 안의 번호. S1 의 1
+    name TEXT NOT NULL,                  -- 주간(W)의 별도명칭. 나머지 종류는 빈 문자열
     display_order INTEGER NOT NULL DEFAULT 0,
-    -- 세션시간. 설정 화면과 같은 모양이다. 공통은 길이 8 JSON 배열 [{start,end}...],
-    -- 요일 덮어쓰기는 {"0": [...], ...} 로 덮어쓴 요일만. 둘 다 비면 이 템플릿은
-    -- 세션시간을 안 담는다(주간 탭에서 골라도 시간표는 그대로 둔다).
+    -- 세션시간(S). 설정 화면과 같은 모양이다. 공통은 길이 8 JSON 배열 [{start,end}...],
+    -- 요일 덮어쓰기는 {"0": [...], ...} 로 덮어쓴 요일만.
     times_common TEXT,
     times_wd TEXT,
-    -- 블록 이름. {"B1": "이름", ...} 로 적은 것만. 비면 이름을 안 담는다.
+    -- 블록 이름(N). {"B1": "이름", ...} 로 적은 것만.
     block_names TEXT,
+    -- 주간(W)이 고른 것. 지운 템플릿을 고르고 있었으면 NULL 이 되어 그 부분만 빠진다.
+    s_id INTEGER REFERENCES cat_template(id) ON DELETE SET NULL,
+    t_id INTEGER REFERENCES cat_template(id) ON DELETE SET NULL,
+    n_id INTEGER REFERENCES cat_template(id) ON DELETE SET NULL,
+    c_id INTEGER REFERENCES cat_template(id) ON DELETE SET NULL,
     updated_at TEXT NOT NULL
 );
+
+-- 같은 종류에 같은 번호가 둘 생기지 않게. 표 안 제약이 아니라 인덱스로 두는 이유는,
+-- 옛 DB 를 마이그레이션할 때도 똑같이 걸리게 하기 위해서다(ALTER 로는 제약을 못 더한다).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_template_kind_no ON cat_template(kind, no);
 
 -- 템플릿 한 칸: (템플릿, 요일 0~6, 코어블록) → 구분. 비어 있으면 그 칸은 미지정.
 CREATE TABLE IF NOT EXISTS cat_template_cell (
@@ -214,6 +230,25 @@ CREATE TABLE IF NOT EXISTS cat_template_slot (
 
 CREATE INDEX IF NOT EXISTS idx_cat_template_slot ON cat_template_slot(template_id);
 
+-- 그 날에만 쓰는 세션시간. 주간 탭 날짜 머리의 ⋯ 에서 세션시간 템플릿을 고르면 적힌다.
+-- 날짜의 시간표를 정하는 차례는 이 표 → week_block_time → 설정 요일 → 설정 공통이다.
+CREATE TABLE IF NOT EXISTS day_block_time (
+    date TEXT PRIMARY KEY,               -- YYYY-MM-DD
+    times TEXT NOT NULL,                 -- 길이 8 JSON 배열 [{start,end}...]
+    updated_at TEXT NOT NULL
+);
+
+-- 어느 주·어느 날에 무슨 템플릿을 걸어 두었는지. 화면이 '지금 걸린 것'을 골라 둔 채로
+-- 뜨게 하려고 적어 둔다(적용 자체는 이미 blocks·slots 에 반영돼 있다).
+CREATE TABLE IF NOT EXISTS tpl_applied (
+    scope TEXT NOT NULL,                 -- week | day
+    key TEXT NOT NULL,                   -- 그 주 월요일 또는 날짜 YYYY-MM-DD
+    kind TEXT NOT NULL,                  -- S | T | N | C | W
+    tpl_id INTEGER REFERENCES cat_template(id) ON DELETE CASCADE,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (scope, key, kind)
+);
+
 -- 그 주에만 쓰는 세션시간. 주간 탭에서 세션시간을 담은 템플릿을 고르면 여기에 적힌다.
 -- times 는 7요일을 모두 풀어 둔 {"0": [{start,end} × 8], ... "6": [...]} 이다.
 -- 풀어서 적는 이유는, 나중에 설정의 공통 시간을 고쳐도 이미 적용해 둔 주가 조용히
@@ -224,7 +259,7 @@ CREATE TABLE IF NOT EXISTS week_block_time (
     updated_at TEXT NOT NULL
 );
 
--- 구분 템플릿에 딸린 고정 할일 규칙. 주간 탭에서 템플릿을 고르면 이 규칙대로 30분 칸을 채운다.
+-- 고정할일(T) 템플릿의 규칙. 그 템플릿을 고르면 이 규칙대로 30분 칸을 채운다.
 -- 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라서 스무 줄이면 한 주의 고정 일과가 다 덮인다
 -- (요일 7 × 하루 31칸 = 217칸짜리 격자를 만들지 않는 이유).
 CREATE TABLE IF NOT EXISTS routine_rule (

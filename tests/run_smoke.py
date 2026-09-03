@@ -790,14 +790,23 @@ def run_checks(db_path):
     check("오류가 없으면 옛 트레이스백을 끌어오지 않는다",
           st["errors"]["count"] or not st["errors"]["last"], st["errors"])
 
-    # 25. 구분 템플릿 격자는 펼칠 때 그린다(설정 화면에 42칸을 미리 싣지 않는다)
-    code, out = post("/settings/template/add", {"name": "스모크템플릿"})
+    # 25. 구분(C) 격자는 줄을 펼칠 때 그린다(설정 화면에 42칸을 미리 싣지 않는다)
+    code, out = post("/settings/template/add", {"kind": "C"})
     tpl_id = out.get("id") if isinstance(out, dict) else None
+    check("구분 템플릿 이름은 번호로 붙는다",
+          isinstance(out, dict) and out.get("title") == "C1", out)
+    code, out2 = post("/settings/template/add", {"kind": "W", "name": "스모크주간"})
+    wk_id = out2.get("id") if isinstance(out2, dict) else None
+    check("주간은 별도명칭을 괄호로 붙인다",
+          isinstance(out2, dict) and out2.get("title") == "W1(스모크주간)", out2)
     code, html = get("/settings")
     check("템플릿 격자는 비어서 나간다", 'class="set-tpl-cell' not in html)
     check("격자를 그릴 값은 실려 나간다",
           "__tplCells" in html and "__tplCats" in html and "__tplBlocks" in html)
-    if tpl_id:
+    check("종류 탭 다섯이 있다", html.count('class="set-tpl-kind') >= 5)
+    if tpl_id and wk_id:
+        post("/settings/template/pick",
+             {"id": str(wk_id), "part": "c", "value": str(tpl_id)})
         code, out = post("/settings/template/cell", {
             "template_id": tpl_id, "weekday": "3", "block_label": "B2",
             "category_id": "",
@@ -810,16 +819,20 @@ def run_checks(db_path):
             "category_id": str(cat_id),
         })
         code, out = post("/week/apply-template",
-                         {"week_start": "2026-07-27", "template_id": str(tpl_id)})
-        check("템플릿을 고르면 그 주에 바로 적용", code == 200 and out.get("ok"), out)
+                         {"week_start": "2026-07-27", "template_id": str(wk_id)})
+        check("주간을 고르면 그 주에 바로 적용", code == 200 and out.get("ok"), out)
         row = db_query(db_path,
                        "SELECT category_id FROM blocks "
                        "WHERE date='2026-07-27' AND block_label='B1'")
         check("월요일 B1 구분이 템플릿대로",
               row and row[0]["category_id"] == cat_id, row and row[0]["category_id"])
 
-        # 25-1. 고정 할일 규칙(요일 × 시작시각 × 칸 수)으로 30분 칸을 일괄로 채운다
-        code, out = post("/settings/routine/add", {"template_id": str(tpl_id)})
+        # 25-1. 고정할일(T) 규칙(요일 × 시작시각 × 칸 수)으로 30분 칸을 일괄로 채운다
+        code, out = post("/settings/template/add", {"kind": "T"})
+        rt_id = out.get("id") if isinstance(out, dict) else None
+        post("/settings/template/pick",
+             {"id": str(wk_id), "part": "t", "value": str(rt_id)})
+        code, out = post("/settings/routine/add", {"template_id": str(rt_id)})
         rule_id = out.get("id") if isinstance(out, dict) else None
         check("고정 할일 규칙 추가", code == 200 and rule_id, out)
         # 사람이 직접 쓴 칸은 규칙이 덮지 않아야 한다(09:30 칸을 먼저 채워 둔다).
@@ -833,7 +846,7 @@ def run_checks(db_path):
                 "span": "2", "do_text": text, "category_id": "",
             })
             post("/week/apply-template",
-                 {"week_start": "2026-07-27", "template_id": str(tpl_id)})
+                 {"week_start": "2026-07-27", "template_id": str(wk_id)})
         rows = db_query(db_path, "SELECT start_time, do_text, is_routine FROM slots "
                                  "WHERE date='2026-07-27' AND is_routine=1 "
                                  "ORDER BY slot_index")
@@ -867,21 +880,38 @@ def run_checks(db_path):
                                  "WHERE id = ?", (rule_id,))
         check("고정 할일 규칙 삭제", left and left[0]["n"] == 0, left)
         post("/settings/template/delete", {"id": tpl_id})
+        post("/settings/template/delete", {"id": rt_id})
+        post("/settings/template/delete", {"id": wk_id})
 
-    # 25-2. 템플릿의 나머지 부분: 세션시간 · 블록 이름 · 칸 단위 구분(B1p4).
-    #       담은 부분만 적용되므로 개별 템플릿도 종합 템플릿도 같은 길로 간다.
-    code, out = post("/settings/template/add", {"name": "스모크종합"})
-    tpl2 = out.get("id") if isinstance(out, dict) else None
+    # 25-2. 세션시간(S) · 블록이름(N) · 칸 단위 구분을 주간(W)이 묶어 한 번에 적용하고,
+    #       그 뒤 하루만 다른 것을 걸어 덮어쓴다(주간 탭 날짜 머리의 ⋯).
+    code, out = post("/settings/template/add", {"kind": "S"})
+    s_id = out.get("id") if isinstance(out, dict) else None
+    code, out = post("/settings/template/add", {"kind": "N"})
+    n_id = out.get("id") if isinstance(out, dict) else None
+    code, out = post("/settings/template/add", {"kind": "C"})
+    c_id = out.get("id") if isinstance(out, dict) else None
+    code, out = post("/settings/template/add", {"kind": "W", "name": "스모크종합"})
+    w_id = out.get("id") if isinstance(out, dict) else None
     code, html = get("/settings")
-    check("템플릿 부분 탭이 있다", 'class="set-tpl-tab' in html)
     check("칸 단위 격자는 비어서 나간다", 'class="set-tpl-pcell' not in html)
-    check("부분을 그릴 값이 실려 나간다",
+    check("종류별 값이 실려 나간다",
           "__tplSlots" in html and "__tplNames" in html
           and "__tplTimesCommon" in html and "__btScopes" in html)
-    if tpl2:
+    check("주간은 고르는 칸으로 묶는다", 'class="set-tpl-psel' in html)
+    if s_id and n_id and c_id and w_id:
         WK = "2026-08-03"        # 월요일. 위 25번이 쓰는 주와 겹치지 않게 따로 쓴다.
-        times = {"template_id": str(tpl2), "scope": ""}
-        # 기본 시간표를 그대로 보내되 B1 만 08:00 에 시작하게 한다(30분 배수 유지).
+        for part, tid in (("s", s_id), ("n", n_id), ("c", c_id)):
+            code, out = post("/settings/template/pick",
+                             {"id": str(w_id), "part": part, "value": str(tid)})
+            check(f"주간이 {part.upper()} 를 고른다", code == 200 and out.get("ok"), out)
+        # 제 종류가 아닌 것은 못 고른다
+        code, out = post("/settings/template/pick",
+                         {"id": str(w_id), "part": "s", "value": str(c_id)})
+        check("세션시간 자리에 구분을 못 넣는다", code == 400, out)
+        post("/settings/template/pick", {"id": str(w_id), "part": "s", "value": str(s_id)})
+
+        # 기본 시간표를 그대로 보내되 B1 만 08:00 에 시작하게 한다(30분 배수 유지)
         base = [("07:30", "09:30"), ("09:40", "11:40"), ("11:40", "12:40"),
                 ("12:40", "14:40"), ("14:40", "16:40"), ("16:40", "19:00"),
                 ("19:00", "21:00"), ("21:00", "23:00")]
@@ -889,26 +919,32 @@ def run_checks(db_path):
                                 "WHERE date = ? ORDER BY block_order", (WK,))
         if cur:
             base = [(r["start_time"], r["end_time"]) for r in cur]
+        times = {"template_id": str(s_id), "scope": ""}
         for i, (st, en) in enumerate(base):
             times[f"start_{i}"] = "08:00" if i == 0 else st
             times[f"end_{i}"] = en
         code, out = post("/settings/template/times", times)
-        check("템플릿 세션시간 저장", code == 200 and out.get("ok"), out)
+        check("세션시간 저장", code == 200 and out.get("ok"), out)
+        # 세션시간은 제 종류에만 먹는다
+        wrong = dict(times, template_id=str(c_id))
+        code, out = post("/settings/template/times", wrong)
+        check("구분 템플릿에는 세션시간을 못 넣는다", code == 404, out)
+
         code, out = post("/settings/template/blockname",
-                         {"template_id": str(tpl2), "block_label": "B1",
+                         {"template_id": str(n_id), "block_label": "B1",
                           "name": "스모크 아침"})
-        check("템플릿 블록 이름 저장", code == 200 and out.get("ok"), out)
+        check("블록이름 저장", code == 200 and out.get("ok"), out)
         cat_id = db_query(db_path, "SELECT id FROM categories LIMIT 1")[0]["id"]
         # 이 템플릿의 B1 은 08:00~09:30 이라 칸이 셋뿐이다. p 는 시각이 아니라 그 블록
         # 안 순번이므로 B1p3 이 마지막 칸이 된다(시각으로 잡았다면 어긋날 자리다).
         code, out = post("/settings/template/slot-cell",
-                         {"template_id": str(tpl2), "weekday": "0",
+                         {"template_id": str(c_id), "weekday": "0",
                           "block_label": "B1", "p": "3", "category_id": str(cat_id)})
-        check("템플릿 칸 단위 구분 저장(B1p3)", code == 200 and out.get("ok"), out)
+        check("칸 단위 구분 저장(B1p3)", code == 200 and out.get("ok"), out)
 
         code, out = post("/week/apply-template",
-                         {"week_start": WK, "template_id": str(tpl2)})
-        check("세 부분이 함께 적용된다", code == 200 and out.get("ok"), out)
+                         {"week_start": WK, "template_id": str(w_id)})
+        check("주간이 고른 셋이 함께 적용된다", code == 200 and out.get("ok"), out)
         check("세션시간이 그 주 7일에 들어간다", out.get("days") == 7, out)
         check("칸 단위 구분도 함께 들어간다", out.get("slots") == 1, out)
         check("블록 이름도 함께 들어간다", out.get("names") == 1, out)
@@ -934,7 +970,51 @@ def run_checks(db_path):
               and cells[0]["category_id"] is None
               and cells[1]["category_id"] is None,
               [c["category_id"] for c in cells])
-        post("/settings/template/delete", {"id": tpl2})
+        applied = db_query(db_path, "SELECT tpl_id FROM tpl_applied "
+                                    "WHERE scope='week' AND key = ? AND kind='W'", (WK,))
+        check("걸어 둔 주간을 적어 둔다", applied and applied[0]["tpl_id"] == w_id, applied)
+
+        # 25-3. 주간을 건 뒤에도 하루만 다르게 간다(날짜 머리의 ⋯)
+        code, html = get(f"/week/{WK}")
+        check("날짜 머리에 ⋯ 가 있다", 'class="day-tpl-btn' in html)
+        check("그 날 창에 네 종류가 선다", html.count('class="day-tpl-sel') >= 28)
+        code, out = post("/settings/template/add", {"kind": "S"})
+        s2 = out.get("id") if isinstance(out, dict) else None
+        t2 = dict(times, template_id=str(s2))
+        t2["start_0"] = "09:00"
+        post("/settings/template/times", t2)
+        TUE = "2026-08-04"
+        code, out = post("/day/apply-template",
+                         {"date": TUE, "kind": "S", "template_id": str(s2)})
+        check("하루만 세션시간을 건다", code == 200 and out.get("days") == 1, out)
+        row = db_query(db_path, "SELECT start_time FROM blocks "
+                                "WHERE date = ? AND block_label='B1'", (TUE,))
+        check("그 화요일만 09:00 이 된다",
+              row and row[0]["start_time"] == "09:00", row)
+        row = db_query(db_path, "SELECT start_time FROM blocks "
+                                "WHERE date = ? AND block_label='B1'", (WK,))
+        check("같은 주 다른 날은 08:00 그대로",
+              row and row[0]["start_time"] == "08:00", row)
+        # 떼면 다시 그 주 시간표를 따른다
+        post("/day/apply-template", {"date": TUE, "kind": "S", "template_id": ""})
+        get(f"/day/{TUE}")
+        row = db_query(db_path, "SELECT start_time FROM blocks "
+                                "WHERE date = ? AND block_label='B1'", (TUE,))
+        check("떼면 그 주 시간표로 돌아간다",
+              row and row[0]["start_time"] == "08:00", row)
+        # 하루짜리 블록이름은 그 날 이름 칸에만 들어간다(그 주 이름은 안 건드린다)
+        code, out = post("/day/apply-template",
+                         {"date": TUE, "kind": "N", "template_id": str(n_id)})
+        check("하루만 블록이름을 건다", code == 200 and out.get("names") == 1, out)
+        row = db_query(db_path, "SELECT name FROM blocks "
+                                "WHERE date = ? AND block_label='B1'", (TUE,))
+        check("그 날 이름 칸에 들어간다",
+              row and row[0]["name"] == "스모크 아침", row)
+        code, out = post("/day/apply-template",
+                         {"date": TUE, "kind": "W", "template_id": str(w_id)})
+        check("하루에 주간은 못 건다", code == 400, out)
+        for tid in (s_id, s2, n_id, c_id, w_id):
+            post("/settings/template/delete", {"id": tid})
 
     # 26. 하루 마감 · 기록이 빈 슬롯 모으기
     #     날짜를 지정해 열면 오늘이 아니므로 목록이 없어야 한다(지나간 시각 기준이라).

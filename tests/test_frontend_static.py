@@ -213,13 +213,13 @@ def test_장기_자동저장은_칸마다_다시_그리지_않는다():
     assert "refreshGantt" not in body, "한 칸 저장이 곧바로 격자를 다시 그린다"
 
 
-# -- 주간 템플릿의 부분들 -------------------------------------------------------
+# -- 템플릿 다섯 종류 -----------------------------------------------------------
 
 
-def test_템플릿_부분마다_그리는_함수가_있다():
-    """구분·세션시간·블록 이름·고정 할일 네 부분을 담고 각각 비울 수 있다."""
-    for fn in ("buildTplTimes", "buildTplNames", "buildTplPGrid",
-               "paintTplParts", "showTplPane"):
+def test_템플릿_종류마다_그리는_함수가_있다():
+    """S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간."""
+    for fn in ("buildTplTimes", "buildTplNames", "buildTplGrid", "buildTplPGrid",
+               "buildTplBody", "paintTplSum"):
         assert f"function {fn}(" in APP_JS, f"{fn} 이 없다"
 
 

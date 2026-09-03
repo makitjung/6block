@@ -131,14 +131,14 @@
     <section class="card">
         <div class="wk7-head">
             <h2 class="card-title">7일 보기</h2>
-            {% if cat_templates %}
-            {# 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다).
-               템플릿이 담은 부분(구분·세션시간·블록 이름·고정 할일)만 손댄다. #}
+            {% if week_templates %}
+            {# 주간(W) 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다).
+               그 안에서 고른 부분만 손댄다. 날짜 하나만 다르게 가려면 그 날 머리의 ⋯ 를 쓴다. #}
             <div class="wk-tpl-inline">
-                <select id="wk-apply-tpl-sel" data-week="{{ week_start }}" aria-label="적용할 주간 템플릿">
-                    <option value="">템플릿</option>
-                    {% for t in cat_templates %}
-                    <option value="{{ t.id }}">{{ t.name }}</option>
+                <select id="wk-apply-tpl-sel" data-week="{{ week_start }}" aria-label="이 주에 적용할 주간 템플릿">
+                    <option value="">주간 템플릿</option>
+                    {% for t in week_templates %}
+                    <option value="{{ t.id }}" {% if applied_week == t.id %}selected{% endif %}>{{ t.title }}</option>
                     {% endfor %}
                 </select>
                 <button type="button" class="ghost-btn" id="wk-names-toggle"
@@ -146,7 +146,7 @@
             </div>
             {% else %}
             <div class="wk-tpl-inline">
-                <a class="ghost-btn" href="/settings#set-tpl-list">템플릿 만들기</a>
+                <a class="ghost-btn" href="/settings#set-tpl-list">주간 템플릿 만들기</a>
                 <button type="button" class="ghost-btn" id="wk-names-toggle"
                         aria-expanded="false" aria-controls="wk-names">블록이름</button>
             </div>
@@ -180,7 +180,26 @@
                         <span class="day-wd">{{ d | ko_weekday }}</span>
                         <span class="day-date mono">{{ d | short_date }}</span>
                     </a>
+                    {# 이 날 하루만 다른 템플릿을 걸 때. 평소엔 점 세 개뿐이고 누르면 열린다.
+                       걸어 둔 것이 있으면 점이 진해져 격자를 훑기만 해도 눈에 띈다. #}
+                    <button type="button" class="day-tpl-btn{% if applied_day[d] %} is-on{% endif %}"
+                            data-date="{{ d }}" aria-expanded="false"
+                            title="{{ d | short_date }} 하루에만 템플릿 걸기" aria-label="{{ d | short_date }} 하루에만 템플릿 걸기">⋯</button>
                 </h3>
+                <div class="day-tpl-pop" data-date="{{ d }}" hidden>
+                    {% for key, label in [('S', '세션시간'), ('T', '고정할일'), ('N', '블록이름'), ('C', '구분')] %}
+                    <label class="day-tpl-row">
+                        <span class="day-tpl-label">{{ label }}</span>
+                        <select class="day-tpl-sel" data-kind="{{ key }}" aria-label="{{ d | short_date }} {{ label }} 템플릿">
+                            <option value="">안 걸기</option>
+                            {% for t in day_templates[key] %}
+                            <option value="{{ t.id }}" {% if applied_day[d].get(key) == t.id %}selected{% endif %}>{{ t.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    {% endfor %}
+                    <p class="day-tpl-hint">고르는 즉시 이 날 하루에만 적용됩니다.</p>
+                </div>
                 <div class="day-allday">
                     {% for t in week_allday.get(d, []) %}
                     <span class="allday-chip cal-{{ t.color }}" title="{{ t.title }}">{{ t.title }}</span>

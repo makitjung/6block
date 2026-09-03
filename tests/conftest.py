@@ -130,11 +130,13 @@ def fresh_db():
     for suffix in ("", "-wal", "-shm"):
         pathlib.Path(str(TEST_DB) + suffix).unlink(missing_ok=True)
     db._settings_cache = None
-    db._week_times_cache = None     # 주별 세션시간도 캐시된다(안 비우면 앞 테스트 값이 샌다)
+    db._week_times_cache = None     # 주별·일별 세션시간도 캐시된다(안 비우면 앞 테스트 값이 샌다)
+    db._day_times_cache = None
     db.init_db()
     yield TEST_DB
     db._settings_cache = None
     db._week_times_cache = None
+    db._day_times_cache = None
 
 
 @pytest.fixture

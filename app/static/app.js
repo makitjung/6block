@@ -1403,69 +1403,74 @@
         load();
     }
 
-    // 구분 템플릿 격자(요일 7 × 코어블록 6 = 42칸)를 카드를 펼칠 때 그린다.
-    // 서버에서 미리 그려 보내면 템플릿 하나당 40KB 넘게 붙어, 템플릿을 늘릴수록
+    // ---- 템플릿 다섯 종류(S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간) ----
+    // 위 종류 탭으로 한 종류의 목록만 세우고, 줄을 눌러야 그 편집기를 그린다.
+    // 서버에서 미리 그려 보내면 구분 격자 하나가 40KB 넘게 붙어, 템플릿을 늘릴수록
     // 설정 화면이 계속 무거워졌다. 값은 window.__tpl* 에 JSON 으로만 실려 온다.
+    const TPL_KIND_LABEL = { S: '세션시간', T: '고정할일', N: '블록이름', C: '구분', W: '주간' };
+
     function buildTemplateGrids() {
         const card = document.getElementById('set-tpl-card');
         if (!card || !window.__tplCats) return;
-        const cats = window.__tplCats, blocks = window.__tplBlocks;
-        const weekdays = window.__tplWeekdays, cells = window.__tplCells;
+        const list = document.getElementById('set-tpl-list');
+        const empty = document.getElementById('set-tpl-empty');
+        const kinds = document.getElementById('set-tpl-kinds');
+        const nameIn = document.getElementById('set-tpl-new-name');
+        const addBtn = document.getElementById('set-tpl-add-btn');
+        const curKind = () => kinds.querySelector('.set-tpl-kind.is-active')?.dataset.kind || 'W';
+
+        // 접힌 줄에도 무엇이 든 템플릿인지 한 줄로 보인다.
+        const showKind = (kind) => {
+            kinds.querySelectorAll('.set-tpl-kind').forEach(
+                (b) => b.classList.toggle('is-active', b.dataset.kind === kind));
+            let n = 0;
+            list.querySelectorAll('.set-tpl').forEach((tpl) => {
+                const mine = tpl.dataset.kind === kind;
+                tpl.hidden = !mine;
+                if (mine) n += 1;
+            });
+            if (empty) empty.hidden = n > 0;
+            // 별도명칭은 주간만 쓴다.
+            nameIn.hidden = kind !== 'W';
+            addBtn.textContent = TPL_KIND_LABEL[kind] + ' 추가';
+        };
+
         let built = false;
         const build = () => {
             if (built) return;
             built = true;
-            card.querySelectorAll('.set-tpl-grid').forEach((grid) => {
-                const mine = cells[Number(grid.dataset.idx)] || {};
-                const frag = document.createDocumentFragment();
-                frag.appendChild(el('div', 'set-tpl-corner'));
-                weekdays.forEach(([, label]) => frag.appendChild(el('div', 'set-tpl-blabel', label)));
-                blocks.forEach((lbl) => {
-                    frag.appendChild(el('div', 'set-tpl-daytype', lbl));
-                    weekdays.forEach(([wd, wdLabel]) => {
-                        const sel = el('select', 'set-tpl-cell cat-select');
-                        sel.dataset.tpl = grid.dataset.tpl;
-                        sel.dataset.weekday = wd;
-                        sel.dataset.label = lbl;
-                        sel.setAttribute('aria-label', wdLabel + ' ' + lbl + ' 구분');
-                        // JSON 키는 문자열이라 요일도 문자열로 찾는다.
-                        const cur = (mine[String(wd)] || {})[lbl];
-                        sel.appendChild(new Option('—', ''));
-                        cats.forEach((c) => {
-                            const o = new Option(c.name, c.id, false, c.id === cur);
-                            o.dataset.tone = c.tone;
-                            sel.appendChild(o);
-                        });
-                        frag.appendChild(sel);
-                    });
-                });
-                grid.appendChild(frag);
-                // 화면이 뜰 때 도는 초기 색칠(select.cat-select)은 이미 지나간 뒤라 여기서 칠한다.
-                grid.querySelectorAll('.set-tpl-cell').forEach(paintCategory);
-            });
-            card.querySelectorAll('.set-rt').forEach((box) => {
-                const rules = (window.__tplRules || [])[Number(box.dataset.idx)] || [];
-                const list = box.querySelector('.set-rt-list');
-                rules.forEach((r) => list.appendChild(routineRow(r)));
-            });
-            card.querySelectorAll('.set-tpl').forEach(paintTplParts);
+            list.querySelectorAll('.set-tpl').forEach(paintTplSum);
+            showKind(curKind());
         };
         // 열 때 한 번만 그린다. 이미 열린 채로 들어왔으면(브라우저가 상태를 되살릴 때) 바로.
         card.addEventListener('toggle', () => { if (card.open) build(); });
         if (card.open) build();
-        // 부분 탭(구분·세션시간·블록 이름·고정 할일). 누른 부분만 세운다.
-        card.addEventListener('click', (e) => {
-            const tab = e.target.closest('.set-tpl-tab');
-            if (tab) {
-                const tpl = tab.closest('.set-tpl');
-                tpl.querySelectorAll('.set-tpl-tab').forEach(
-                    (b) => b.classList.toggle('is-active', b === tab));
-                let shown = null;
-                tpl.querySelectorAll('.set-tpl-pane').forEach((pane) => {
-                    pane.hidden = pane.dataset.part !== tab.dataset.part;
-                    if (!pane.hidden) shown = pane;
+
+        kinds.addEventListener('click', (e) => {
+            const btn = e.target.closest('.set-tpl-kind');
+            if (btn) showKind(btn.dataset.kind);
+        });
+
+        addBtn.addEventListener('click', () => {
+            const kind = curKind();
+            postForm('/settings/template/add',
+                     { kind: kind, name: kind === 'W' ? (nameIn.value || '').trim() : '' })
+                .then((d) => {
+                    if (!d || !d.ok) { toast('추가 실패'); return; }
+                    location.reload();      // 새 줄과 주간의 고르는 칸을 함께 다시 그린다
                 });
-                showTplPane(shown);
+        });
+
+        // 줄을 누르면 그 편집기가 펴진다(처음 펼 때 그린다).
+        card.addEventListener('click', (e) => {
+            const open = e.target.closest('.set-tpl-open');
+            if (open) {
+                const tpl = open.closest('.set-tpl');
+                const body = tpl.querySelector('.set-tpl-body');
+                const show = body.hidden;
+                if (show) buildTplBody(body);
+                body.hidden = !show;
+                open.setAttribute('aria-expanded', show ? 'true' : 'false');
                 return;
             }
             // 칸 단위(B1p4) 격자 켜고 끄기. 처음 켤 때 그린다.
@@ -1485,8 +1490,38 @@
             pm.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
 
-        // 칸이 나중에 생기므로 위임으로 받는다.
+        // 삭제. 주간이 고르고 있던 것이면 그 칸이 저절로 비므로 화면을 다시 받는다.
+        card.addEventListener('click', (e) => {
+            const del = e.target.closest('.set-tpl-del');
+            if (!del) return;
+            const tpl = del.closest('.set-tpl');
+            const title = tpl.querySelector('.set-tpl-no').textContent;
+            if (!window.confirm(title + ' 을(를) 지웁니다. 이 템플릿을 고르고 있던 주간에서도 빠집니다.')) return;
+            postForm('/settings/template/delete', { id: del.dataset.id })
+                .then((d) => { if (d && d.ok) location.reload(); else toast('삭제 실패'); });
+        });
+
+        // 주간의 별도명칭과 고르는 칸
         card.addEventListener('change', (e) => {
+            const name = e.target.closest('.set-tpl-name');
+            if (name) {
+                postForm('/settings/template/rename',
+                         { id: name.dataset.id, name: (name.value || '').trim() })
+                    .then((d) => { if (d && d.ok) autosaveToast(); else toast('저장 실패'); });
+                return;
+            }
+            const psel = e.target.closest('.set-tpl-psel');
+            if (psel) {
+                postForm('/settings/template/pick', {
+                    id: psel.closest('.set-tpl-pick').dataset.tpl,
+                    part: psel.dataset.part, value: psel.value,
+                }).then((d) => {
+                    if (!d || !d.ok) { toast('저장 실패'); return; }
+                    paintTplSum(psel.closest('.set-tpl'));
+                    autosaveToast();
+                });
+                return;
+            }
             const sel = e.target.closest('.set-tpl-cell');
             if (sel) {
                 paintCategory(sel);
@@ -1498,7 +1533,7 @@
                     const cells = window.__tplCells[idx] = window.__tplCells[idx] || {};
                     cells[sel.dataset.weekday] = cells[sel.dataset.weekday] || {};
                     cells[sel.dataset.weekday][sel.dataset.label] = Number(sel.value) || null;
-                    paintTplParts(sel.closest('.set-tpl'));
+                    paintTplSum(sel.closest('.set-tpl'));
                     toast('저장');
                 });
                 return;
@@ -1518,7 +1553,7 @@
                 const blk = wd[pc.dataset.label] = wd[pc.dataset.label] || {};
                 if (pc.value) blk[pc.dataset.p] = Number(pc.value);
                 else delete blk[pc.dataset.p];
-                paintTplParts(pc.closest('.set-tpl'));
+                paintTplSum(pc.closest('.set-tpl'));
                 toast('저장');
             });
         });
@@ -1562,7 +1597,7 @@
                     .then((d) => {
                         if (!d || !d.ok) return;
                         row.remove();
-                        paintTplParts(box.closest('.set-tpl'));
+                        paintTplSum(box.closest('.set-tpl'));
                         toast('삭제');
                     });
                 return;
@@ -1578,7 +1613,7 @@
                         start_time: (window.__tplTimes || [])[0] || '', category_id: null,
                     });
                     box.querySelector('.set-rt-list').appendChild(row);
-                    paintTplParts(box.closest('.set-tpl'));
+                    paintTplSum(box.closest('.set-tpl'));
                     row.querySelector('.set-rt-do').focus();
                 });
         });
@@ -1649,9 +1684,70 @@
         }).then((d) => toast((d && d.ok) ? '저장' : '저장 실패'));
     }
 
-    // ---- 주간 템플릿의 부분들 ---------------------------------------------
-    // 템플릿 하나가 네 부분(구분·세션시간·블록 이름·고정 할일)을 담고 각각 비울 수 있다.
-    // 지금 보고 있는 부분만 화면에 세우고, 부분마다 처음 열 때 그린다.
+    // ---- 템플릿 종류별 편집기 ---------------------------------------------
+    // 종류마다 편집기가 다르다. C 는 42칸 격자, T 는 규칙 목록(둘 다 화면에 이미 서 있다),
+    // S 는 8범위 시간표, N 은 여섯 칸이라 여기서 그린다. W 는 고르는 칸뿐이라 서버가 그린다.
+
+    function buildTplBody(body) {
+        if (!body || body.dataset.built) return;
+        body.dataset.built = '1';
+        if (body.dataset.kind === 'S') buildTplTimes(body);
+        else if (body.dataset.kind === 'N') buildTplNames(body);
+        else if (body.dataset.kind === 'C') buildTplGrid(body.querySelector('.set-tpl-grid'));
+        else if (body.dataset.kind === 'T') {
+            const box = body.querySelector('.set-rt');
+            const rules = (window.__tplRules || [])[Number(box.dataset.idx)] || [];
+            const list = box.querySelector('.set-rt-list');
+            rules.forEach((r) => list.appendChild(routineRow(r)));
+        }
+    }
+
+    // 접힌 줄에도 무엇이 든 템플릿인지 한 줄로 보여 준다. 번호만 늘어놓으면
+    // S1·S2·S3 중 어느 것이 무엇인지 열어 봐야만 알 수 있다.
+    function paintTplSum(tpl) {
+        const box = tpl && tpl.querySelector('.set-tpl-sum');
+        if (!box) return;
+        const idx = Number(tpl.dataset.idx);
+        const kind = tpl.dataset.kind;
+        let text = '';
+        if (kind === 'S') {
+            const rows = tplScopeTimes(idx, '');
+            const wd = Object.keys((window.__tplTimesWd || [])[idx] || {}).length;
+            text = tplHasTimes(idx)
+                ? (rows[0] || {}).start + '~' + (rows[rows.length - 1] || {}).end
+                    + (wd ? ' · 요일 ' + wd + '개 따로' : '')
+                : '아직 안 정했습니다';
+        } else if (kind === 'T') {
+            const n = tpl.querySelectorAll('.set-rt-row').length
+                || ((window.__tplRules || [])[idx] || []).length;
+            text = n ? '규칙 ' + n + '줄' : '아직 비어 있습니다';
+        } else if (kind === 'N') {
+            const names = (window.__tplNames || [])[idx] || {};
+            const keys = (window.__tplBlocks || []).filter((b) => names[b]);
+            text = keys.length
+                ? keys.map((b) => b + ' ' + names[b]).join(' · ')
+                : '아직 비어 있습니다';
+        } else if (kind === 'C') {
+            const cells = (window.__tplCells || [])[idx] || {};
+            let n = 0;
+            Object.keys(cells).forEach((wd) => {
+                Object.keys(cells[wd]).forEach((k) => { if (cells[wd][k]) n += 1; });
+            });
+            const slots = (window.__tplSlots || [])[idx] || {};
+            let sn = 0;
+            Object.keys(slots).forEach((wd) => Object.keys(slots[wd]).forEach(
+                (lbl) => { sn += Object.keys(slots[wd][lbl]).length; }));
+            text = n || sn
+                ? '블록 ' + n + '칸' + (sn ? ' · 칸 ' + sn + '개' : '')
+                : '아직 비어 있습니다';
+        } else {
+            const picked = [...tpl.querySelectorAll('.set-tpl-psel')]
+                .filter((s) => s.value)
+                .map((s) => s.options[s.selectedIndex].textContent);
+            text = picked.length ? picked.join(' · ') : '고른 것이 없습니다';
+        }
+        box.textContent = text;
+    }
 
     function tplHasTimes(idx) {
         const c = (window.__tplTimesCommon || [])[idx];
@@ -1660,8 +1756,8 @@
     }
 
     // 템플릿 idx 가 그 범위(''=공통, '0'~'6'=요일)에 쓸 8칸 시간.
-    // 서버의 template_day_blocks 와 같은 규칙이다 — 세션시간을 안 담은 템플릿이면
-    // 지금 설정값을 그대로 보여 주고, 담았으면 그 템플릿만으로 정한다.
+    // 서버의 template_day_blocks 와 같은 규칙이다 — 세션시간을 안 정한 템플릿이면
+    // 지금 설정값을 그대로 보여 주고, 정했으면 그 템플릿만으로 정한다.
     function tplScopeTimes(idx, key) {
         const base = window.__btScopes || {};
         if (!tplHasTimes(idx)) return base[key] || base[''] || [];
@@ -1671,6 +1767,7 @@
     }
 
     // 그 요일 그 블록이 몇 칸(30분)인지. B1p4 의 p 가 어디까지 있는지를 정한다.
+    // 구분(C) 템플릿은 제 세션시간이 없으므로 지금 설정의 시간표를 따른다.
     function tplPCount(idx, wd, label) {
         const rows = tplScopeTimes(idx, String(wd));
         const i = (window.__btBlocks || []).findIndex((b) => b.label === label);
@@ -1679,38 +1776,7 @@
             (hhmmToMin(rows[i].end) - hhmmToMin(rows[i].start)) / 30));
     }
 
-    // 머리줄에 이 템플릿이 담고 있는 부분을 적는다(담은 것만 진하게).
-    function paintTplParts(tpl) {
-        const box = tpl.querySelector('.set-tpl-parts');
-        if (!box) return;
-        const idx = Number(tpl.dataset.idx);
-        const cells = (window.__tplCells || [])[idx] || {};
-        const slots = (window.__tplSlots || [])[idx] || {};
-        const names = (window.__tplNames || [])[idx] || {};
-        // 고정 할일은 줄을 더하거나 지운 뒤에도 맞아야 하므로 화면의 줄을 센다.
-        const rules = tpl.querySelectorAll('.set-rt-row').length;
-        const hasCat = Object.keys(cells).some(
-            (wd) => Object.keys(cells[wd]).some((k) => cells[wd][k])
-        ) || Object.keys(slots).length > 0;
-        box.textContent = '';
-        [['구분', hasCat], ['세션시간', tplHasTimes(idx)],
-         ['이름', Object.keys(names).length > 0], ['고정', rules > 0]
-        ].forEach(([label, yes]) => {
-            const s = el('span', 'set-tpl-part' + (yes ? ' is-on' : ''), label);
-            s.title = yes ? label + ' 을(를) 담고 있습니다' : label + ' 은(는) 안 담았습니다';
-            box.appendChild(s);
-        });
-    }
-
-    // 부분을 처음 열 때 그린다. 이미 그렸으면 아무것도 하지 않는다.
-    function showTplPane(pane) {
-        if (!pane || pane.dataset.built) return;
-        pane.dataset.built = '1';
-        if (pane.dataset.part === 'times') buildTplTimes(pane);
-        else if (pane.dataset.part === 'names') buildTplNames(pane);
-    }
-
-    // 세션시간 편집기. 설정 위쪽의 것과 같은 모양(공통 1벌 + 요일별 덮어쓰기)이지만
+    // 세션시간(S) 편집기. 설정 위쪽의 것과 같은 모양(공통 1벌 + 요일별 덮어쓰기)이지만
     // 저장은 이 템플릿 안으로만 간다. 클래스 이름을 set-tt-* 로 따로 두는 이유는,
     // bindBlockTimes 가 .set-bt-panel 을 문서 전체에서 찾아 물기 때문이다.
     function buildTplTimes(pane) {
@@ -1722,16 +1788,16 @@
 
         const state = el('div', 'set-tt-state');
         const badge = el('span', 'set-bt-badge');
-        const drop = el('button', 'set-mini-btn set-tt-drop', '세션시간 빼기');
+        const drop = el('button', 'set-mini-btn set-tt-drop', '비우기');
         drop.type = 'button';
-        drop.title = '이 템플릿에서 세션시간을 뺍니다(주간 탭에서 골라도 시간표를 안 건드립니다)';
+        drop.title = '이 템플릿의 세션시간을 지웁니다(고른 곳에서 시간표를 안 건드리게 됩니다)';
         state.append(badge, drop);
         const paintBadge = () => {
             const on = tplHasTimes(idx);
             badge.classList.toggle('on', on);
             badge.textContent = on
-                ? '이 템플릿이 세션시간을 담고 있습니다'
-                : '아직 안 담았습니다 · 지금 설정값을 보여 줍니다. 값을 고치면 그때부터 담습니다';
+                ? '이 템플릿의 시간표입니다'
+                : '아직 안 정했습니다 · 지금 설정값을 보여 줍니다. 값을 고치면 그때부터 이 템플릿의 것이 됩니다';
             drop.hidden = !on;
         };
         paintBadge();
@@ -1771,7 +1837,7 @@
             const msg = el('span', 'set-bt-msg');
             acts.appendChild(msg);
             if (key) {
-                const reset = el('button', 'ghost-btn set-tt-reset', '이 템플릿 공통으로');
+                const reset = el('button', 'ghost-btn set-tt-reset', '공통으로');
                 reset.type = 'button';
                 acts.appendChild(reset);
                 reset.addEventListener('click', () => {
@@ -1812,8 +1878,7 @@
                         window.__tplTimesCommon[idx] = times;
                     }
                     paintBadge();
-                    paintTplParts(pane.closest('.set-tpl'));
-                    resetTplPGrid(pane.closest('.set-tpl'));   // 칸 수가 달라졌다
+                    paintTplSum(pane.closest('.set-tpl'));
                     autosaveToast();
                 });
             };
@@ -1822,10 +1887,10 @@
         });
 
         drop.addEventListener('click', () => {
-            if (!window.confirm('이 템플릿에서 세션시간을 뺍니다. 주간 탭에서 골라도 시간표는 그대로 둡니다.')) return;
+            if (!window.confirm('이 템플릿의 세션시간을 지웁니다. 고른 곳에서 시간표를 안 건드리게 됩니다.')) return;
             postForm('/settings/template/times/clear', { template_id: tid, scope: '' })
                 .then((d) => {
-                    if (!d || !d.ok) { toast('빼지 못했습니다'); return; }
+                    if (!d || !d.ok) { toast('지우지 못했습니다'); return; }
                     window.__tplTimesCommon[idx] = null;
                     window.__tplTimesWd[idx] = {};
                     redrawTplTimes(pane);
@@ -1847,21 +1912,10 @@
         const tpl = pane.closest('.set-tpl');
         pane.textContent = '';
         buildTplTimes(pane);
-        paintTplParts(tpl);
-        resetTplPGrid(tpl);
+        paintTplSum(tpl);
     }
 
-    // 세션시간이 바뀌면 칸 단위 격자의 p 개수가 달라진다. 다음에 열 때 다시 그린다.
-    function resetTplPGrid(tpl) {
-        const grid = tpl && tpl.querySelector('.set-tpl-pgrid');
-        if (!grid) return;
-        const wasOpen = !grid.hidden;
-        grid.textContent = '';
-        delete grid.dataset.built;
-        if (wasOpen) { grid.dataset.built = '1'; buildTplPGrid(grid); }
-    }
-
-    // 블록 이름 6칸(B1~B6). 주간 탭에서 고르면 그 주 블록 이름으로 그대로 들어간다.
+    // 블록 이름(N) 여섯 칸. 주간에 걸면 그 주 이름, 하루에 걸면 그 날만의 이름이 된다.
     function buildTplNames(pane) {
         const idx = Number(pane.dataset.idx);
         const tid = pane.dataset.tpl;
@@ -1874,7 +1928,7 @@
             inp.type = 'text';
             inp.autocomplete = 'off';
             inp.value = names[lbl] || '';
-            inp.placeholder = lbl + ' 이번 주 이름';
+            inp.placeholder = lbl + ' 이름';
             inp.setAttribute('aria-label', lbl + ' 이름');
             const save = () => {
                 const v = (inp.value || '').trim();
@@ -1885,7 +1939,7 @@
                         if (!d || !d.ok) { toast('저장 실패'); return; }
                         if (v) names[lbl] = v; else delete names[lbl];
                         window.__tplNames[idx] = names;
-                        paintTplParts(pane.closest('.set-tpl'));
+                        paintTplSum(pane.closest('.set-tpl'));
                         autosaveToast();
                     });
             };
@@ -1896,12 +1950,45 @@
         });
         pane.appendChild(wrap);
         pane.appendChild(el('p', 'set-events-hint',
-            '주간 탭에서 이 템플릿을 고르면 그 주 블록 이름(B1~B6)에 그대로 들어갑니다. '
-            + '비워 둔 칸은 건드리지 않습니다.'));
+            '주간에 걸면 그 주 블록 이름(B1~B6)에, 날짜의 ⋯ 로 걸면 그 날만의 이름 칸에 '
+            + '들어갑니다. 비워 둔 칸은 건드리지 않습니다.'));
     }
 
-    // 칸 단위 구분 격자. 줄이 B1p1~B6pN 이고 열이 요일이다. p 개수는 이 템플릿의
-    // 세션시간을 따르므로, 요일마다 블록 길이가 다르면 없는 칸은 점으로 비워 둔다.
+    // 구분(C)의 블록 단위 격자(요일 7 × 코어블록 6 = 42칸)
+    function buildTplGrid(grid) {
+        if (!grid) return;
+        const cats = window.__tplCats || [];
+        const weekdays = window.__tplWeekdays || [];
+        const mine = (window.__tplCells || [])[Number(grid.dataset.idx)] || {};
+        const frag = document.createDocumentFragment();
+        frag.appendChild(el('div', 'set-tpl-corner'));
+        weekdays.forEach(([, label]) => frag.appendChild(el('div', 'set-tpl-blabel', label)));
+        (window.__tplBlocks || []).forEach((lbl) => {
+            frag.appendChild(el('div', 'set-tpl-daytype', lbl));
+            weekdays.forEach(([wd, wdLabel]) => {
+                const sel = el('select', 'set-tpl-cell cat-select');
+                sel.dataset.tpl = grid.dataset.tpl;
+                sel.dataset.weekday = wd;
+                sel.dataset.label = lbl;
+                sel.setAttribute('aria-label', wdLabel + ' ' + lbl + ' 구분');
+                // JSON 키는 문자열이라 요일도 문자열로 찾는다.
+                const cur = (mine[String(wd)] || {})[lbl];
+                sel.appendChild(new Option('—', ''));
+                cats.forEach((c) => {
+                    const o = new Option(c.name, c.id, false, c.id === cur);
+                    o.dataset.tone = c.tone;
+                    sel.appendChild(o);
+                });
+                frag.appendChild(sel);
+            });
+        });
+        grid.appendChild(frag);
+        // 화면이 뜰 때 도는 초기 색칠(select.cat-select)은 이미 지나간 뒤라 여기서 칠한다.
+        grid.querySelectorAll('.set-tpl-cell').forEach(paintCategory);
+    }
+
+    // 구분(C)의 칸 단위 격자. 줄이 B1p1~B6pN 이고 열이 요일이다. 요일마다 블록 길이가
+    // 다르면 없는 칸은 점으로 비워 둔다.
     function buildTplPGrid(grid) {
         const idx = Number(grid.dataset.idx);
         const tid = grid.dataset.tpl;
@@ -1943,6 +2030,7 @@
         grid.appendChild(frag);
         grid.querySelectorAll('.set-tpl-pcell').forEach(paintCategory);
     }
+
 
     function bindSettings() {
         const addBtn = document.getElementById('set-cat-add-btn');
@@ -4480,6 +4568,68 @@
         bindWeekLtItems();
 
         // 주간 탭: 구분 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다)
+        // 적용 결과를 사람 말로. 담은 부분만 적용되므로 실제로 들어간 것만 센다.
+        const tplApplyMsg = (d) => {
+            const parts = [];
+            if (d.days) parts.push('세션시간 ' + d.days + '일');
+            if (d.names) parts.push('블록 이름 ' + d.names + '칸');
+            if (d.applied) parts.push('구분 ' + d.applied + '블록');
+            if (d.slots) parts.push('칸 구분 ' + d.slots + '칸');
+            if (d.filled) parts.push('고정 할일 ' + d.filled + '칸');
+            let msg = parts.length ? parts.join(' · ') + ' 적용' : '바뀐 것이 없습니다';
+            if (d.skipped_days) {
+                msg += ' · 적어 둔 것이 있는 ' + d.skipped_days
+                    + '일은 세션시간을 안 바꿨습니다';
+            }
+            return msg;
+        };
+
+        // 날짜 머리의 ⋯ · 그 날 하루에만 템플릿을 건다. 평소엔 격자에 아무것도 늘지 않는다.
+        const closeDayPops = (except) => {
+            document.querySelectorAll('.day-tpl-pop').forEach((p) => {
+                if (p !== except) p.hidden = true;
+            });
+            document.querySelectorAll('.day-tpl-btn').forEach((b) => {
+                if (!except || b.dataset.date !== except.dataset.date) {
+                    b.setAttribute('aria-expanded', 'false');
+                }
+            });
+        };
+        document.querySelectorAll('.day-tpl-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const pop = document.querySelector(
+                    '.day-tpl-pop[data-date="' + btn.dataset.date + '"]');
+                if (!pop) return;
+                const show = pop.hidden;
+                closeDayPops(show ? pop : null);
+                pop.hidden = !show;
+                btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+            });
+        });
+        document.querySelectorAll('.day-tpl-pop').forEach((pop) => {
+            pop.addEventListener('click', (e) => e.stopPropagation());
+            pop.addEventListener('change', (e) => {
+                const sel = e.target.closest('.day-tpl-sel');
+                if (!sel) return;
+                postForm('/day/apply-template', {
+                    date: pop.dataset.date, kind: sel.dataset.kind,
+                    template_id: sel.value,
+                }).then((d) => {
+                    if (!d || !d.ok) { toast('적용 실패'); return; }
+                    const btn = document.querySelector(
+                        '.day-tpl-btn[data-date="' + pop.dataset.date + '"]');
+                    const any = [...pop.querySelectorAll('.day-tpl-sel')].some((x) => x.value);
+                    btn?.classList.toggle('is-on', any);
+                    toast(d.cleared ? '이 날 걸어 둔 것을 뗐습니다' : tplApplyMsg(d));
+                    setTimeout(() => location.reload(), 1200);
+                });
+            });
+        });
+        if (document.querySelector('.day-tpl-pop')) {
+            document.addEventListener('click', () => closeDayPops(null));
+        }
+
         const wkTplSel = document.getElementById('wk-apply-tpl-sel');
         wkTplSel?.addEventListener('change', () => {
             const tid = wkTplSel.value;
@@ -4490,23 +4640,10 @@
                     if (!d || !d.ok) {
                         wkTplSel.value = '';
                         toast((d && d.error === 'empty-template')
-                            ? '템플릿이 비어 있습니다' : '적용 실패');
+                            ? '이 주간 템플릿은 고른 것이 없습니다' : '적용 실패');
                         return;
                     }
-                    // 담은 부분만 적용되므로, 실제로 들어간 것만 세어 알린다.
-                    // 세션시간·고정 할일은 주간 화면에 안 보이니(칸은 오늘 탭에 있다) 더 그렇다.
-                    const parts = [];
-                    if (d.days) parts.push('세션시간 ' + d.days + '일');
-                    if (d.names) parts.push('블록 이름 ' + d.names + '칸');
-                    if (d.applied) parts.push('구분 ' + d.applied + '블록');
-                    if (d.slots) parts.push('칸 구분 ' + d.slots + '칸');
-                    if (d.filled) parts.push('고정 할일 ' + d.filled + '칸');
-                    let msg = parts.length ? parts.join(' · ') + ' 적용' : '바뀐 것이 없습니다';
-                    if (d.skipped_days) {
-                        msg += ' · 적어 둔 것이 있는 ' + d.skipped_days
-                            + '일은 세션시간을 안 바꿨습니다';
-                    }
-                    toast(msg);
+                    toast(tplApplyMsg(d));
                     setTimeout(() => location.reload(), 1400);
                 });
         });

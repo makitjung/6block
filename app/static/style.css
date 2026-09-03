@@ -820,7 +820,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     grid-template-rows: auto auto repeat(8, auto);
     gap: 5px 8px;
 }
-.day-col { display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; min-width: 0; }
+.day-col { position: relative; display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; min-width: 0; }
 .mini-block, .mini-head, .mini-left { min-width: 0; }
 .day-head { margin: 0 0 4px; text-align: center; }
 .day-head a {
@@ -1599,15 +1599,43 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .set-tpl-blabel { font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: center; }
 .set-tpl-daytype { font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; padding-right: 6px; }
 .set-tpl-cell, .set-tpl-pcell { width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
-/* 템플릿이 담고 있는 부분. 담은 것만 진하게 — 개별 템플릿인지 종합인지 한눈에 보인다. */
-.set-tpl-parts { display: flex; gap: 4px; }
-.set-tpl-part { font-size: 11px; padding: 2px 7px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-subtle); }
-.set-tpl-part.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-/* 부분 탭. 지금 보는 하나만 세운다(넷을 다 세우면 템플릿 하나가 화면 한 장을 넘는다) */
-.set-tpl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.set-tpl-tab { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-pill); padding: 4px 12px; cursor: pointer; }
-.set-tpl-tab:hover { color: var(--text); }
-.set-tpl-tab.is-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+/* 주간 7일 격자: 날짜 머리의 ⋯ 와 그 아래 작은 창. 평소엔 점 세 개뿐이다. */
+.day-head { position: relative; }
+.day-tpl-btn {
+    position: absolute; top: 0; right: 0; padding: 0 4px; line-height: 1.2;
+    background: none; border: 0; color: var(--text-subtle); font-size: 14px; cursor: pointer;
+}
+.day-tpl-btn:hover { color: var(--text); }
+.day-tpl-btn.is-on { color: var(--accent); font-weight: 700; }
+/* 격자 칸은 subgrid 라 줄이 하나 늘면 일곱 열이 모두 어긋난다. 창은 자리를 안 차지하게
+   절대 위치로 띄운다(절대 위치 자식은 격자 항목이 아니라 줄을 만들지 않는다). */
+.day-tpl-pop {
+    position: absolute; top: 26px; left: 0; z-index: 30; min-width: 190px;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface); box-shadow: var(--sh-2);
+}
+.day-tpl-row { display: flex; align-items: center; gap: 6px; }
+.day-tpl-label { font-size: 12px; font-weight: 700; color: var(--text-soft); width: 54px; flex: none; }
+.day-tpl-sel { flex: 1; width: auto; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; }
+.day-tpl-hint { margin: 0; font-size: 11px; color: var(--text-subtle); }
+
+/* 종류 탭(세션시간 S · 고정할일 T · 블록이름 N · 구분 C · 주간 W). 한 종류만 세운다 */
+.set-tpl-kinds { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.set-tpl-kind { font-size: 13px; font-weight: 700; color: var(--text-muted); background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-pill); padding: 5px 14px; cursor: pointer; }
+.set-tpl-kind:hover { color: var(--text); }
+.set-tpl-kind.is-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.set-tpl-kind .mono { opacity: .6; margin-left: 2px; }
+/* 접힌 줄. 번호와 한 줄 요약만 보이고 누르면 편집기가 펴진다 */
+.set-tpl-open { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; text-align: left; background: none; border: 0; padding: 4px 0; cursor: pointer; color: var(--text); }
+.set-tpl-no { font-weight: 700; }
+.set-tpl-sum { flex: 1; min-width: 0; font-size: 12px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-tpl-open[aria-expanded="true"] .set-tpl-no { color: var(--accent); }
+.set-tpl-body { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+/* 주간이 고르는 칸 넷 */
+.set-tpl-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.set-tpl-prow { display: flex; align-items: center; gap: 8px; }
+.set-tpl-psel { flex: 1; width: auto; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 .set-tpl-pane-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .set-tpl-pmode { margin-left: auto; }
 .set-tpl-pmode.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }

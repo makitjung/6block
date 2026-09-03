@@ -150,6 +150,21 @@ def _weekday_of(date_str: str) -> int:
     return datetime.strptime(date_str, "%Y-%m-%d").date().weekday()
 
 
+# 템플릿 다섯 종류. 값은 (글자, 화면 이름)이고 순서가 설정 탭 종류 탭 순서다.
+TPL_KINDS = [
+    ("S", "세션시간"), ("T", "고정할일"), ("N", "블록이름"),
+    ("C", "구분"), ("W", "주간"),
+]
+TPL_KIND_KEYS = {k for k, _label in TPL_KINDS}
+
+
+def tpl_title(kind, no, name=None) -> str:
+    """화면에 쓰는 템플릿 이름. S1 · T2 · C1 · W1(집중주)."""
+    base = f"{kind}{no}"
+    name = (name or "").strip()
+    return f"{base}({name})" if name else base
+
+
 def day_blocks_for(date_str: str):
     """그 날짜의 효과적인 8블록. 그 주에 따로 적어 둔 시간표가 있으면 그것이 이긴다.
 
@@ -157,7 +172,8 @@ def day_blocks_for(date_str: str):
     골격을 만들고 견주는 곳은 모두 이 함수 하나를 봐야, 화면마다 다른 시간표를 그리지 않는다.
     """
     d = datetime.strptime(date_str, "%Y-%m-%d").date()
-    return get_day_blocks(_weekday_of(date_str), week_start(d).strftime("%Y-%m-%d"))
+    return get_day_blocks(_weekday_of(date_str), week_start(d).strftime("%Y-%m-%d"),
+                          date_str)
 
 
 def _skeleton_matches_config(conn, date_str: str) -> bool:

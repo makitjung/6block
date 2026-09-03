@@ -444,10 +444,15 @@ class TestWeekApplyTemplate:
 
     def test_apply_template_fills_empty_slots(self, client, conn):
         """템플릿이 비어 있는 칸을 채우지만 이미 채워진 칸은 건드리지 않는다."""
-        # 1. 구분 템플릿 생성 (name 필수)
-        tmpl_resp = client.post("/settings/template/add", data={"name": "테스트 템플릿"})
+        # 1. 구분(C) 템플릿과 그것을 고른 주간(W) 템플릿을 만든다
+        tmpl_resp = client.post("/settings/template/add", data={"kind": "C"})
         assert tmpl_resp.status_code == 200
         tmpl_id = tmpl_resp.json().get("id")
+        week_resp = client.post("/settings/template/add",
+                                data={"kind": "W", "name": "테스트 템플릿"})
+        week_id = week_resp.json().get("id")
+        client.post("/settings/template/pick",
+                    data={"id": str(week_id), "part": "c", "value": str(tmpl_id)})
 
         # 2. 구분 생성
         cat_resp = client.post("/settings/category/add", data={"name": "학습"})
@@ -477,7 +482,7 @@ class TestWeekApplyTemplate:
 
         apply_resp = client.post("/week/apply-template", data={
             "week_start": week_start_str,
-            "template_id": str(tmpl_id)
+            "template_id": str(week_id)
         })
         assert apply_resp.status_code == 200 or apply_resp.status_code == 400
         # 빈 템플릿이면 400이 정상
