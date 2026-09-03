@@ -499,6 +499,38 @@ def test_장기_항목_추가_수정_삭제(client):
     assert _one("SELECT id FROM lt_item WHERE id = ?", (iid,)) is None
 
 
+def test_장기_한_칸씩_따로_저장된다(client):
+    """편집칸 자동저장은 손 뗀 칸 하나만 보낸다. 나머지 값이 딸려 오지 않아도 지켜져야 한다."""
+    client.get("/plan")
+    iid = _add_item(client, "원래 이름", "2026-08-01", "2026-08-31")
+    보낼것 = [
+        ({"title": "새 이름"}, "title", "새 이름"),
+        ({"start": "2026-08-05"}, "start_date", "2026-08-05"),
+        ({"end": "2026-09-10"}, "end_date", "2026-09-10"),
+        ({"progress": "40"}, "progress", 40),
+        ({"block": "B3,B5"}, "block_label", "B3,B5"),
+        ({"hidden": "1"}, "hidden", 1),
+        ({"masked": "1"}, "masked", 1),
+    ]
+    for data, 칸, 기대 in 보낼것:
+        res = client.post("/plan/item/update", data=dict(data, id=iid))
+        assert res.status_code == 200, f"{data} → {res.text}"
+        row = _one("SELECT * FROM lt_item WHERE id = ?", (iid,))
+        assert row[칸] == 기대, f"{data} 를 혼자 보냈더니 {칸} 이 {row[칸]}"
+    # 한 칸씩 보내는 동안 다른 칸이 지워지지 않았다
+    row = _one("SELECT * FROM lt_item WHERE id = ?", (iid,))
+    assert row["title"] == "새 이름" and row["start_date"] == "2026-08-05"
+
+
+def test_장기_덜_친_날짜는_안_보낸다(client):
+    """한 칸 날짜 입력은 8자리를 다 쳐야 값이 선다. 빈 값이 와도 기간이 지워지면 안 된다."""
+    client.get("/plan")
+    iid = _add_item(client, "기간 지키기", "2026-08-01", "2026-08-31")
+    client.post("/plan/item/update", data={"id": iid, "start": ""})
+    row = _one("SELECT start_date, end_date FROM lt_item WHERE id = ?", (iid,))
+    assert (row["start_date"], row["end_date"]) == ("2026-08-01", "2026-08-31")
+
+
 def test_장기_항목_하루_이동과_리사이즈(client):
     client.get("/plan")
     iid = _add_item(client, "이동", "2026-08-10", "2026-08-20")

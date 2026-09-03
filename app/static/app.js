@@ -2049,11 +2049,22 @@
         gantt.classList.toggle('hide-past',
                                !!document.getElementById('pg-past-hide')?.checked);
 
+        // 자동저장이 막대 자리를 바꿔 놓았으면 그 항목 id 를 여기 적어 둔다. 칸마다
+        // 다시 그리면 치는 중에 초점이 튀므로, 편집칸을 닫을 때 한 번만 그린다.
+        let dirtyRedraw = null;
+        const flushRedraw = () => {
+            if (!dirtyRedraw) return false;
+            const id = dirtyRedraw;
+            dirtyRedraw = null;
+            refreshGantt(id);
+            return true;
+        };
         const closeAll = () => {
             gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
             gantt.querySelectorAll('.gt-bar.is-editing')
                  .forEach((b) => b.classList.remove('is-editing'));
             litGanttFamily(gantt, null);
+            flushRedraw();
         };
         // 격자의 빈 곳을 누르면 닫는다. 입력칸 안이라도 칸·버튼이 아닌 빈 자리를 누르면
         // 마찬가지로 닫는다(입력칸 자신이나 줄 묶음이 눌린 경우).
@@ -2077,6 +2088,7 @@
         // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목·영역·기간을 물려받는다.
         const openForm = (opt) => {
             const o = opt || {};
+            if (dirtyRedraw) { pendingForm = o; flushRedraw(); return; }
             closeAll();
             const form = gantt.querySelector('.gt-form[data-block="' + (o.block || '') + '"]');
             if (!form) return;
@@ -2197,6 +2209,12 @@
             const box = editBoxFor(bar);
             if (!box) return;
             const wasOpen = !box.hidden;
+            if (dirtyRedraw) {
+                pendingEdit = wasOpen ? null
+                    : { id: bar.dataset.id, block: bar.closest('.gt-group')?.dataset.block };
+                flushRedraw();
+                return;
+            }
             closeAll();
             box.hidden = wasOpen;
             if (wasOpen) return;
@@ -2281,8 +2299,86 @@
             restorePlanScroll();   // 다른 화면에서 돌아온 것이면 보던 자리로
         }
 
+        // 그 항목의 막대들(한 항목이 여러 블록 줄에 나올 수 있다)
+        const barsOf = (id) => gantt.querySelectorAll('.gt-bar[data-id="' + id + '"]');
+
+        // 편집칸의 한 칸만 보내 저장한다. redraw 를 주면 막대 자리가 달라지는 것이므로
+        // 다시 그릴 것으로 적어 둔다(그리기는 편집칸을 닫을 때 한 번).
+        function saveItemField(id, data, redraw) {
+            const body = { id: id };
+            Object.keys(data).forEach((k) => { body[k] = data[k]; });
+            postForm('/plan/item/update', body).then((d) => {
+                if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
+                autosaveToast();
+                if (redraw) dirtyRedraw = id;
+            });
+        }
+
         function bindEditBox(box) {
             const id = box.dataset.id;
+            // ---- 자동저장: 칸에서 손을 떼면 그 칸 하나가 바로 저장된다 -------
+            // 저장 버튼은 그대로 두어 '저장하고 닫기'로 남는다.
+            const title = box.querySelector('.gt-e-title');
+            if (title) {
+                let timer = null;
+                let last = title.value;
+                const flushTitle = () => {
+                    if (timer) { clearTimeout(timer); timer = null; }
+                    const v = (title.value || '').trim();
+                    // 빈 이름은 서버가 안 받는다(이름 없는 막대가 생기면 누를 수가 없다).
+                    if (!v || v === last) return;
+                    last = v;
+                    barsOf(id).forEach((b) => {
+                        b.dataset.title = v;
+                        const t = b.querySelector('.gt-bartext');
+                        if (t) t.textContent = v;
+                    });
+                    saveItemField(id, { title: v });
+                };
+                title.addEventListener('change', flushTitle);
+                title.addEventListener('blur', flushTitle);
+                title.addEventListener('input', () => {
+                    if (timer) clearTimeout(timer);
+                    timer = setTimeout(flushTitle, 1200);
+                });
+            }
+            [['.gt-e-start', 'start'], ['.gt-e-end', 'end']].forEach(([sel, key]) => {
+                const el = box.querySelector(sel);
+                el?.addEventListener('change', () => {
+                    // 덜 친 날짜는 한 칸 입력이 빈 값으로 내려보낸다. 그때는 그냥 둔다.
+                    if (!el.value) return;
+                    const one = {};
+                    one[key] = el.value;
+                    saveItemField(id, one, true);
+                });
+            });
+            const prog = box.querySelector('.gt-e-progress');
+            prog?.addEventListener('change', () => {
+                if (prog.disabled || prog.value === '') return;
+                const v = Math.max(0, Math.min(100, Number(prog.value) || 0));
+                barsOf(id).forEach((b) => {
+                    const f = b.querySelector('.gt-fill');
+                    if (f) f.style.width = v + '%';
+                    const pc = b.querySelector('.gt-barpct');
+                    if (pc) pc.textContent = v;
+                });
+                // 상위 항목의 진척률이 하위 평균으로 따라 바뀌므로 다시 그린다
+                saveItemField(id, { progress: String(v) }, true);
+            });
+            box.querySelectorAll('.gt-e-blocks input').forEach((c) => {
+                c.addEventListener('change', () => {
+                    const v = [...box.querySelectorAll('.gt-e-blocks input:checked')]
+                        .map((x) => x.value).join(',');
+                    saveItemField(id, { block: v }, true);
+                });
+            });
+            box.querySelector('.gt-e-hidden')?.addEventListener('change', (e) => {
+                saveItemField(id, { hidden: e.target.checked ? '1' : '0' }, true);
+            });
+            box.querySelector('.gt-e-masked')?.addEventListener('change', (e) => {
+                saveItemField(id, { masked: e.target.checked ? '1' : '0' }, true);
+            });
+
             box.querySelector('.gt-e-save')?.addEventListener('click', () => {
                 const data = { id: id, title: (box.querySelector('.gt-e-title').value || '').trim() };
                 const s = box.querySelector('.gt-e-start');
@@ -2298,6 +2394,7 @@
                 data.masked = box.querySelector('.gt-e-masked').checked ? '1' : '0';
                 if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
                 box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
+                dirtyRedraw = null;         // 이 저장이 어차피 다시 그린다
                 postForm('/plan/item/update', data).then((d) => {
                     if (!d || !d.ok) { box.hidden = false; toast((d && d.error) || '저장 실패'); return; }
                     refreshGantt(id);
