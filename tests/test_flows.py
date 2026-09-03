@@ -282,24 +282,27 @@ def test_넘길_것이_하나도_없으면_거절한다(client):
     assert _one("SELECT id FROM blocks WHERE date = ?", (TOMORROW,)) is None
 
 
-def test_내일_같은_칸이_차_있으면_그_블록의_빈_칸으로_민다(client):
+def test_내일_같은_칸이_차_있어도_오늘_것으로_덮어쓴다(client):
+    """이월은 '어제 하려던 것을 그 자리에 다시 세운다'는 뜻이다. 밀어내면 시간표가 어긋난다."""
     client.get("/today")
     client.get(f"/day/{TOMORROW}")
     첫칸 = _슬롯들("B1", TOMORROW)[0]
     client.post("/save/field", data={"entity": "slot", "id": 첫칸["id"],
                                      "field": "do_text", "value": "내일 먼저 잡힌 일"})
-    s = _DO적기(client, "B1", 0, "밀려날 일")
+    s = _DO적기(client, "B1", 0, "덮어쓸 일")
     b = _블록("B1")
 
     res = client.post("/block/rollover", data={"block_id": b["id"]})
     assert res.json()["moved"] == 1
+    assert res.json()["skipped"] == 0
     내일 = _슬롯들("B1", TOMORROW)
-    assert 내일[0]["do_text"] == "내일 먼저 잡힌 일", "이미 있던 것을 덮어썼다"
-    assert any((x["do_text"] or "") == "밀려날 일" for x in 내일[1:])
+    assert 내일[0]["do_text"] == "덮어쓸 일"
     assert s["start_time"] == 내일[0]["start_time"]
+    # 오늘이 안 적은 칸은 내일 것이 그대로 남는다
+    assert all(not (x["do_text"] or "") for x in 내일[1:])
 
 
-def test_내일_블록이_꽉_차면_못_넘긴_개수를_알려_준다(client):
+def test_내일_블록이_꽉_차_있어도_다_덮어쓴다(client):
     client.get("/today")
     client.get(f"/day/{TOMORROW}")
     for x in _슬롯들("B1", TOMORROW):
@@ -311,9 +314,30 @@ def test_내일_블록이_꽉_차면_못_넘긴_개수를_알려_준다(client):
 
     res = client.post("/block/rollover", data={"block_id": b["id"]})
     assert res.status_code == 200, res.text
-    assert res.json()["moved"] == 0
-    assert res.json()["skipped"] == 2
-    assert all(x["do_text"] == "이미 참" for x in _슬롯들("B1", TOMORROW))
+    assert res.json()["moved"] == 2
+    assert res.json()["skipped"] == 0
+    내일 = _슬롯들("B1", TOMORROW)
+    assert [x["do_text"] for x in 내일[:2]] == ["넘길 일 하나", "넘길 일 둘"]
+    assert all(x["do_text"] == "이미 참" for x in 내일[2:])
+
+
+def test_내일_블록이_더_짧으면_못_넘긴_개수를_알려_준다(client):
+    """요일마다 블록 길이가 다를 수 있다. 같은 시각도 같은 순번도 없으면 그것만 건너뛴다."""
+    client.get("/today")
+    client.get(f"/day/{TOMORROW}")
+    내일칸 = _슬롯들("B1", TOMORROW)
+    with db.get_conn() as conn:      # 내일 B1 을 한 칸짜리로 줄인다
+        conn.execute("DELETE FROM slots WHERE id IN ({})".format(
+            ",".join(str(x["id"]) for x in 내일칸[1:])))
+    _DO적기(client, "B1", 0, "넘길 일 하나")
+    _DO적기(client, "B1", 1, "넘길 일 둘")
+    b = _블록("B1")
+
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.status_code == 200, res.text
+    assert res.json()["moved"] == 1
+    assert res.json()["skipped"] == 1
+    assert [x["do_text"] for x in _슬롯들("B1", TOMORROW)] == ["넘길 일 하나"]
 
 
 def test_고정_할일_칸은_안_넘긴다(client):
@@ -355,15 +379,45 @@ def test_이월은_없는_블록이면_404(client):
     assert res.status_code == 404
 
 
-def test_두_번_이월하면_빈_칸에_이어_붙는다(client):
+def test_두_번_이월해도_같은_칸_하나로_남는다(client):
+    """덮어쓰기라서 두 번 눌러도 같은 글이 두 칸에 쌓이지 않는다."""
     client.get("/today")
     s = _DO적기(client, "B1", 0, "같은 일")
     b = _블록("B1")
     client.post("/block/rollover", data={"block_id": b["id"]})
     client.post("/block/rollover", data={"block_id": b["id"]})
     내일 = [x["do_text"] for x in _슬롯들("B1", TOMORROW) if (x["do_text"] or "")]
-    assert 내일 == ["같은 일", "같은 일"], f"두 번째가 첫 번째를 덮었거나 사라졌다: {내일}"
+    assert 내일 == ["같은 일"], f"같은 글이 여러 칸에 쌓였다: {내일}"
     assert s is not None
+
+
+def test_PLAN은_이어_붙지_않고_갈아끼운다(client):
+    client.get("/today")
+    client.get(f"/day/{TOMORROW}")
+    내일블록 = _블록("B1", TOMORROW)
+    client.post("/save/field", data={"entity": "block", "id": 내일블록["id"],
+                                     "field": "plan_text", "value": "내일 먼저 적은 계획"})
+    b = _블록("B1")
+    client.post("/save/field", data={"entity": "block", "id": b["id"],
+                                     "field": "plan_text", "value": "오늘 못 한 계획"})
+
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    assert res.status_code == 200, res.text
+    assert _블록("B1", TOMORROW)["plan_text"] == "오늘 못 한 계획"
+
+
+def test_이월_응답이_옮겨_갈_자리를_알려_준다(client):
+    """화면이 그 자리(/day/내일#blk-순번)로 곧장 넘어가려면 블록 순번이 필요하다."""
+    client.get("/today")
+    _DO적기(client, "B4", 0, "B4 일")
+    b = _블록("B4")
+    res = client.post("/block/rollover", data={"block_id": b["id"]})
+    d = res.json()
+    assert d["date"] == TOMORROW
+    assert d["label"] == "B4"
+    자리 = _one("SELECT block_order FROM blocks WHERE date = ? AND block_label = ?",
+               (TOMORROW, "B4"))
+    assert d["block_order"] == 자리["block_order"]
 
 
 # -- 수집함 ------------------------------------------------------------------

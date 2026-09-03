@@ -806,12 +806,16 @@ async def inbox_assign(request: Request):
 
 @router.post("/block/rollover")
 async def block_rollover(request: Request):
-    """이 블록에 적어 둔 것을 내일 같은 블록으로 복사한다(미룬 계획 이월).
+    """이 블록에 적어 둔 것을 내일 같은 블록으로 옮겨 적는다(미룬 계획 이월).
 
-    넘기는 것은 그 블록 슬롯의 DO 칸과, 블록 PLAN 칸에 적은 글이다. 슬롯 DO 는 내일
-    같은 시각 칸으로 간다(시간표가 눈에 그대로 그려지도록). 그 칸이 이미 차 있으면 그
-    블록의 빈 칸 중 가장 이른 자리로 밀고, 빈 칸이 없으면 그것만 건너뛰고 몇 개를 못
-    넘겼는지 알려 준다. 오늘 칸은 지우지 않는다. 이월은 옮기기가 아니라 복사다.
+    넘기는 것은 그 블록 슬롯의 DO 칸과, 블록 PLAN 칸에 적은 글이다. 내일 같은 자리에
+    이미 무엇이 적혀 있어도 오늘 것으로 덮어쓴다 — 이월은 '어제 하려던 것을 오늘로
+    끌어온다'는 뜻이라, 밀린 계획이 다른 칸으로 밀려나면 시간표가 어긋난다.
+
+    자리는 같은 시작시각을 먼저 노린다. 요일마다 블록 시간이 달라 그 시각이 아예 없으면
+    그 블록 안 같은 순번 칸으로 간다. 그 블록이 더 짧아 순번도 없으면 그것만 건너뛰고
+    몇 개를 못 넘겼는지 알려 준다. 비워 둔 칸은 보내지 않으므로 내일의 그 칸은 그대로
+    남는다. 오늘 칸도 지우지 않는다(이월은 옮기기가 아니라 복사다).
 
     고정 할일이 채운 칸(is_routine=1)은 넘기지 않는다. 내일도 템플릿이 다시 채우므로
     함께 넘기면 같은 것이 두 칸에 생긴다.
@@ -840,17 +844,18 @@ async def block_rollover(request: Request):
         if not src:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
         plan = on_screen("plan", src["plan_text"])
-        carry = []          # 내일로 넘길 (시각, 글) 목록. 슬롯 차례대로 담는다.
-        for s in conn.execute(
+        # 내일로 넘길 (시각, 블록 안 순번, 글) 목록. 순번은 그 블록에서 몇 번째 칸인지다.
+        carry = []
+        for pos, s in enumerate(conn.execute(
             "SELECT id, start_time, do_text, is_routine FROM slots "
             "WHERE block_id = ? ORDER BY slot_index",
             (block_id,),
-        ):
+        )):
             if s["is_routine"]:
                 continue
             text = on_screen(f"do_{s['id']}", s["do_text"])
             if text:
-                carry.append((s["start_time"], text))
+                carry.append((s["start_time"], pos, text))
         if not plan and not carry:
             return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
 
@@ -858,46 +863,43 @@ async def block_rollover(request: Request):
         nxt = (d + timedelta(days=1)).strftime("%Y-%m-%d")
         ensure_day_skeleton(conn, nxt)
         dst = conn.execute(
-            "SELECT id, plan_text FROM blocks WHERE date = ? AND block_label = ?",
+            "SELECT id, block_order FROM blocks WHERE date = ? AND block_label = ?",
             (nxt, src["block_label"]),
         ).fetchone()
         if not dst:
             return JSONResponse({"ok": False, "error": "no-target"}, status_code=404)
 
         if plan:
-            cur = (dst["plan_text"] or "").rstrip()
+            # 이어 붙이지 않고 갈아끼운다. 같은 블록을 이틀 잇달아 넘기면 예전에는 같은
+            # 글이 두 번 쌓였다.
             conn.execute(
                 "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
-                (f"{cur}\n{plan}" if cur else plan, now, dst["id"]),
+                (plan, now, dst["id"]),
             )
 
         dst_slots = [
             dict(r)
             for r in conn.execute(
-                "SELECT id, start_time, do_text FROM slots WHERE block_id = ? "
-                "ORDER BY slot_index",
+                "SELECT id, start_time FROM slots WHERE block_id = ? ORDER BY slot_index",
                 (dst["id"],),
             )
         ]
-        taken = {r["id"] for r in dst_slots if (r["do_text"] or "").strip()}
         by_time = {r["start_time"]: r for r in dst_slots}
         moved = 0
-        for start_time, text in carry:
-            # 같은 시각 자리를 먼저 노린다. 요일마다 블록 시간이 다를 수 있어 그 시각이
-            # 아예 없을 수도 있고, 이미 차 있을 수도 있다. 그때는 가장 이른 빈 칸으로 민다.
+        for start_time, pos, text in carry:
             target = by_time.get(start_time)
-            if target is None or target["id"] in taken:
-                target = next((r for r in dst_slots if r["id"] not in taken), None)
+            if target is None and pos < len(dst_slots):
+                target = dst_slots[pos]
             if target is None:
-                continue        # 그 블록에 빈 칸이 하나도 없다
+                continue        # 내일 그 블록이 더 짧아 그 순번 칸이 없다
             conn.execute(
                 "UPDATE slots SET do_text = ?, is_routine = 0, updated_at = ? WHERE id = ?",
                 (text, now, target["id"]),
             )
-            taken.add(target["id"])
             moved += 1
     return JSONResponse({
         "ok": True, "date": nxt, "label": src["block_label"],
+        "block_order": dst["block_order"],
         "moved": moved, "skipped": len(carry) - moved, "plan": bool(plan),
     })
 

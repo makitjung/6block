@@ -3887,6 +3887,16 @@
                         + (parts.join(' · ') || '내용') + ' 이월';
                     if (d.skipped) msg += ' · ' + d.skipped + '칸은 자리가 없어 못 넘김';
                     toast(msg);
+                    // 넘긴 자리로 곧장 데려간다. 넘겨 놓고 다음 날로 손수 넘어가
+                    // 그 블록을 찾아 내려가던 걸음을 없앤다.
+                    // 잠깐 기다렸다 옮기는 것은 방금 고친 칸에서 함께 출발한 자동저장이
+                    // 닿을 틈을 주기 위해서다(화면을 떠나면 가는 중인 요청이 끊긴다).
+                    if (d.date) {
+                        setTimeout(() => {
+                            location.href = '/day/' + d.date
+                                + (d.block_order === undefined ? '' : '#blk-' + d.block_order);
+                        }, 800);
+                    }
                 });
             });
         });
