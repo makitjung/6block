@@ -1644,6 +1644,72 @@ def test_없어진_테이블은_되살아나지_않는다(fresh_db):
     assert "weekday_concept" not in names
 
 
+def test_옛_한줄_템플릿이_다섯_종류로_쪼개져도_아무것도_안_잃는다(fresh_db):
+    """한 줄이 네 부분을 다 담던 옛 템플릿이 W→S·T·N·C 로 쪼개지는 마이그레이션.
+
+    운영 DB의 '집중주'는 42칸 구분과 고정할일 여러 줄을 담고 있다. 판번호가 올라갈 때
+    이 줄들이 종류별 템플릿으로 옮겨 가되 한 줄도 사라지지 않아야 한다.
+    """
+    with db.get_conn() as conn:
+        cat = conn.execute("SELECT id FROM categories LIMIT 1").fetchone()[0]
+        wid = conn.execute(
+            "INSERT INTO cat_template (kind, no, name, display_order, "
+            "times_common, block_names, updated_at) "
+            "VALUES ('W', 1, '집중주', 0, ?, ?, datetime('now'))",
+            ('[{"start_time": "07:00", "end_time": "08:30"}]', '["아침 공부"]'),
+        ).lastrowid
+        for wd in range(7):
+            for i in range(6):
+                conn.execute(
+                    "INSERT INTO cat_template_cell (template_id, weekday, block_label, "
+                    "category_id) VALUES (?, ?, ?, ?)", (wid, wd, f"B{i + 1}", cat))
+        for p in range(1, 5):
+            conn.execute(
+                "INSERT INTO cat_template_slot (template_id, weekday, block_label, p, "
+                "category_id) VALUES (?, 0, 'B1', ?, ?)", (wid, p, cat))
+        for i in range(3):
+            conn.execute(
+                "INSERT INTO routine_rule (template_id, weekdays, start_time, span, "
+                "do_text) VALUES (?, '0,1', '09:00', 1, ?)", (wid, f"할일{i}"))
+        conn.execute("PRAGMA user_version = 0")
+
+    def 살펴본다():
+        with db.get_conn() as conn:
+            w = conn.execute(
+                "SELECT name, times_common, block_names, s_id, t_id, n_id, c_id "
+                "FROM cat_template WHERE id = ?", (wid,)).fetchone()
+            수 = {k: conn.execute("SELECT COUNT(*) FROM cat_template WHERE kind = ?",
+                                 (k,)).fetchone()[0] for k in "STNCW"}
+            s = conn.execute("SELECT times_common FROM cat_template WHERE id = ?",
+                             (w["s_id"],)).fetchone()
+            n = conn.execute("SELECT block_names FROM cat_template WHERE id = ?",
+                             (w["n_id"],)).fetchone()
+            칸 = conn.execute("SELECT COUNT(*) FROM cat_template_cell WHERE template_id = ?",
+                             (w["c_id"],)).fetchone()[0]
+            포모 = conn.execute("SELECT COUNT(*) FROM cat_template_slot WHERE template_id = ?",
+                              (w["c_id"],)).fetchone()[0]
+            할일 = conn.execute("SELECT COUNT(*) FROM routine_rule WHERE template_id = ?",
+                              (w["t_id"],)).fetchone()[0]
+        return dict(w=dict(w), 수=수, s=s[0], n=n[0], 칸=칸, 포모=포모, 할일=할일)
+
+    db.init_db()
+    본것 = 살펴본다()
+
+    assert 본것["w"]["name"] == "집중주", "주간 줄의 별도명칭이 사라졌다"
+    assert 본것["수"] == {"S": 1, "T": 1, "N": 1, "C": 1, "W": 1}, "종류별로 한 줄씩 안 생겼다"
+    assert 본것["w"]["times_common"] is None and 본것["w"]["block_names"] is None, \
+        "쪼갠 뒤에도 주간 줄이 부분을 쥐고 있다"
+    assert "07:00" in 본것["s"], "세션시간이 S 로 안 옮겨 갔다"
+    assert "아침 공부" in 본것["n"], "블록 이름이 N 으로 안 옮겨 갔다"
+    assert (본것["칸"], 본것["포모"], 본것["할일"]) == (42, 4, 3), "구분·고정할일 줄을 잃었다"
+
+    # 판번호를 되돌려 마이그레이션을 다시 돌려도 결과가 같아야 한다(멱등).
+    with db.get_conn() as conn:
+        conn.execute("PRAGMA user_version = 0")
+    db.init_db()
+    assert 살펴본다() == 본것, "마이그레이션을 다시 돌리니 결과가 달라졌다"
+
+
 def test_설정_캐시가_저장_후_갱신된다(fresh_db):
     db.get_settings()
     db.set_setting("start_view", "week")
