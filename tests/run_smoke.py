@@ -100,12 +100,15 @@ def run_checks(db_path):
     check("상위 탭 5개(오늘·주간·장기·고결감·설정)",
           labels == ["오늘", "주간", "장기", "고결감", "설정"], labels)
 
-    # 2. 설정 화면 구조(그룹 4개 + 세션시간 공통·월~일 8칸)
+    # 2. 설정 화면 구조(그룹 4개 · 시간·구조는 템플릿이 맨 위에 펴진 채로 선다)
     code, html = get("/settings")
-    tabs = re.findall(r'<button[^>]*class="set-bt-tab[ "]', html)
     check("설정 그룹 4개", html.count('class="set-group"') == 4, html.count('class="set-group"'))
-    check("세션시간 탭 8개(공통+월~일)", len(tabs) == 8, len(tabs))
-    check("세션시간 패널 8개", html.count('class="set-bt-panel"') == 8)
+    check("템플릿 카드가 기본으로 펴져 있다", 'id="set-tpl-card" open' in html)
+    struct = html[html.index('id="set-g-structure"'):]
+    check("템플릿이 시간·구조의 맨 위",
+          struct.index('id="set-tpl-card"') < struct.index('요일 컨셉'))
+    check("설정의 세션시간 카드는 없앴다(템플릿에서 고른다)",
+          'class="set-bt-tab' not in html and 'class="set-bt-panel"' not in html)
 
     # 3. CSRF Origin 검사
     code, out = post("/inbox/add", {"text": "테스트 수집"})

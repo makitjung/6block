@@ -186,14 +186,15 @@
              data-parent="{{ b.parent_id or '' }}" data-root="{{ b.root_id }}" hidden>
             <div class="gt-e-head">
                 <span class="gt-e-lv" data-level="{{ b.level }}" style="--gt-tone: var(--tone-{{ b.tone }}); --gt-hue: {{ b.hue }}deg">{{ b.level_label }}</span>
+                {# 하위 추가는 가장 자주 누르는 단추라 단계 표시 바로 옆에 세운다 #}
+                <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}" data-start="{{ b.start_date }}" data-end="{{ b.end_date }}">하위 추가</button>
                 <span class="gt-e-crumb">{{ b.area_name }}{% for t in b.path %} <span class="gt-e-sep">›</span> {{ t }}{% endfor %} <span class="gt-e-sep">›</span> <b>{{ b.title }}</b></span>
                 <span class="gt-e-move" role="group" aria-label="세로 순서">
                     <button type="button" class="ghost-btn gt-e-up" title="한 칸 위로 (같은 영역 안에서 계획 묶음째 올립니다)" aria-label="{{ b.title }} 한 칸 위로">↑</button>
                     <button type="button" class="ghost-btn gt-e-down" title="한 칸 아래로 (같은 영역 안에서 계획 묶음째 내립니다)" aria-label="{{ b.title }} 한 칸 아래로">↓</button>
                 </span>
                 <span class="gt-e-act">
-                    <button type="button" class="primary-btn gt-e-save">저장</button>
-                    <button type="button" class="ghost-btn gt-e-del" data-id="{{ b.id }}">삭제</button>
+                    <button type="button" class="ghost-btn danger gt-e-del" data-id="{{ b.id }}">삭제</button>
                     <button type="button" class="ghost-btn gt-e-close">닫기</button>
                 </span>
             </div>
@@ -225,7 +226,6 @@
                 <button type="button" class="hint" aria-label="숨김·가리기 설명" data-hint="숨김은 이 장기 탭에서만 막대를 접습니다. 위쪽 '숨긴 항목 보기'를 켜야 다시 나오고, 주간·오늘 탭에는 그대로 나옵니다. 가리기는 반대로 주간 탭과 오늘 탭에서만 빼고 장기 탭 막대는 그대로 둡니다. 둘 다 누른 막대 하나에만 걸리고 하위 계획은 따라오지 않습니다. 어느 쪽도 삭제가 아닙니다.">?</button>
                 <span class="gt-e-act">
                     {% if b.parent_id %}<button type="button" class="ghost-btn gt-e-detach">상위에서 떼기</button>{% endif %}
-                    <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}" data-start="{{ b.start_date }}" data-end="{{ b.end_date }}">하위 추가</button>
                 </span>
             </div>
         </div>

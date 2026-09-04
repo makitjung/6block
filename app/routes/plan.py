@@ -259,7 +259,10 @@ def _assign_lanes(bars: list[dict]) -> int:
         if seen_area is not None and fam[0]["area_order"] != seen_area:
             floor = max_lane + 1          # 예전에는 여기서 막대 전체를 다시 훑었다
         seen_area = fam[0]["area_order"]
-        members = sorted(fam, key=lambda x: (x["level"], x["vs"], x["ve"], x["id"]))
+        # 같은 상위 아래 형제는 손으로 정한 순서(srank)를 먼저 따른다. 정한 적이 없으면
+        # 예전처럼 일찍 시작한 것이 위에 선다.
+        members = sorted(fam,
+                         key=lambda x: (x["level"], x["srank"], x["vs"], x["ve"], x["id"]))
         if len(members) < 2:
             b = members[0]
             i = floor
@@ -291,36 +294,6 @@ def _assign_lanes(bars: list[dict]) -> int:
     used = max_lane + 1
     return max(used + 1, MIN_LANES)
 
-
-def _lt_apply_delta(conn, item_id: int, ds: int, de: int, now: str):
-    """상위 기간이 움직인 만큼 하위 사슬의 시작·종료도 같이 민다.
-
-    시작을 ds일, 종료를 de일 옮긴다. 한쪽만 움직였으면 반대쪽 날짜는 건드리지 않는다
-    (상위 시작만 미뤘는데 하위 종료일까지 따라 밀리면 적어 둔 마감이 말없이 바뀐다).
-    기간이 뒤집히는 경우에만 움직이는 쪽을 반대쪽 끝에 붙여 세운다. 즉 안 움직이기로 한
-    날짜는 어떤 경우에도 그대로 남는다.
-    """
-    if not ds and not de:
-        return
-    for kid in _lt_descendants(conn, item_id):
-        row = conn.execute(
-            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (kid,)
-        ).fetchone()
-        s, e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
-        if not s or not e:
-            continue
-        s2, e2 = s, e
-        if ds and de:       # 양쪽이 함께 움직였으면(통째 이동·기간 재입력) 둘 다 민다
-            s2 = s + timedelta(days=ds)
-            e2 = max(e + timedelta(days=de), s2)
-        elif ds:            # 시작만 움직였다. 종료는 그대로 두고 뒤집힐 때만 종료에 붙인다
-            s2 = min(s + timedelta(days=ds), e)
-        else:               # 종료만 움직였다. 시작은 그대로 두고 뒤집힐 때만 시작에 붙인다
-            e2 = max(e + timedelta(days=de), s)
-        conn.execute(
-            "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
-            (s2.isoformat(), e2.isoformat(), now, kid),
-        )
 
 # 막대 색 진하기는 기간 길이가 아니라 계층 단계로 정한다. 최상위가 가장 진하고 하위로 갈수록 연하다.
 # 3단계까지만 나눠 진하기 차이를 뚜렷하게 둔다(더 깊은 하위는 마지막 단계로 눌러 그린다).
@@ -454,6 +427,8 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
         row["hue"] = hue
         # 세로 순서는 뿌리 하나에 매기고 하위는 그 값을 그대로 물려받는다(묶음째 오르내린다).
         row["rank"] = rank
+        # 형제끼리의 순서는 제 sort_order 로 따로 매긴다(기간이 겹쳐 위아래로 나뉜 하위들).
+        row["srank"] = it["sort_order"] if it["sort_order"] is not None else NO_RANK
         # 상위 사슬(뿌리부터 바로 위까지)의 제목. 하위 막대가 어디서 내려왔는지 보여 준다.
         row["path"] = list(path)
         row["parent_title"] = path[-1] if path else ""
@@ -609,11 +584,7 @@ async def plan_item_update(request: Request):
         )
         # 적어 넣은 기간은 하위가 있어도 그대로 둔다. 예전에는 하위를 모두 품도록
         # 되돌려 놔서 상위 항목은 날짜를 고쳐도 안 바뀌는 것처럼 보였다.
-        # 대신 상위가 움직인 만큼 하위 사슬도 같이 민다.
-        old_s, old_e = _parse_date(row["start_date"]), _parse_date(row["end_date"])
-        new_s, new_e = _parse_date(s), _parse_date(e)
-        if old_s and old_e and new_s and new_e:
-            _lt_apply_delta(conn, item_id, (new_s - old_s).days, (new_e - old_e).days, now)
+        # 하위 기간은 상위를 따라 움직이지 않는다. 필요하면 하위를 직접 고친다.
         # 상위를 어느 블록에 놓으면 하위 사슬도 같은 블록으로 따라 옮긴다. 실제로 바뀔 때만
         # 내려보내므로, 그 뒤에 하위를 따로 다른 블록으로 빼 두면 그대로 남는다.
         if "block_label" in fields and fields["block_label"] != row["block_label"]:
@@ -633,7 +604,8 @@ async def plan_item_update(request: Request):
 async def plan_item_shift(request: Request):
     """계획 막대를 끈 만큼(일 단위) 좌우로 옮긴다. 기간 길이는 그대로다.
 
-    하위가 있으면 하위 사슬 전체를 같은 날수만큼 함께 민다(계획을 통째로 당기거나 미룬다).
+    하위가 있어도 하위 기간은 건드리지 않는다. 상위를 옮겼다고 하위 마감까지 말없이
+    밀리면, 적어 둔 날짜가 언제 바뀌었는지 알 수가 없다. 하위는 직접 옮긴다.
     """
     form = await request.form()
     try:
@@ -650,28 +622,25 @@ async def plan_item_shift(request: Request):
             "SELECT 1 FROM lt_item WHERE id = ?", (item_id,)
         ).fetchone():
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        ids = [item_id, *_lt_descendants(conn, item_id)]
-        ph = ",".join("?" * len(ids))
-        for r in conn.execute(
-            f"SELECT id, start_date, end_date FROM lt_item WHERE id IN ({ph})", ids
-        ).fetchall():
-            s, e = _parse_date(r["start_date"]), _parse_date(r["end_date"])
-            if not s or not e:
-                continue
+        r = conn.execute(
+            "SELECT start_date, end_date FROM lt_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        s, e = _parse_date(r["start_date"]), _parse_date(r["end_date"])
+        if s and e:
             conn.execute(
                 "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? "
                 "WHERE id = ?",
-                ((s + delta).isoformat(), (e + delta).isoformat(), now, r["id"]),
+                ((s + delta).isoformat(), (e + delta).isoformat(), now, item_id),
             )
         _lt_rollup(conn, item_id)
-    return JSONResponse({"ok": True, "moved": days, "with_children": len(ids) - 1})
+    return JSONResponse({"ok": True, "moved": days, "with_children": 0})
 
 
 @router.post("/plan/item/resize")
 async def plan_item_resize(request: Request):
     """막대의 한쪽 끝(edge=start|end)만 끈 만큼(일 단위) 늘리거나 줄인다.
 
-    하위가 있으면 움직인 그 끝에 맞춰 하위 사슬의 같은 쪽 끝도 함께 민다.
+    하위가 있어도 하위 기간은 그대로 둔다(상위만 늘고 준다).
     """
     form = await request.form()
     try:
@@ -704,9 +673,6 @@ async def plan_item_resize(request: Request):
             "UPDATE lt_item SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
             (s.isoformat(), e.isoformat(), now, item_id),
         )
-        _lt_apply_delta(conn, item_id,
-                        days if edge == "start" else 0,
-                        days if edge == "end" else 0, now)
         _lt_rollup(conn, item_id)
     return JSONResponse({"ok": True})
 
@@ -715,9 +681,11 @@ async def plan_item_resize(request: Request):
 async def plan_item_order(request: Request):
     """막대의 세로 순서를 바꾼다. 옮길 막대(id)를 기준 막대(peer) 위(before)나 아래(after)에 둔다.
 
-    순서는 뿌리(최상위) 묶음 단위이고 같은 영역 안에서만 매긴다. 상위 아래에 하위가 붙는
-    규칙과 영역끼리의 위아래(영역 관리 순서)는 그대로다. 한 번 손대면 그 영역의 뿌리 전부에
-    0,1,2… 를 다시 매겨, 정한 것과 안 정한 것이 섞여 순서가 흔들리지 않게 한다.
+    둘이 같은 상위 아래 형제면 그 상위의 하위들 사이에서만 순서를 바꾼다(기간이 겹쳐
+    위아래로 나뉘어 선 하위들을 손으로 세울 수 있게). 형제가 아니면 예전처럼 뿌리(최상위)
+    묶음째, 같은 영역 안에서만 매긴다. 상위 아래에 하위가 붙는 규칙과 영역끼리의
+    위아래(영역 관리 순서)는 그대로다. 한 번 손대면 그 무리 전부에 0,1,2… 를 다시 매겨,
+    정한 것과 안 정한 것이 섞여 순서가 흔들리지 않게 한다.
     """
     form = await request.form()
     try:
@@ -730,8 +698,25 @@ async def plan_item_order(request: Request):
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        # 같은 상위를 둔 형제끼리면 그 상위의 하위들 안에서만 순서를 바꾼다.
+        pars = {
+            r["id"]: r["parent_id"]
+            for r in conn.execute(
+                "SELECT id, parent_id FROM lt_item WHERE id IN (?, ?)",
+                (item_id, peer_id),
+            )
+        }
+        if len(pars) < 2:
+            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        mine = pars[item_id]
+        if mine is not None and mine == pars[peer_id]:
+            _reorder(conn, item_id, peer_id, place, now,
+                     "SELECT id, sort_order FROM lt_item WHERE parent_id = ? "
+                     "ORDER BY COALESCE(sort_order, ?), start_date, id",
+                     (mine, NO_RANK))
+            return JSONResponse({"ok": True, "changed": True})
         me, peer = _lt_root(conn, item_id), _lt_root(conn, peer_id)
-        if me == peer:      # 같은 묶음 안에서 끈 것. 묶음 안 순서는 계층이 정한다
+        if me == peer:      # 같은 묶음인데 형제도 아니다(상위와 하위). 계층이 순서를 정한다
             return JSONResponse({"ok": True, "changed": False})
         rows = {
             r["id"]: r["area_id"]
@@ -745,27 +730,28 @@ async def plan_item_order(request: Request):
             return JSONResponse(
                 {"ok": False, "error": "같은 영역 안에서만 순서를 바꿉니다"}, status_code=400
             )
-        cur = [
-            (r["id"], r["sort_order"])
-            for r in conn.execute(
-                "SELECT id, sort_order FROM lt_item WHERE area_id = ? AND parent_id IS NULL "
-                "ORDER BY COALESCE(sort_order, ?), start_date, id",
-                (rows[me], NO_RANK),
-            )
-        ]
-        ids = [i for i, _ in cur]
-        if me not in ids or peer not in ids:
-            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        ids.remove(me)
-        ids.insert(ids.index(peer) + (1 if place == "after" else 0), me)
-        was = dict(cur)
-        for n, rid in enumerate(ids):
-            if was[rid] != n:       # 실제로 자리가 바뀐 것만 적는다
-                conn.execute(
-                    "UPDATE lt_item SET sort_order = ?, updated_at = ? WHERE id = ?",
-                    (n, now, rid),
-                )
+        _reorder(conn, me, peer, place, now,
+                 "SELECT id, sort_order FROM lt_item WHERE area_id = ? AND parent_id IS NULL "
+                 "ORDER BY COALESCE(sort_order, ?), start_date, id",
+                 (rows[me], NO_RANK))
     return JSONResponse({"ok": True, "changed": True})
+
+
+def _reorder(conn, moved: int, peer: int, place: str, now: str, sql: str, args: tuple):
+    """한 무리(영역의 뿌리들 · 한 상위의 하위들)에 0,1,2… 를 다시 매겨 순서를 바꾼다."""
+    cur = [(r["id"], r["sort_order"]) for r in conn.execute(sql, args)]
+    ids = [i for i, _ in cur]
+    if moved not in ids or peer not in ids:
+        return
+    ids.remove(moved)
+    ids.insert(ids.index(peer) + (1 if place == "after" else 0), moved)
+    was = dict(cur)
+    for n, rid in enumerate(ids):
+        if was[rid] != n:       # 실제로 자리가 바뀐 것만 적는다
+            conn.execute(
+                "UPDATE lt_item SET sort_order = ?, updated_at = ? WHERE id = ?",
+                (n, now, rid),
+            )
 
 
 @router.post("/plan/item/reparent")

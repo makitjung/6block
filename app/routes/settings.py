@@ -588,8 +588,7 @@ async def settings_template_add(request: Request):
     kind = (form.get("kind") or "").strip().upper()
     if kind not in TPL_KIND_KEYS:
         return JSONResponse({"ok": False, "error": "bad-kind"}, status_code=400)
-    # 별도명칭은 주간(W)만 쓴다. 나머지 종류는 번호가 곧 이름이다.
-    name = (form.get("name") or "").strip() if kind == "W" else ""
+    name = (form.get("name") or "").strip()
     now = datetime.now(KST).isoformat(timespec="seconds")
     # 번호는 그 종류에서 지금까지 쓴 가장 큰 값 다음이다. 지금 있는 것들의 최댓값이
     # 아니라 따로 세어 두는 이유는, 가운데를 지웠을 때 그 번호가 다른 템플릿에
@@ -616,7 +615,11 @@ async def settings_template_add(request: Request):
 
 @router.post("/settings/template/rename")
 async def settings_template_rename(request: Request):
-    """주간(W) 템플릿의 별도명칭을 바꾼다. 비우면 번호만 남는다(W1)."""
+    """템플릿의 별도명칭을 바꾼다. 비우면 번호만 남는다(S1 · W1).
+
+    다섯 종류 모두 붙일 수 있다. S1 이 무엇이었는지 열어 보지 않고 알아야, 주간이
+    고르는 칸에서도 'S1(기본)' 처럼 읽힌다.
+    """
     form = await request.form()
     try:
         tid = int_id(form.get("id"))
@@ -629,8 +632,6 @@ async def settings_template_rename(request: Request):
             "SELECT kind, no FROM cat_template WHERE id = ?", (tid,)).fetchone()
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        if row["kind"] != "W":
-            return JSONResponse({"ok": False, "error": "name-w-only"}, status_code=400)
         conn.execute(
             "UPDATE cat_template SET name = ?, updated_at = ? WHERE id = ?",
             (name, now, tid),

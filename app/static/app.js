@@ -1430,8 +1430,8 @@
                 if (mine) n += 1;
             });
             if (empty) empty.hidden = n > 0;
-            // 별도명칭은 주간만 쓴다.
-            nameIn.hidden = kind !== 'W';
+            nameIn.hidden = false;
+            nameIn.placeholder = '별도명칭 (예: ' + tplNameSample(kind) + ') · 비워도 됩니다';
             addBtn.textContent = TPL_KIND_LABEL[kind] + ' 추가';
         };
 
@@ -1451,28 +1451,27 @@
             if (btn) showKind(btn.dataset.kind);
         });
 
+        // 추가한 뒤 화면을 다시 받으면 열어 둔 카드도 고른 종류도 처음으로 돌아가, 여러 개를
+        // 잇달아 만들 수가 없었다. 새 줄만 세우고 주간이 고르는 칸에 선택지를 더한다.
         addBtn.addEventListener('click', () => {
             const kind = curKind();
             postForm('/settings/template/add',
-                     { kind: kind, name: kind === 'W' ? (nameIn.value || '').trim() : '' })
+                     { kind: kind, name: (nameIn.value || '').trim() })
                 .then((d) => {
                     if (!d || !d.ok) { toast('추가 실패'); return; }
-                    location.reload();      // 새 줄과 주간의 고르는 칸을 함께 다시 그린다
+                    nameIn.value = '';
+                    addTplRow(d);
+                    toast(d.title + ' 추가');
                 });
         });
 
         // 줄을 누르면 그 편집기가 펴진다(처음 펼 때 그린다).
         card.addEventListener('click', (e) => {
             const open = e.target.closest('.set-tpl-open');
-            if (open) {
-                const tpl = open.closest('.set-tpl');
-                const body = tpl.querySelector('.set-tpl-body');
-                const show = body.hidden;
-                if (show) buildTplBody(body);
-                body.hidden = !show;
-                open.setAttribute('aria-expanded', show ? 'true' : 'false');
-                return;
-            }
+            if (open) { toggleTpl(open.closest('.set-tpl')); return; }
+            // 닫기: 펴 둔 줄을 접는다(삭제 옆에 나란히 선다)
+            const close = e.target.closest('.set-tpl-close');
+            if (close) { toggleTpl(close.closest('.set-tpl'), false); return; }
             // 칸 단위(B1p4) 격자 켜고 끄기. 처음 켤 때 그린다.
             const pm = e.target.closest('.set-tpl-pmode');
             if (!pm) return;
@@ -1490,7 +1489,8 @@
             pm.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
 
-        // 삭제. 주간이 고르고 있던 것이면 그 칸이 저절로 비므로 화면을 다시 받는다.
+        // 삭제. 주간이 고르고 있던 것이면 서버에서 그 칸이 저절로 빈다(ON DELETE SET NULL).
+        // 화면에서도 그 줄과 선택지만 걷어낸다 — 다시 받으면 하던 일이 끊긴다.
         card.addEventListener('click', (e) => {
             const del = e.target.closest('.set-tpl-del');
             if (!del) return;
@@ -1498,7 +1498,19 @@
             const title = tpl.querySelector('.set-tpl-no').textContent;
             if (!window.confirm(title + ' 을(를) 지웁니다. 이 템플릿을 고르고 있던 주간에서도 빠집니다.')) return;
             postForm('/settings/template/delete', { id: del.dataset.id })
-                .then((d) => { if (d && d.ok) location.reload(); else toast('삭제 실패'); });
+                .then((d) => {
+                    if (!d || !d.ok) { toast('삭제 실패'); return; }
+                    const hit = [...document.querySelectorAll(
+                        '.set-tpl-psel option[value="' + tpl.dataset.id + '"]')];
+                    hit.forEach((o) => {
+                        const sel = o.parentNode;
+                        o.remove();
+                        paintTplSum(sel.closest('.set-tpl'));
+                    });
+                    tpl.remove();
+                    showKind(curKind());       // 이 종류가 다 없어졌는지 다시 센다
+                    toast('삭제');
+                });
         });
 
         // 주간의 별도명칭과 고르는 칸
@@ -1507,7 +1519,11 @@
             if (name) {
                 postForm('/settings/template/rename',
                          { id: name.dataset.id, name: (name.value || '').trim() })
-                    .then((d) => { if (d && d.ok) autosaveToast(); else toast('저장 실패'); });
+                    .then((d) => {
+                        if (!d || !d.ok) { toast('저장 실패'); return; }
+                        renameTplEverywhere(name.closest('.set-tpl'), d.title);
+                        autosaveToast();
+                    });
                 return;
             }
             const psel = e.target.closest('.set-tpl-psel');
@@ -1617,6 +1633,160 @@
                     row.querySelector('.set-rt-do').focus();
                 });
         });
+    }
+
+    // 별도명칭 안내글에 쓸 보기. 주간만 성격이 달라 따로 든다.
+    function tplNameSample(kind) {
+        return kind === 'W' ? '집중주' : '기본';
+    }
+
+    // 템플릿 한 줄을 펴고 접는다(want 를 주면 그 상태로). 처음 펼 때 편집기를 그린다.
+    function toggleTpl(tpl, want) {
+        if (!tpl) return;
+        const body = tpl.querySelector('.set-tpl-body');
+        const btn = tpl.querySelector('.set-tpl-open');
+        const closeBtn = tpl.querySelector('.set-tpl-close');
+        const show = want === undefined ? body.hidden : !!want;
+        if (show) buildTplBody(body);
+        body.hidden = !show;
+        if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+        if (closeBtn) closeBtn.hidden = !show;      // 접혀 있을 때는 닫을 것이 없다
+    }
+
+    // 이름을 고치면 그 줄과, 주간이 고르는 칸의 글자까지 함께 바꾼다(다시 받지 않고).
+    function renameTplEverywhere(tpl, title) {
+        if (!tpl || !title) return;
+        const idx = Number(tpl.dataset.idx);
+        if (window.__tplTitles) window.__tplTitles[idx] = title;
+        document.querySelectorAll('.set-tpl-psel option[value="' + tpl.dataset.id + '"]')
+            .forEach((o) => { o.textContent = title; });
+    }
+
+    // 주간이 고르는 칸에 새 템플릿을 선택지로 더한다(주간 자신은 고르는 대상이 아니다).
+    function addTplPickOption(t) {
+        if (t.kind === 'W') return;
+        document.querySelectorAll('.set-tpl-psel[data-part="' + t.kind.toLowerCase() + '"]')
+            .forEach((sel) => sel.appendChild(new Option(t.title, t.id)));
+    }
+
+    // 새로 만든 템플릿 줄을 세운다. 값 자리(window.__tpl*)도 같은 자리에 함께 늘린다 —
+    // 편집기와 한 줄 요약이 모두 data-idx 로 그 배열들을 본다.
+    function addTplRow(t) {
+        const list = document.getElementById('set-tpl-list');
+        if (!list) return;
+        const idx = (window.__tplKind || []).length;
+        (window.__tplAll || []).push(t.id);
+        window.__tplKind.push(t.kind);
+        (window.__tplTitles || []).push(t.title);
+        window.__tplCells.push({});
+        window.__tplSlots.push({});
+        window.__tplRules.push([]);
+        window.__tplNames.push({});
+        window.__tplTimesCommon.push(null);
+        window.__tplTimesWd.push({});
+        const row = tplRowEl(t, idx);
+        list.appendChild(row);
+        addTplPickOption(t);
+        paintTplSum(row);
+        document.querySelector('.set-tpl-kind[data-kind="' + t.kind + '"]')?.click();
+        row.hidden = false;
+        row.querySelector('.set-tpl-name')?.focus();
+    }
+
+    // 템플릿 한 줄의 뼈대. 서버가 그리는 것과 같은 모양이라야 결선(위임)이 그대로 문다.
+    function tplRowEl(t, idx) {
+        const hints = window.__tplHints || {};
+        const cols = (window.__tplWeekdays || []).length;
+        const row = el('div', 'set-tpl');
+        row.dataset.id = t.id;
+        row.dataset.idx = idx;
+        row.dataset.kind = t.kind;
+        row.hidden = true;
+
+        const head = el('div', 'set-tpl-head');
+        const open = el('button', 'set-tpl-open');
+        open.type = 'button';
+        open.setAttribute('aria-expanded', 'false');
+        open.append(el('span', 'set-tpl-no mono', t.kind + t.no), el('span', 'set-tpl-sum'));
+        const name = el('input', 'set-tpl-name');
+        name.type = 'text';
+        name.dataset.id = t.id;
+        name.value = '';
+        name.autocomplete = 'off';
+        name.placeholder = '별도명칭 (예: ' + tplNameSample(t.kind) + ')';
+        name.setAttribute('aria-label', t.kind + t.no + ' 별도명칭');
+        const del = el('button', 'set-mini-btn danger set-tpl-del', '삭제');
+        del.type = 'button';
+        del.dataset.id = t.id;
+        del.title = '이 템플릿을 지웁니다';
+        const close = el('button', 'set-mini-btn set-tpl-close', '닫기');
+        close.type = 'button';
+        close.title = '이 템플릿 접기';
+        close.hidden = true;
+        head.append(open, name, del, close);
+
+        const body = el('div', 'set-tpl-body');
+        body.dataset.kind = t.kind;
+        body.dataset.tpl = t.id;
+        body.dataset.idx = idx;
+        body.hidden = true;
+        if (t.kind === 'C') {
+            const ph = el('div', 'set-tpl-pane-head');
+            const hint = el('button', 'hint', '?');
+            hint.type = 'button';
+            hint.dataset.hint = hints.C || '';
+            hint.setAttribute('aria-label', '설명');
+            const pmode = el('button', 'set-mini-btn set-tpl-pmode', '칸 단위');
+            pmode.type = 'button';
+            pmode.dataset.tpl = t.id;
+            pmode.setAttribute('aria-pressed', 'false');
+            ph.append(hint, pmode);
+            const grid = el('div', 'set-tpl-grid');
+            const pgrid = el('div', 'set-tpl-pgrid');
+            [grid, pgrid].forEach((g) => {
+                g.dataset.tpl = t.id;
+                g.dataset.idx = idx;
+                g.style.setProperty('--cols', cols);
+            });
+            pgrid.hidden = true;
+            body.append(ph, grid, pgrid);
+        } else if (t.kind === 'T') {
+            const box = el('div', 'set-rt');
+            box.dataset.tpl = t.id;
+            box.dataset.idx = idx;
+            const rh = el('div', 'set-rt-head');
+            const hint = el('button', 'hint', '?');
+            hint.type = 'button';
+            hint.dataset.hint = hints.T || '';
+            hint.setAttribute('aria-label', '설명');
+            const add = el('button', 'set-mini-btn set-rt-add', '규칙 추가');
+            add.type = 'button';
+            add.dataset.tpl = t.id;
+            rh.append(el('span', 'set-rt-title', '고정 할일'), hint, add);
+            box.append(rh, el('div', 'set-rt-list'));
+            body.appendChild(box);
+        } else if (t.kind === 'W') {
+            const pick = el('div', 'set-tpl-pick');
+            pick.dataset.tpl = t.id;
+            ['S', 'T', 'N', 'C'].forEach((k) => {
+                const label = el('label', 'set-tpl-prow');
+                label.appendChild(el('span', 'set-bt-label', TPL_KIND_LABEL[k]));
+                const sel = el('select', 'set-tpl-psel');
+                sel.dataset.part = k.toLowerCase();
+                sel.setAttribute('aria-label', TPL_KIND_LABEL[k] + ' 템플릿 고르기');
+                sel.appendChild(new Option('안 씀', ''));
+                (window.__tplKind || []).forEach((kind, i) => {
+                    if (kind !== k) return;
+                    sel.appendChild(new Option((window.__tplTitles || [])[i] || (kind + i),
+                                               (window.__tplAll || [])[i]));
+                });
+                label.appendChild(sel);
+                pick.appendChild(label);
+            });
+            body.append(pick, el('p', 'set-events-hint', hints.W || ''));
+        }
+        row.append(head, body);
+        return row;
     }
 
     // 고정 할일 규칙 한 줄(요일 칩 7개 · 시작시각 · 칸 수 · 할 일 · 구분 · 삭제)을 만든다.
@@ -1776,9 +1946,9 @@
             (hhmmToMin(rows[i].end) - hhmmToMin(rows[i].start)) / 30));
     }
 
-    // 세션시간(S) 편집기. 설정 위쪽의 것과 같은 모양(공통 1벌 + 요일별 덮어쓰기)이지만
-    // 저장은 이 템플릿 안으로만 간다. 클래스 이름을 set-tt-* 로 따로 두는 이유는,
-    // bindBlockTimes 가 .set-bt-panel 을 문서 전체에서 찾아 물기 때문이다.
+    // 세션시간(S) 편집기. 공통 1벌 + 요일별 덮어쓰기 모양이고, 저장은 이 템플릿 안으로만
+    // 간다. 탭·패널 클래스는 set-tt-* 로 따로 둔다(설정에 있던 같은 모양의 편집기가
+    // .set-bt-panel 을 문서 전체에서 찾아 물어, 공통 시간이 템플릿 값으로 덮이곤 했다).
     function buildTplTimes(pane) {
         const idx = Number(pane.dataset.idx);
         const tid = pane.dataset.tpl;
@@ -2113,29 +2283,6 @@
             });
         }
 
-        // 구분 템플릿: 추가·이름변경·삭제·셀(평일/주말×블록) 저장
-        document.getElementById('set-tpl-add-btn')?.addEventListener('click', () => {
-            const inp = document.getElementById('set-tpl-new-name');
-            const name = (inp.value || '').trim();
-            if (!name) { toast('이름을 입력하세요'); return; }
-            postForm('/settings/template/add', { name: name })
-                .then((d) => { if (d && d.ok) location.reload(); else toast('추가 실패'); });
-        });
-        document.querySelectorAll('.set-tpl-name').forEach((inp) => {
-            inp.addEventListener('change', () => {
-                const v = (inp.value || '').trim();
-                if (!v) return;
-                postForm('/settings/template/rename', { id: inp.dataset.id, name: v })
-                    .then(() => toast('이름 저장'));
-            });
-        });
-        document.querySelectorAll('.set-tpl-del').forEach((b) => {
-            b.addEventListener('click', () => {
-                if (!confirm('이 템플릿을 삭제할까요?')) return;
-                postForm('/settings/template/delete', { id: b.dataset.id })
-                    .then((d) => { if (d && d.ok) location.reload(); });
-            });
-        });
         buildTemplateGrids();
         bindStatusPanel();
 
@@ -2295,75 +2442,6 @@
             postForm('/settings/purge', { start: s, end: en }).then((d) => {
                 if (d && d.ok) { toast('삭제 완료'); location.reload(); }
                 else toast('삭제 실패');
-            });
-        });
-    }
-
-    // ---- 설정: 세션(블록) 시간 편집 (공통 + 요일 탭, 8칸 묶음 검증 → 변경 즉시 자동저장) ----
-    function bindBlockTimes() {
-        const tabs = document.getElementById('set-bt-tabs');
-        if (!tabs) return;
-        const panels = document.querySelectorAll('.set-bt-panel');
-
-        // 탭 전환: 공통 / 월~일 중 한 범위만 보여준다(값은 서버가 이미 전부 그려 두었다).
-        tabs.querySelectorAll('.set-bt-tab').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                tabs.querySelectorAll('.set-bt-tab').forEach((b) =>
-                    b.classList.toggle('is-active', b === btn));
-                panels.forEach((p) => { p.hidden = p.dataset.scope !== btn.dataset.scope; });
-            });
-        });
-
-        panels.forEach((panel) => {
-            const scope = panel.dataset.scope;
-            const box = panel.querySelector('.set-blocktimes');
-            const msg = panel.querySelector('.set-bt-msg');
-            const collect = () => {
-                const data = { scope: scope };
-                box.querySelectorAll('.set-bt-row').forEach((row) => {
-                    const o = row.dataset.order;
-                    data['start_' + o] = row.querySelector('.set-bt-start').value;
-                    data['end_' + o] = row.querySelector('.set-bt-end').value;
-                });
-                return data;
-            };
-            const save = () => {
-                if (msg) { msg.textContent = ''; msg.classList.remove('bad'); }
-                fetch('/settings/blocktimes', {
-                    method: 'POST', headers: FORM_HEADERS,
-                    body: new URLSearchParams(collect()).toString(),
-                })
-                    .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-                    .then(({ ok, d }) => {
-                        if (ok && d.ok) {
-                            autosaveToast();
-                            // 요일을 고치면 그 요일은 이제 공통과 무관하게 따로 관리된다.
-                            if (scope) {
-                                const badge = panel.querySelector('.set-bt-badge');
-                                if (badge) {
-                                    badge.classList.add('on');
-                                    badge.textContent = badge.textContent.split(' ')[0] + ' 따로 지정됨';
-                                }
-                                tabs.querySelector('.set-bt-tab[data-scope="' + scope + '"]')
-                                    ?.classList.add('is-over');
-                            }
-                        } else if (msg) {
-                            msg.textContent = (d && d.error) || '저장 실패';
-                            msg.classList.add('bad');
-                        }
-                    })
-                    .catch(() => {
-                        if (msg) { msg.textContent = '연결이 필요합니다'; msg.classList.add('bad'); }
-                    });
-            };
-            box.querySelectorAll('.set-bt-start, .set-bt-end').forEach((inp) =>
-                inp.addEventListener('change', save));
-            panel.querySelector('.set-bt-reset')?.addEventListener('click', () => {
-                const q = scope ? '이 요일의 시간을 지우고 공통을 따르게 합니다.'
-                                : '공통 블록 시간을 기본값으로 되돌립니다.';
-                if (!window.confirm(q)) return;
-                postForm('/settings/blocktimes/reset', { scope: scope })
-                    .then((d) => { if (d && d.ok) location.reload(); });
             });
         });
     }
@@ -2767,7 +2845,7 @@
         function bindEditBox(box) {
             const id = box.dataset.id;
             // ---- 자동저장: 칸에서 손을 떼면 그 칸 하나가 바로 저장된다 -------
-            // 저장 버튼은 그대로 두어 '저장하고 닫기'로 남는다.
+            // 따로 저장 단추는 두지 않는다(누를 것이 없어야 적다 만 채로 닫히지 않는다).
             const title = box.querySelector('.gt-e-title');
             if (title) {
                 let timer = null;
@@ -2782,6 +2860,19 @@
                         b.dataset.title = v;
                         const t = b.querySelector('.gt-bartext');
                         if (t) t.textContent = v;
+                    });
+                    // 머리줄 경로(영역 › 상위 › 제목)의 제목도 함께 고친다. 예전에는 막대
+                    // 글자만 바뀌고 바로 위 제목은 옛 이름 그대로라 뭘 고쳤는지 헷갈렸다.
+                    const crumb = box.querySelector('.gt-e-crumb b');
+                    if (crumb) crumb.textContent = v;
+                    // 이 항목을 상위로 둔 하위들의 경로도 같은 이름을 쓴다
+                    box.closest('.gantt')?.querySelectorAll(
+                        '.gt-edit[data-parent="' + id + '"] .gt-e-crumb').forEach((c) => {
+                        const b = c.querySelector('b');
+                        c.childNodes.forEach((n) => {
+                            if (n.nodeType === 3 && n.textContent.trim() === last0) n.textContent = ' ' + v + ' ';
+                        });
+                        if (b && b.textContent === last0) b.textContent = v;
                     });
                     saveItemField(id, { title: v });
                 };
@@ -2829,27 +2920,6 @@
                 saveItemField(id, { masked: e.target.checked ? '1' : '0' }, true);
             });
 
-            box.querySelector('.gt-e-save')?.addEventListener('click', () => {
-                const data = { id: id, title: (box.querySelector('.gt-e-title').value || '').trim() };
-                const s = box.querySelector('.gt-e-start');
-                const e = box.querySelector('.gt-e-end');
-                const p = box.querySelector('.gt-e-progress');
-                data.start = s.value;
-                data.end = e.value;
-                // 블록은 여러 개 고를 수 있다(여러 블록에서 동시 진행). 하나도 없으면 미지정.
-                data.block = [...box.querySelectorAll('.gt-e-blocks input:checked')]
-                    .map((c) => c.value).join(',');
-                data.hidden = box.querySelector('.gt-e-hidden').checked ? '1' : '0';
-                // 가리기는 주간·오늘에서만 뺀다(간트에는 그대로 남는다).
-                data.masked = box.querySelector('.gt-e-masked').checked ? '1' : '0';
-                if (!p.disabled) data.progress = p.value;   // 하위가 있으면 진척률은 하위 평균
-                box.hidden = true;          // 누르는 즉시 닫아 준다(새로 그리기 전에)
-                dirtyRedraw = null;         // 이 저장이 어차피 다시 그린다
-                postForm('/plan/item/update', data).then((d) => {
-                    if (!d || !d.ok) { box.hidden = false; toast((d && d.error) || '저장 실패'); return; }
-                    refreshGantt(id);
-                });
-            });
             // 영역(막대 색)을 바꾼다. 하위 항목이면 상위에서 빠져 그 영역의 최상위가 된다.
             box.querySelector('.gt-e-area')?.addEventListener('change', (ev) => {
                 postForm('/plan/item/reparent', { id: id, area_id: ev.target.value })
@@ -4781,7 +4851,6 @@
         bindBlockTools();
         bindSettingsTabs();
         bindSettings();
-        bindBlockTimes();
         // 분석 탭: AI 제안은 버튼을 누를 때만 호출한다(화면 로드마다 부르지 않는다).
         const aiBtn = document.getElementById('ai-insight-btn');
         aiBtn?.addEventListener('click', () => {

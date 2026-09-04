@@ -1077,6 +1077,10 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: var(--text-muted); font-size: 13px; line-height: 1; padding: 0;
 }
 .set-mini-btn:hover { background: var(--surface-3); color: var(--text); }
+/* 글자를 담는 작은 단추(삭제·닫기). 아이콘 한 글자짜리와 달리 폭을 글자에 맞춘다.
+   빨강은 삭제에만 쓴다 — 나란히 선 닫기는 색을 안 쓴다. */
+.set-mini-btn.danger { color: var(--danger); border-color: var(--danger); }
+.set-mini-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .set-cat-del:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .set-cat-add { display: flex; gap: 8px; align-items: center; }
 .set-cat-add input { flex: 1; }
@@ -1594,6 +1598,8 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .set-template-card { grid-column: 1 / -1; }
 .set-tpl { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface-2); }
 .set-tpl-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* 삭제·닫기는 형제라 같은 크기로 세운다(글자가 들어가 26px 정사각이 아니다) */
+.set-tpl-head .set-mini-btn { width: auto; min-width: 52px; padding: 0 10px; font-size: 12px; }
 .set-tpl-name { flex: 1; font-weight: 600; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 .set-tpl-grid { display: grid; grid-template-columns: auto repeat(var(--cols), minmax(60px, 1fr)); gap: 6px; align-items: center; overflow-x: auto; }
 .set-tpl-blabel { font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: center; }

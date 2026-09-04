@@ -2,6 +2,7 @@
 {% set active = 'settings' %}
 {% block title %}설정 | 6block{% endblock %}
 {% block content %}
+{%- set tpl_hints = {'C': "블록 단위로 정한 구분은 그 블록의 빈 칸이 그대로 물려받습니다. '칸 단위'를 켜면 B1p4(1블록의 네 번째 30분 칸)처럼 칸마다 따로 정할 수 있고, 정한 칸만 블록 구분 위에 덮어씁니다. 칸을 비워 두면 블록 구분을 그대로 씁니다. 칸 수는 함께 고른 세션시간 템플릿이 아니라 지금 설정의 시간표를 따릅니다.", 'T': "이 템플릿을 고를 때 30분 칸에 자동으로 들어갈 일과입니다. 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라 월화수목금 07:30 두 칸이면 열 칸이 채워집니다. 비어 있는 칸과 지난번 고정 할일이 들어간 칸만 채우고 직접 쓰신 글은 건드리지 않습니다. 자동으로 들어간 칸은 달성률·구체화율 통계에서 빠지고, 그 칸을 직접 고치면 그때부터 계획으로 잡힙니다.", 'W': "고른 것만 적용됩니다. 안 쓴 부분은 주간 탭에서 이 템플릿을 골라도 건드리지 않습니다."} -%}
 <section class="hero">
     <div class="hero-date">
         <div class="hero-date-main">설정</div>
@@ -161,39 +162,96 @@
 <section class="set-group" id="set-g-structure" hidden>
     <h2 class="set-group-title">시간 · 구조 <span class="set-group-sub">하루를 나누는 방식과 구분 체계</span></h2>
 
-    <section class="card">
-        <h2 class="card-title">세션(블록) 시간 <span class="card-sub">공통을 정하고 요일별로만 다르게 덮어씁니다 · 시작은 5분 단위 · 블록 길이는 30분 배수(세션 30분 유지) · 기록 없는 날부터 자동 적용</span></h2>
-        <div class="set-bt-tabs" id="set-bt-tabs">
-            {% for sc in block_scopes %}
-            <button type="button" class="set-bt-tab{% if loop.first %} is-active{% endif %}{% if sc.overridden %} is-over{% endif %}" data-scope="{{ sc.key }}">{{ sc.label }}</button>
+    {# 템플릿 다섯 종류(S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간).
+       위 탭으로 종류를 고르면 그 종류의 목록만 아래에 선다. 목록의 줄을 누르면 그
+       편집기가 펴진다. 구분 격자만도 42칸이고 칸마다 구분 목록이 통째로 들어가므로,
+       서버는 뼈대와 값만 JSON 으로 보내고 격자는 펼 때 app.js 가 그린다. #}
+    <details class="card set-template-card" id="set-tpl-card" open>
+        <summary class="card-title">템플릿 <span class="card-sub">세션시간 S · 고정할일 T · 블록이름 N · 구분 C 를 만들어 두고, 주간 W 가 그중 골라 묶습니다 · 주간 탭에서 W 를 고르면 그 주에, 날짜의 ⋯ 로는 그 날 하루에만 적용합니다</span></summary>
+        <script>
+            window.__tplAll = {{ cat_templates | map(attribute='id') | list | tojson }};
+            window.__tplKind = {{ cat_templates | map(attribute='kind') | list | tojson }};
+            window.__tplCells = {{ cat_templates | map(attribute='cells') | list | tojson }};
+            window.__tplSlots = {{ cat_templates | map(attribute='slots') | list | tojson }};
+            window.__tplRules = {{ cat_templates | map(attribute='rules') | list | tojson }};
+            window.__tplNames = {{ cat_templates | map(attribute='names') | list | tojson }};
+            window.__tplTimesCommon = {{ cat_templates | map(attribute='times_common') | list | tojson }};
+            window.__tplTimesWd = {{ cat_templates | map(attribute='times_wd') | list | tojson }};
+            window.__tplTitles = {{ cat_templates | map(attribute='title') | list | tojson }};
+            {# 새 템플릿 줄을 app.js 가 세울 때 쓸 설명글·종류 이름 #}
+            window.__tplHints = {{ tpl_hints | tojson }};
+            window.__tplCats = {{ active_categories | tojson }};
+            window.__tplBlocks = {{ core_labels | tojson }};
+            window.__tplWeekdays = {{ weekdays | tojson }};
+            window.__tplTimes = {{ routine_times | tojson }};
+            {# 세션시간 편집기가 쓸 뼈대. 8블록의 이름·코어여부와, 지금 설정의 요일별 시간. #}
+            window.__btBlocks = {{ block_defs | tojson }};
+            window.__btScopes = {{ base_scopes | tojson }};
+        </script>
+
+        <div class="set-tpl-kinds" id="set-tpl-kinds" role="group" aria-label="템플릿 종류">
+            {% for key, label in tpl_kinds %}
+            <button type="button" class="set-tpl-kind{% if loop.last %} is-active{% endif %}" data-kind="{{ key }}">{{ label }} <span class="mono">{{ key }}</span></button>
             {% endfor %}
         </div>
-        {% for sc in block_scopes %}
-        <div class="set-bt-panel" data-scope="{{ sc.key }}" {% if not loop.first %}hidden{% endif %}>
-            <div class="set-bt-state">
-                {% if sc.key %}
-                <span class="set-bt-badge {% if sc.overridden %}on{% endif %}">{% if sc.overridden %}{{ sc.label }}요일 따로 지정됨{% else %}공통을 따르는 중 · 값을 고치면 이 요일만 바뀝니다{% endif %}</span>
-                {% else %}
-                <span class="set-bt-badge on">모든 요일의 기본값</span>
-                {% endif %}
-            </div>
-            <div class="set-blocktimes" data-scope="{{ sc.key }}">
-                {% for b in sc.rows %}
-                <div class="set-bt-row" data-order="{{ b.order }}">
-                    <span class="set-bt-label{% if b.is_core %} core{% endif %}">{{ b.label }}</span>
-                    <input type="time" class="set-bt-start" data-order="{{ b.order }}" value="{{ b.start }}" step="300" aria-label="{{ b.label }} 시작">
-                    <span class="set-bt-dash">–</span>
-                    <input type="time" class="set-bt-end" data-order="{{ b.order }}" value="{{ b.end }}" step="300" aria-label="{{ b.label }} 끝">
+
+        <div id="set-tpl-list">
+            {% for t in cat_templates %}
+            <div class="set-tpl" data-id="{{ t.id }}" data-idx="{{ loop.index0 }}" data-kind="{{ t.kind }}"{% if t.kind != 'W' %} hidden{% endif %}>
+                <div class="set-tpl-head">
+                    <button type="button" class="set-tpl-open" aria-expanded="false">
+                        <span class="set-tpl-no mono">{{ t.kind }}{{ t.no }}</span>
+                        <span class="set-tpl-sum"></span>
+                    </button>
+                    {# 별도명칭은 다섯 종류 모두 붙인다. S1 이 무엇이었는지 열어 보지 않고 알 수 있게. #}
+                    <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" placeholder="별도명칭 (예: {{ '집중주' if t.kind == 'W' else '기본' }})" autocomplete="off" aria-label="{{ t.kind }}{{ t.no }} 별도명칭">
+                    <button type="button" class="set-mini-btn danger set-tpl-del" data-id="{{ t.id }}" title="이 템플릿을 지웁니다">삭제</button>
+                    <button type="button" class="set-mini-btn set-tpl-close" title="이 템플릿 접기" hidden>닫기</button>
                 </div>
-                {% endfor %}
+                <div class="set-tpl-body" data-kind="{{ t.kind }}" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" hidden>
+                    {% if t.kind == 'C' %}
+                    <div class="set-tpl-pane-head">
+                        <button type="button" class="hint" data-hint="{{ tpl_hints.C }}" aria-label="설명">?</button>
+                        <button type="button" class="set-mini-btn set-tpl-pmode" data-tpl="{{ t.id }}" aria-pressed="false">칸 단위</button>
+                    </div>
+                    <div class="set-tpl-grid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}"></div>
+                    <div class="set-tpl-pgrid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}" hidden></div>
+                    {% elif t.kind == 'T' %}
+                    <div class="set-rt" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}">
+                        <div class="set-rt-head">
+                            <span class="set-rt-title">고정 할일</span>
+                            <button type="button" class="hint" data-hint="{{ tpl_hints.T }}" aria-label="설명">?</button>
+                            <button type="button" class="set-mini-btn set-rt-add" data-tpl="{{ t.id }}">규칙 추가</button>
+                        </div>
+                        <div class="set-rt-list"></div>
+                    </div>
+                    {% elif t.kind == 'W' %}
+                    <div class="set-tpl-pick" data-tpl="{{ t.id }}">
+                        {% for key, label in tpl_kinds %}{% if key != 'W' %}
+                        <label class="set-tpl-prow">
+                            <span class="set-bt-label">{{ label }}</span>
+                            <select class="set-tpl-psel" data-part="{{ key | lower }}" aria-label="{{ label }} 템플릿 고르기">
+                                <option value="">안 씀</option>
+                                {% for o in cat_templates %}{% if o.kind == key %}
+                                <option value="{{ o.id }}" {% if t[(key | lower) ~ '_id'] == o.id %}selected{% endif %}>{{ o.title }}</option>
+                                {% endif %}{% endfor %}
+                            </select>
+                        </label>
+                        {% endif %}{% endfor %}
+                    </div>
+                    <p class="set-events-hint">{{ tpl_hints.W }}</p>
+                    {% endif %}
+                    {# S(세션시간)와 N(블록이름) 편집기는 app.js 가 이 자리에 그린다 #}
+                </div>
             </div>
-            <div class="set-bt-actions">
-                <span class="set-bt-msg"></span>
-                <button type="button" class="ghost-btn set-bt-reset" data-scope="{{ sc.key }}">{% if sc.key %}공통으로 되돌리기{% else %}기본값으로{% endif %}</button>
-            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
-    </section>
+        <div class="ctx-empty" id="set-tpl-empty" hidden>이 종류의 템플릿이 아직 없습니다. 아래에서 추가하세요.</div>
+        <div class="set-cat-add">
+            <input type="text" id="set-tpl-new-name" placeholder="별도명칭 (예: 기본) · 비워도 됩니다" autocomplete="off">
+            <button type="button" class="primary-btn" id="set-tpl-add-btn">추가</button>
+        </div>
+    </details>
 
     <section class="card">
         <h2 class="card-title">요일 컨셉 <span class="card-sub">요일마다 하나씩 · 오늘 탭 날짜 옆 괄호에 표시됩니다</span></h2>
@@ -242,93 +300,6 @@
             </div>
     </section>
 
-    {# 템플릿 다섯 종류(S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간).
-       위 탭으로 종류를 고르면 그 종류의 목록만 아래에 선다. 목록의 줄을 누르면 그
-       편집기가 펴진다. 구분 격자만도 42칸이고 칸마다 구분 목록이 통째로 들어가므로,
-       서버는 뼈대와 값만 JSON 으로 보내고 격자는 펼 때 app.js 가 그린다. #}
-    <details class="card set-template-card" id="set-tpl-card">
-        <summary class="card-title">템플릿 <span class="card-sub">세션시간 S · 고정할일 T · 블록이름 N · 구분 C 를 만들어 두고, 주간 W 가 그중 골라 묶습니다 · 주간 탭에서 W 를 고르면 그 주에, 날짜의 ⋯ 로는 그 날 하루에만 적용합니다</span></summary>
-        <script>
-            window.__tplAll = {{ cat_templates | map(attribute='id') | list | tojson }};
-            window.__tplKind = {{ cat_templates | map(attribute='kind') | list | tojson }};
-            window.__tplCells = {{ cat_templates | map(attribute='cells') | list | tojson }};
-            window.__tplSlots = {{ cat_templates | map(attribute='slots') | list | tojson }};
-            window.__tplRules = {{ cat_templates | map(attribute='rules') | list | tojson }};
-            window.__tplNames = {{ cat_templates | map(attribute='names') | list | tojson }};
-            window.__tplTimesCommon = {{ cat_templates | map(attribute='times_common') | list | tojson }};
-            window.__tplTimesWd = {{ cat_templates | map(attribute='times_wd') | list | tojson }};
-            window.__tplCats = {{ active_categories | tojson }};
-            window.__tplBlocks = {{ core_labels | tojson }};
-            window.__tplWeekdays = {{ weekdays | tojson }};
-            window.__tplTimes = {{ routine_times | tojson }};
-            {# 세션시간 편집기가 쓸 뼈대. 8블록의 이름·코어여부와, 지금 설정의 요일별 시간. #}
-            window.__btBlocks = {{ block_defs | tojson }};
-            window.__btScopes = {{ base_scopes | tojson }};
-        </script>
-
-        <div class="set-tpl-kinds" id="set-tpl-kinds" role="group" aria-label="템플릿 종류">
-            {% for key, label in tpl_kinds %}
-            <button type="button" class="set-tpl-kind{% if loop.last %} is-active{% endif %}" data-kind="{{ key }}">{{ label }} <span class="mono">{{ key }}</span></button>
-            {% endfor %}
-        </div>
-
-        <div id="set-tpl-list">
-            {% for t in cat_templates %}
-            <div class="set-tpl" data-id="{{ t.id }}" data-idx="{{ loop.index0 }}" data-kind="{{ t.kind }}"{% if t.kind != 'W' %} hidden{% endif %}>
-                <div class="set-tpl-head">
-                    <button type="button" class="set-tpl-open" aria-expanded="false">
-                        <span class="set-tpl-no mono">{{ t.kind }}{{ t.no }}</span>
-                        <span class="set-tpl-sum"></span>
-                    </button>
-                    {% if t.kind == 'W' %}
-                    <input type="text" class="set-tpl-name" data-id="{{ t.id }}" value="{{ t.name }}" placeholder="별도명칭 (예: 집중주)" autocomplete="off" aria-label="{{ t.kind }}{{ t.no }} 별도명칭">
-                    {% endif %}
-                    <button type="button" class="set-mini-btn set-tpl-del" data-id="{{ t.id }}" title="삭제">✕</button>
-                </div>
-                <div class="set-tpl-body" data-kind="{{ t.kind }}" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" hidden>
-                    {% if t.kind == 'C' %}
-                    <div class="set-tpl-pane-head">
-                        <button type="button" class="hint" data-hint="블록 단위로 정한 구분은 그 블록의 빈 칸이 그대로 물려받습니다. '칸 단위'를 켜면 B1p4(1블록의 네 번째 30분 칸)처럼 칸마다 따로 정할 수 있고, 정한 칸만 블록 구분 위에 덮어씁니다. 칸을 비워 두면 블록 구분을 그대로 씁니다. 칸 수는 함께 고른 세션시간 템플릿이 아니라 지금 설정의 시간표를 따릅니다." aria-label="설명">?</button>
-                        <button type="button" class="set-mini-btn set-tpl-pmode" data-tpl="{{ t.id }}" aria-pressed="false">칸 단위</button>
-                    </div>
-                    <div class="set-tpl-grid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}"></div>
-                    <div class="set-tpl-pgrid" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}" style="--cols: {{ weekdays | length }}" hidden></div>
-                    {% elif t.kind == 'T' %}
-                    <div class="set-rt" data-tpl="{{ t.id }}" data-idx="{{ loop.index0 }}">
-                        <div class="set-rt-head">
-                            <span class="set-rt-title">고정 할일</span>
-                            <button type="button" class="hint" data-hint="이 템플릿을 고를 때 30분 칸에 자동으로 들어갈 일과입니다. 한 줄이 '요일 여러 개 × 시작시각 × 칸 수'라 월화수목금 07:30 두 칸이면 열 칸이 채워집니다. 비어 있는 칸과 지난번 고정 할일이 들어간 칸만 채우고 직접 쓰신 글은 건드리지 않습니다. 자동으로 들어간 칸은 달성률·구체화율 통계에서 빠지고, 그 칸을 직접 고치면 그때부터 계획으로 잡힙니다." aria-label="설명">?</button>
-                            <button type="button" class="set-mini-btn set-rt-add" data-tpl="{{ t.id }}">규칙 추가</button>
-                        </div>
-                        <div class="set-rt-list"></div>
-                    </div>
-                    {% elif t.kind == 'W' %}
-                    <div class="set-tpl-pick" data-tpl="{{ t.id }}">
-                        {% for key, label in tpl_kinds %}{% if key != 'W' %}
-                        <label class="set-tpl-prow">
-                            <span class="set-bt-label">{{ label }}</span>
-                            <select class="set-tpl-psel" data-part="{{ key | lower }}" aria-label="{{ label }} 템플릿 고르기">
-                                <option value="">안 씀</option>
-                                {% for o in cat_templates %}{% if o.kind == key %}
-                                <option value="{{ o.id }}" {% if t[(key | lower) ~ '_id'] == o.id %}selected{% endif %}>{{ o.title }}</option>
-                                {% endif %}{% endfor %}
-                            </select>
-                        </label>
-                        {% endif %}{% endfor %}
-                    </div>
-                    <p class="set-events-hint">고른 것만 적용됩니다. 안 쓴 부분은 주간 탭에서 이 템플릿을 골라도 건드리지 않습니다.</p>
-                    {% endif %}
-                    {# S(세션시간)와 N(블록이름) 편집기는 app.js 가 이 자리에 그린다 #}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        <div class="ctx-empty" id="set-tpl-empty" hidden>이 종류의 템플릿이 아직 없습니다. 아래에서 추가하세요.</div>
-        <div class="set-cat-add">
-            <input type="text" id="set-tpl-new-name" placeholder="주간 별도명칭 (예: 집중주) · 비워도 됩니다" autocomplete="off">
-            <button type="button" class="primary-btn" id="set-tpl-add-btn">추가</button>
-        </div>
-    </details>
 </section>
 
 <section class="set-group" id="set-g-link" hidden>

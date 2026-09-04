@@ -2,7 +2,7 @@
 import random
 import time
 
-from app.routes.plan import MIN_LANES, _assign_lanes
+from app.routes.plan import MIN_LANES, NO_RANK, _assign_lanes
 
 # ---------------------------------------------------------------------------
 # 최적화 전 원본 구현. 여기 손대면 안 된다. 이 파일의 존재 이유가 '옛 결과와 같은가'다.
@@ -95,6 +95,9 @@ def _make_bars(n: int, seed: int) -> list[dict]:
             "parent_id": parent,
             "area_order": rnd.randint(0, 4),
             "rank": rnd.randint(0, 3),
+            # 형제 순서(srank)는 여기서 고정한다. 이 파일이 재는 것은 옛 구현과의 동일성이고,
+            # 옛 구현에는 이 값이 없었다. 모두 같으면 정렬 결과가 옛것과 똑같아진다.
+            "srank": NO_RANK,
             "level": rnd.randint(0, 3),
             "vs": f"2026-{s // 31 + 1:02d}-{s % 31 + 1:02d}",
             "ve": f"2026-{e // 31 + 1:02d}-{e % 31 + 1:02d}",
