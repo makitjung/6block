@@ -219,7 +219,7 @@ requirements.txt
 코드를 고친 뒤에는 아래 두 가지를 모두 돌립니다.
 
 ```bash
-# 1. pytest 전체 (1,813개, 약 45초). 먼저 pip install -r requirements-dev.txt
+# 1. pytest 전체 (1,815개, 약 48초). 먼저 pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 
 # 2. 실제 HTTP 스모크 (241개). 추가 설치 없이 표준 라이브러리만 씁니다

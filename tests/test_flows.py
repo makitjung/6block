@@ -1,5 +1,6 @@
 # 통합 테스트. 화면에서 실제로 하는 일(저장·이동·삭제)을 HTTP 로 그대로 밟아 DB 까지 확인한다.
 import datetime
+import pathlib
 
 import pytest
 
@@ -1708,6 +1709,38 @@ def test_옛_한줄_템플릿이_다섯_종류로_쪼개져도_아무것도_안_
         conn.execute("PRAGMA user_version = 0")
     db.init_db()
     assert 살펴본다() == 본것, "마이그레이션을 다시 돌리니 결과가 달라졌다"
+
+
+def test_옛_DB에_kind_칸이_없어도_서버가_뜬다(fresh_db):
+    """init_db 는 schema.sql 을 먼저 통째로 돌린 뒤에 마이그레이션한다.
+
+    그래서 schema.sql 이 마이그레이션으로 생기는 칸(cat_template.kind)을 쓰는 인덱스를
+    들고 있으면, 옛 DB 에서 'no such column: kind' 로 서버가 아예 못 뜬다. 2026-09-04
+    운영 재시작이 이걸로 죽었다. 인덱스는 칸을 더한 바로 뒤(_migrate)에서 만든다.
+    """
+    with db.get_conn() as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_cat_template_kind_no")
+        for col in ("kind", '"no"', "s_id", "t_id", "n_id", "c_id"):
+            conn.execute(f"ALTER TABLE cat_template DROP COLUMN {col}")
+        conn.execute("PRAGMA user_version = 0")
+
+    db.init_db()  # 여기서 터지면 서버가 못 뜬다
+
+    with db.get_conn() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(cat_template)")}
+        idx = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'")}
+    assert {"kind", "no", "s_id", "t_id", "n_id", "c_id"} <= cols
+    assert "idx_cat_template_kind_no" in idx, "같은 번호 둘을 막는 인덱스가 안 생겼다"
+
+
+def test_스키마가_마이그레이션_뒤에_생기는_칸을_쓰지_않는다():
+    """schema.sql 은 옛 DB 에서도 그대로 돌아야 한다. 마이그레이션이 더하는 칸을 쓰면 안 된다."""
+    sql = (pathlib.Path(__file__).resolve().parent.parent / "app" / "schema.sql").read_text(
+        encoding="utf-8")
+    한줄 = [l for l in sql.splitlines() if l.strip().upper().startswith("CREATE")
+            and "INDEX" in l.upper() and "cat_template(" in l]
+    assert not 한줄, f"schema.sql 이 cat_template 의 새 칸에 인덱스를 건다: {한줄}"
 
 
 def test_설정_캐시가_저장_후_갱신된다(fresh_db):

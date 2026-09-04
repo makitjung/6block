@@ -199,9 +199,10 @@ CREATE TABLE IF NOT EXISTS cat_template (
     updated_at TEXT NOT NULL
 );
 
--- 같은 종류에 같은 번호가 둘 생기지 않게. 표 안 제약이 아니라 인덱스로 두는 이유는,
--- 옛 DB 를 마이그레이션할 때도 똑같이 걸리게 하기 위해서다(ALTER 로는 제약을 못 더한다).
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_template_kind_no ON cat_template(kind, no);
+-- 같은 종류에 같은 번호가 둘 생기지 않게 하는 인덱스(idx_cat_template_kind_no)는 여기가
+-- 아니라 db.py 의 _migrate 안에서 만든다. init_db 는 이 파일을 먼저 통째로 돌리는데,
+-- 옛 DB 의 cat_template 에는 아직 kind·no 칸이 없어 여기서 만들려 하면 'no such column'
+-- 으로 서버가 아예 못 뜬다. 칸을 더한 바로 뒤에 만들어야 새 DB와 옛 DB가 같아진다.
 
 -- 템플릿 한 칸: (템플릿, 요일 0~6, 코어블록) → 구분. 비어 있으면 그 칸은 미지정.
 CREATE TABLE IF NOT EXISTS cat_template_cell (
