@@ -571,6 +571,36 @@ def test_자기_하위를_상위로_넣을_수_없다(client):
     assert res.status_code == 400, "순환을 허용했다"
 
 
+def test_상위_기간을_고쳐도_하위_기간은_그대로다(client):
+    """상위를 옮겼다고 적어 둔 하위 마감까지 말없이 밀리면 안 된다(사용자 요청 2026-09-04)."""
+    client.get("/plan")
+    parent = _add_item(client, "상위", "2026-08-01", "2026-08-31")
+    child = _add_item(client, "하위", "2026-08-05", "2026-08-10", parent_id=parent)
+    before = dict(_one("SELECT start_date, end_date FROM lt_item WHERE id = ?", (child,)))
+    client.post("/plan/item/update", data={"id": parent, "start": "2026-09-01",
+                                           "end": "2026-09-30"})
+    client.post("/plan/item/shift", data={"id": parent, "days": "7"})
+    client.post("/plan/item/resize", data={"id": parent, "edge": "end", "days": "14"})
+    after = dict(_one("SELECT start_date, end_date FROM lt_item WHERE id = ?", (child,)))
+    assert after == before, "하위 기간이 상위를 따라 움직였다"
+
+
+def test_같은_상위_아래_형제끼리_순서를_바꾼다(client):
+    """기간이 겹쳐 위아래 칸으로 나뉘어 선 하위들을 손으로 세울 수 있어야 한다."""
+    client.get("/plan")
+    parent = _add_item(client, "상위", "2026-08-01", "2026-08-31")
+    a = _add_item(client, "하위 A", "2026-08-01", "2026-08-20", parent_id=parent)
+    b = _add_item(client, "하위 B", "2026-08-05", "2026-08-25", parent_id=parent)
+    res = client.post("/plan/item/order", data={"id": b, "peer": a, "place": "before"})
+    assert res.status_code == 200 and res.json()["changed"] is True
+    got = {r["id"]: r["sort_order"] for r in _rows(
+        "SELECT id, sort_order FROM lt_item WHERE parent_id = ?", (parent,))}
+    assert got[b] < got[a], f"형제 순서가 안 바뀌었다: {got}"
+    # 상위와 하위 사이에는 순서가 없다(계층이 정한다)
+    res = client.post("/plan/item/order", data={"id": a, "peer": parent, "place": "before"})
+    assert res.status_code == 200 and res.json()["changed"] is False
+
+
 def test_영역_추가_이름변경_이동_삭제(client):
     client.get("/plan")
     res = client.post("/plan/area/add", data={"name": "새 영역"})
@@ -799,10 +829,11 @@ def test_템플릿_종류를_잘못_주면_거절한다(client, kind):
     assert res.status_code == 400, f"kind={kind} 가 통과했다"
 
 
-def test_별도명칭은_주간만_쓴다(client):
+def test_별도명칭은_다섯_종류_모두_붙는다(client):
+    """S1 이 무엇이었는지 열어 보지 않고 알아야, 주간이 고르는 칸에서도 읽힌다."""
     sid = _새(client, "S")
-    assert client.post("/settings/template/rename",
-                       data={"id": sid, "name": "이름"}).status_code == 400
+    res = client.post("/settings/template/rename", data={"id": sid, "name": "기본"})
+    assert res.status_code == 200 and res.json()["title"] == "S1(기본)"
     wid = _새(client, "W")
     res = client.post("/settings/template/rename", data={"id": wid, "name": "집중주"})
     assert res.status_code == 200 and res.json()["title"] == "W1(집중주)"

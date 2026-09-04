@@ -1994,12 +1994,15 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
     stroke: color-mix(in srgb, var(--gt-tone) 32%, transparent);
     stroke-dasharray: 3 4;
 }
+/* 연결선은 평소에 그리지 않는다. 막대가 스무 개만 넘어도 화면 위아래를 가로지르는 줄이
+   수십 개가 되어, 정작 막대가 안 보였다. 한 막대에 손을 얹거나 편집칸을 열면 그 묶음의
+   선만 켠다. */
+.gt-link, .gt-span-link, .gt-linkdot { opacity: 0; }
 /* 한 막대에 손을 얹으면 그 계획 묶음(상위 사슬·하위 전체)만 남기고 나머지를 흐린다.
    상하위 관계를 색 진하기만으로 읽어내기 어려워, 짚어 볼 수 있게 한 것이다. */
 .gantt.is-lit .gt-bar { opacity: .28; }
 .gantt.is-lit .gt-bar.is-lit { opacity: 1; }
 .gantt.is-lit .gt-bar.is-lit.is-past { opacity: .8; }
-.gantt.is-lit .gt-link, .gantt.is-lit .gt-span-link, .gantt.is-lit .gt-linkdot { opacity: .2; }
 .gantt.is-lit .gt-link.is-lit, .gantt.is-lit .gt-span-link.is-lit,
 .gantt.is-lit .gt-linkdot.is-lit { opacity: 1; }
 .gt-link.is-lit { stroke-width: 2.5; stroke: var(--gt-tone); }
@@ -2077,9 +2080,10 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-e-sep { color: var(--text-subtle); }
 .gt-e-move { display: inline-flex; gap: 4px; flex: 0 0 auto; }
 .gt-e-move .ghost-btn { min-width: 30px; padding: 4px 8px; }
-/* 형제 버튼끼리 크기를 맞춘다(저장만 주 동작이라 색으로 구분한다) */
-.gt-e-act .ghost-btn, .gt-e-act .primary-btn { padding: 5px 12px; font-size: 12px; }
-.gt-e-del { color: var(--danger); }
+/* 형제 버튼끼리 크기를 맞춘다. 빨강은 삭제에만 쓰고 닫기에는 색을 안 쓴다. */
+.gt-e-act .ghost-btn { padding: 5px 12px; font-size: 12px; }
+.gt-e-del, .ghost-btn.danger { color: var(--danger); border-color: var(--danger); }
+.ghost-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .gt-e-dates {
     display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
     padding: 2px 8px 2px 4px; border-radius: var(--r-pill);
@@ -2094,6 +2098,21 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-form input[type=date], .gt-edit input[type=date] { width: auto; flex: 0 0 auto; }
 .gt-e-proglabel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .gt-e-progress { width: 64px; }
+/* 항목을 적는 칸은 테두리를 걷어 낸다. 네모 상자 예닐곱이 나란히 서면 줄만 보인다.
+   손을 얹거나 초점이 가면 그때만 세워, 어디를 고치는 중인지는 그대로 알 수 있게 한다. */
+.gt-form input, .gt-form select, .gt-edit input, .gt-edit select, .gt-edit .dp, .gt-form .dp {
+    border-color: transparent; background: var(--surface-2); box-shadow: none;
+}
+.gt-form input:hover, .gt-form select:hover, .gt-edit input:hover,
+.gt-edit select:hover, .gt-edit .dp:hover, .gt-form .dp:hover { border-color: var(--border); }
+.gt-form input:focus, .gt-form select:focus, .gt-edit input:focus,
+.gt-edit select:focus, .gt-edit .dp:focus-within, .gt-form .dp:focus-within {
+    border-color: var(--border-focus); background: var(--surface);
+}
+/* 칸 안의 칸(한 칸 날짜 입력·체크박스)까지 배경을 두 번 칠하지 않는다 */
+.gt-edit .dp input, .gt-form .dp input,
+.gt-edit .gt-e-blk input, .gt-edit .gt-e-blocks input { background: none; }
+.gt-e-dates { border-color: transparent; }
 .gt-f-parent-label { font-size: 11px; color: var(--text-subtle); }
 .gt-f-area, .gt-e-area { flex: 0 0 auto; width: auto; }
 /* 접어 둔 항목('숨긴 항목 보기'로 꺼냈을 때만 나온다)은 한눈에 알아보게 옅은 점선으로 */
@@ -2258,13 +2277,53 @@ a.wk-task:hover { border-color: var(--border-strong); }
     box-shadow: none; font-size: 13px; color: var(--text); text-align: center;
 }
 .dp input.dp-text:focus { outline: none; border: none; box-shadow: none; }
-.dp input[type="date"] {
-    width: 20px; min-width: 20px; padding: 0; border: none; background: none;
+/* 브라우저가 그리는 달력은 시작 요일을 바꿀 수 없어 감춘다(값만 여기 담아 둔다).
+   대신 옆의 단추가 직접 그린 월요일 시작 달력을 연다. */
+.dp input[type="date"] { display: none; }
+.dp-cal {
+    width: 20px; height: 20px; flex: 0 0 auto; padding: 0; cursor: pointer;
+    border: none; background: none; color: var(--text-muted); opacity: .7;
+    display: inline-flex; align-items: center; justify-content: center;
 }
-.dp input[type="date"]::-webkit-datetime-edit,
-.dp input[type="date"]::-webkit-inner-spin-field,
-.dp input[type="date"]::-webkit-clear-button { display: none; }
-.dp input[type="date"]::-webkit-calendar-picker-indicator {
-    padding: 0; cursor: pointer; opacity: .6;
+.dp-cal svg { width: 15px; height: 15px; }
+.dp-cal:hover { opacity: 1; color: var(--accent); }
+
+/* 직접 그린 달력. 한 주는 월요일부터 시작한다(주간·장기 화면과 같게). */
+.dp-pop {
+    /* 고결감 수정창(z-index 70·75) 위에도 떠야 한다 */
+    position: absolute; z-index: 90; width: 236px; padding: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md, 12px); box-shadow: var(--sh-3);
 }
-.dp input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+.dp-pop[hidden] { display: none; }
+.dp-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.dp-title { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: var(--text); }
+.dp-nav {
+    width: 26px; height: 26px; padding: 0; cursor: pointer; font-size: 15px;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--surface); color: var(--text-muted);
+}
+.dp-nav:hover { background: var(--surface-3); color: var(--text); }
+.dp-wd, .dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-wd span {
+    text-align: center; font-size: 11px; font-weight: 700; color: var(--text-subtle);
+    padding-bottom: 2px;
+}
+.dp-wd span:nth-child(6), .dp-wd span:nth-child(7) { color: var(--text-muted); }
+.dp-day {
+    height: 28px; padding: 0; cursor: pointer; font-size: 12px;
+    border: 1px solid transparent; border-radius: var(--r-sm);
+    background: none; color: var(--text);
+}
+.dp-day:hover { background: var(--surface-3); }
+.dp-day.is-out { color: var(--text-subtle); }
+.dp-day.is-weekend { color: var(--text-muted); }
+.dp-day.is-today { border-color: var(--accent); font-weight: 700; }
+.dp-day.is-sel { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.dp-foot { display: flex; gap: 6px; margin-top: 6px; }
+.dp-foot-btn {
+    flex: 1; padding: 5px 0; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--surface); color: var(--text-muted);
+}
+.dp-foot-btn:hover { background: var(--surface-3); color: var(--text); }

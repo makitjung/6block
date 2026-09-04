@@ -527,40 +527,25 @@ def run_checks(db_path):
     check("한 달보다 짧게도 옮겨진다(+3일)",
           row["start_date"] == "2026-08-23" and row["end_date"] == "2026-11-18", dict(row))
     post("/plan/item/shift", {"id": child, "days": "-3"})
-    # 하위가 있는 상위를 끌면 하위 사슬도 같은 날수만큼 함께 밀린다
-    before = db_query(db_path,
-                      "SELECT start_date FROM lt_item WHERE id=?", (parent,))[0]["start_date"]
-    code, out = post("/plan/item/shift", {"id": parent, "days": "7"})
-    p = db_query(db_path, "SELECT start_date FROM lt_item WHERE id=?", (parent,))[0]
-    c = db_query(db_path, "SELECT start_date FROM lt_item WHERE id=?", (child,))[0]
-    check("상위를 끌면 하위까지 통짜로 옮겨짐",
-          code == 200 and out.get("with_children") == 1
-          and p["start_date"] == "2026-07-27" and c["start_date"] == "2026-08-27",
-          {"before": before, "parent": p["start_date"], "child": c["start_date"]})
-    post("/plan/item/shift", {"id": parent, "days": "-7"})
-    # 상위 기간을 고치면 하위 기간도 그만큼 따라 움직인다(시작·종료 각각)
-    ps = db_query(db_path,
-                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
+    # 상위 기간이 어떻게 바뀌든 하위 기간은 그대로 둔다(하위는 손으로 옮긴다)
     cs = db_query(db_path,
                   "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    code, out = post("/plan/item/shift", {"id": parent, "days": "7"})
+    c = db_query(db_path,
+                 "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
+    check("상위를 끌어도 하위 기간은 그대로",
+          code == 200 and dict(c) == dict(cs), {"before": dict(cs), "after": dict(c)})
+    post("/plan/item/shift", {"id": parent, "days": "-7"})
+    ps = db_query(db_path,
+                  "SELECT start_date, end_date FROM lt_item WHERE id=?", (parent,))[0]
     post("/plan/item/update", {"id": parent, "start": "2026-07-25", "end": ps["end_date"]})
     c2 = db_query(db_path,
                   "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
-    moved = (datetime.date.fromisoformat("2026-07-25")
-             - datetime.date.fromisoformat(ps["start_date"])).days
-    want = (datetime.date.fromisoformat(cs["start_date"])
-            + datetime.timedelta(days=moved)).isoformat()
-    check("상위 시작을 옮기면 하위 시작도 같이 움직임",
-          c2["start_date"] == want and c2["end_date"] == cs["end_date"],
-          {"moved": moved, "child": dict(c2), "want": want})
+    check("상위 시작을 옮겨도 하위는 그대로", dict(c2) == dict(cs), dict(c2))
     code, out = post("/plan/item/resize", {"id": parent, "edge": "end", "days": "14"})
     c3 = db_query(db_path,
                   "SELECT start_date, end_date FROM lt_item WHERE id=?", (child,))[0]
-    want_e = (datetime.date.fromisoformat(c2["end_date"])
-              + datetime.timedelta(days=14)).isoformat()
-    check("상위 종료를 늘리면 하위 종료도 같이 늘어남",
-          c3["end_date"] == want_e and c3["start_date"] == c2["start_date"],
-          {"child": dict(c3), "want": want_e})
+    check("상위 종료를 늘려도 하위는 그대로", dict(c3) == dict(cs), dict(c3))
     # 끌어서 보이는 기간 밖으로 보내도 사라지지 않는다. focus 를 주면 그 항목이 보이는
     # 자리로 화면이 옮겨 가고, 지난 항목이 됐으면 접힘도 풀린다.
     _c, h = get(f"/plan?level=month&anchor=2026-08-01&focus={child}")

@@ -157,8 +157,8 @@ class TestLtRollup:
 class TestPlanShiftResize:
     """POST /plan/item/shift, /plan/item/resize 통합."""
 
-    def test_shift_moves_parent_and_children(self, client, conn):
-        """상위를 밀면 하위도 함께 움직인다."""
+    def test_shift_leaves_children_where_they_are(self, client, conn):
+        """상위를 밀어도 하위 기간은 그대로다(하위는 손으로 옮긴다)."""
         area_resp = client.post("/plan/area/add", data={"name": "test", "tone": "gray"})
         area_id = area_resp.json()["id"]
 
@@ -187,7 +187,7 @@ class TestPlanShiftResize:
         })
         assert shift_resp.json()["ok"] is True
 
-        # DB에서 확인: 상위와 하위 모두 5일 이동
+        # DB에서 확인: 상위만 5일 이동하고 하위는 적어 둔 그대로다
         parent_row = conn.execute(
             "SELECT start_date, end_date FROM lt_item WHERE id = ?", (parent_id,)
         ).fetchone()
@@ -196,11 +196,11 @@ class TestPlanShiftResize:
         ).fetchone()
         assert parent_row["start_date"] == "2026-10-06"
         assert parent_row["end_date"] == "2026-11-05"
-        assert child_row["start_date"] == "2026-10-15"
-        assert child_row["end_date"] == "2026-10-25"
+        assert child_row["start_date"] == "2026-10-10"
+        assert child_row["end_date"] == "2026-10-20"
 
-    def test_update_parent_dates_shifts_children(self, client, conn):
-        """상위 시작일을 업데이트하면 자식의 시작도 따라가는데 종료는 그대로 둔다."""
+    def test_update_parent_dates_leaves_children(self, client, conn):
+        """상위 시작일을 고쳐도 하위 기간은 건드리지 않는다."""
         area_resp = client.post("/plan/area/add", data={"name": "test", "tone": "gray"})
         area_id = area_resp.json()["id"]
 
@@ -221,18 +221,17 @@ class TestPlanShiftResize:
         child_id = child_resp.json()["id"]
 
         # 상위의 시작일을 2026-10-10으로 변경 (9일 뒤로)
-        # 시작만 변경했으므로 종료는 그대로 둔다
         client.post("/plan/item/update", data={
             "id": str(parent_id),
             "start": "2026-10-10"
         })
 
-        # 하위: 시작은 9일 뒤로, 종료는 그대로 둔다
+        # 하위는 시작도 종료도 그대로다
         child_row = conn.execute(
             "SELECT start_date, end_date FROM lt_item WHERE id = ?", (child_id,)
         ).fetchone()
-        assert child_row["start_date"] == "2026-10-19"  # 10일 + 9일
-        assert child_row["end_date"] == "2026-10-20"    # 그대로
+        assert child_row["start_date"] == "2026-10-10"
+        assert child_row["end_date"] == "2026-10-20"
 
 
 class TestPlanReparent:

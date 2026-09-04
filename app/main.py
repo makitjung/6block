@@ -37,6 +37,8 @@ def _warm_caches():
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    # 설정 탭 '최근 오류'가 이번 기동 뒤의 500만 세도록 지금 로그 끝을 적어 둔다.
+    settings.mark_log_start()
     threading.Thread(target=_warm_caches, daemon=True).start()
     yield
 

@@ -62,27 +62,50 @@ router = APIRouter()
 # 페이지가 뜬 뒤에 따로 부른다(설정 화면 자체는 기다리지 않는다).
 
 
+# 이번에 서버가 뜬 순간의 로그 크기. '최근 오류'는 이 뒤에 난 것만 센다.
+# launchd 가 로그를 이어 쓰기 때문에, 고쳐서 다시 띄운 뒤에도 예전 500 이 계속 빨갛게
+# 남아 있었다. 그러면 지금 고장 난 것과 이미 고친 것을 구별할 수가 없다.
+_LOG_START = {"out": 0, "err": 0}
+
+
+def _log_paths() -> tuple:
+    return DB_PATH.parent / "uvicorn.out.log", DB_PATH.parent / "uvicorn.err.log"
+
+
+def mark_log_start() -> None:
+    """지금 로그 파일 끝을 '이번 기동'의 시작점으로 적어 둔다(main 의 lifespan 이 부른다)."""
+    for key, path in zip(("out", "err"), _log_paths()):
+        try:
+            _LOG_START[key] = path.stat().st_size
+        except OSError:
+            _LOG_START[key] = 0
+
+
+def _tail_since(path, key: str, cap: int) -> str:
+    """이번 기동 뒤로 쌓인 로그. 오래 떠 있었으면 끝의 cap 바이트만 본다."""
+    with path.open("rb") as f:
+        f.seek(0, 2)
+        size = f.tell()
+        mark = _LOG_START.get(key, 0)
+        if mark > size:         # 로그가 갈렸다(새 파일). 처음부터 본다.
+            mark = 0
+        f.seek(max(mark, size - cap))
+        return f.read().decode("utf-8", "replace")
+
+
 def _recent_errors() -> dict:
-    """서버 로그 끝부분에서 최근 500 응답과 마지막 오류 줄을 센다."""
+    """이번에 서버가 뜬 뒤로 난 500 응답 수와 마지막 오류 줄."""
     out = {"count": 0, "last": "", "log": ""}
-    log = DB_PATH.parent / "uvicorn.out.log"
-    err = DB_PATH.parent / "uvicorn.err.log"
+    log, err = _log_paths()
     out["log"] = str(log)
     try:
-        with log.open("rb") as f:
-            f.seek(0, 2)
-            f.seek(max(0, f.tell() - 512 * 1024))
-            tail = f.read().decode("utf-8", "replace")
-        out["count"] = tail.count('" 500 ')
+        out["count"] = _tail_since(log, "out", 512 * 1024).count('" 500 ')
     except OSError:
         pass
     if not out["count"]:
         return out          # 지금 500이 없으면 옛 트레이스백을 끌어와 보여주지 않는다
     try:
-        with err.open("rb") as f:
-            f.seek(0, 2)
-            f.seek(max(0, f.tell() - 64 * 1024))
-            lines = f.read().decode("utf-8", "replace").splitlines()
+        lines = _tail_since(err, "err", 64 * 1024).splitlines()
         for ln in reversed(lines):
             if ln and not ln.startswith(("INFO:", " ", "\t")):
                 out["last"] = ln[:160]
@@ -250,7 +273,6 @@ def settings_view(request: Request):
             "alarm_sounds": ALARM_SOUNDS,
             "alarm_secs": ALARM_SECS,
             "settings": settings,
-            "block_scopes": _block_scopes(),
             "weekday_concepts": get_weekday_concepts(),
             "events_calendar_id": gcal_write.calendar_id("events"),
             "gcal_events_on": gcal_write.write_enabled("events"),
@@ -306,24 +328,6 @@ def data_view(request: Request):
             "today": today_str(),
         },
     )
-
-
-def _block_scopes() -> list[dict]:
-    """세션 시간 편집 범위 8개(공통 + 월~일). 덮어쓰지 않은 요일은 공통 값을 그대로 보여준다."""
-    overrides = get_weekday_overrides()
-    scopes = [{"key": "", "label": "공통", "sub": "모든 요일 기본", "overridden": False}]
-    for i in range(7):
-        scopes.append({
-            "key": str(i), "label": KO_WEEKDAYS[i], "sub": f"{KO_WEEKDAYS[i]}요일",
-            "overridden": bool(overrides.get(str(i))),
-        })
-    for sc in scopes:
-        blocks = get_day_blocks(int(sc["key"]) if sc["key"] else None)
-        sc["rows"] = [
-            {"order": i, "label": lbl, "is_core": core, "start": s, "end": e}
-            for i, (lbl, core, s, e) in enumerate(blocks)
-        ]
-    return scopes
 
 
 def _valid_hhmm(s: str) -> bool:

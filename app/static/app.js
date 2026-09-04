@@ -1455,12 +1455,12 @@
         // 잇달아 만들 수가 없었다. 새 줄만 세우고 주간이 고르는 칸에 선택지를 더한다.
         addBtn.addEventListener('click', () => {
             const kind = curKind();
-            postForm('/settings/template/add',
-                     { kind: kind, name: (nameIn.value || '').trim() })
+            const name = (nameIn.value || '').trim();
+            postForm('/settings/template/add', { kind: kind, name: name })
                 .then((d) => {
                     if (!d || !d.ok) { toast('추가 실패'); return; }
                     nameIn.value = '';
-                    addTplRow(d);
+                    addTplRow({ ...d, name: name });
                     toast(d.title + ' 추가');
                 });
         });
@@ -1711,7 +1711,7 @@
         const name = el('input', 'set-tpl-name');
         name.type = 'text';
         name.dataset.id = t.id;
-        name.value = '';
+        name.value = t.name || '';
         name.autocomplete = 'off';
         name.placeholder = '별도명칭 (예: ' + tplNameSample(t.kind) + ')';
         name.setAttribute('aria-label', t.kind + t.no + ' 별도명칭');
@@ -2778,17 +2778,22 @@
             });
         });
 
-        // 같은 줄에서 위(아래)로 이웃한 '다른 묶음'의 막대. 세로 순서를 바꿀 상대다.
+        // 같은 줄에서 위(아래)로 이웃한, 순서를 바꿀 상대 막대.
+        // 같은 상위를 둔 형제(기간이 겹쳐 위아래 칸으로 나뉘어 선 하위들)가 먼저고,
+        // 형제가 없으면 예전처럼 '다른 묶음'을 상대로 계획 묶음째 오르내린다.
         const neighbourBar = (bar, dir) => {
             const row = bar.closest('.gt-blockrow');
             if (!row) return null;
             const me = bar.getBoundingClientRect();
+            const mum = bar.dataset.parent || '';
             let best = null;
             let bestD = Infinity;
             row.querySelectorAll('.gt-bar').forEach((o) => {
+                if (o === bar || !o.offsetParent) return;
+                const sib = mum && o.dataset.parent === mum && o.dataset.id !== bar.dataset.id;
                 // 순서는 같은 영역 안에서만 매긴다(영역끼리의 위아래는 영역 관리가 정한다)
-                if (o === bar || o.dataset.root === bar.dataset.root
-                    || o.dataset.area !== bar.dataset.area || !o.offsetParent) return;
+                if (!sib && (o.dataset.root === bar.dataset.root
+                             || o.dataset.area !== bar.dataset.area)) return;
                 const r = o.getBoundingClientRect();
                 const dy = dir === 'up' ? me.top - r.top : r.top - me.top;
                 if (dy <= 1) return;                    // 같은 칸이거나 반대쪽
@@ -2862,18 +2867,9 @@
                         if (t) t.textContent = v;
                     });
                     // 머리줄 경로(영역 › 상위 › 제목)의 제목도 함께 고친다. 예전에는 막대
-                    // 글자만 바뀌고 바로 위 제목은 옛 이름 그대로라 뭘 고쳤는지 헷갈렸다.
+                    // 글자만 바뀌고 편집칸 위의 이름은 옛것 그대로라, 무엇을 고쳤는지 헷갈렸다.
                     const crumb = box.querySelector('.gt-e-crumb b');
                     if (crumb) crumb.textContent = v;
-                    // 이 항목을 상위로 둔 하위들의 경로도 같은 이름을 쓴다
-                    box.closest('.gantt')?.querySelectorAll(
-                        '.gt-edit[data-parent="' + id + '"] .gt-e-crumb').forEach((c) => {
-                        const b = c.querySelector('b');
-                        c.childNodes.forEach((n) => {
-                            if (n.nodeType === 3 && n.textContent.trim() === last0) n.textContent = ' ' + v + ' ';
-                        });
-                        if (b && b.textContent === last0) b.textContent = v;
-                    });
                     saveItemField(id, { title: v });
                 };
                 title.addEventListener('change', flushTitle);
@@ -3196,8 +3192,20 @@
         text.placeholder = 'YYYY-MM-DD';
         text.setAttribute('aria-label', native.getAttribute('aria-label') || '날짜');
         if (native.disabled) text.disabled = true;
+        const cal = document.createElement('button');
+        cal.type = 'button';
+        cal.className = 'dp-cal';
+        cal.tabIndex = -1;
+        cal.title = '달력에서 고르기';
+        cal.setAttribute('aria-label', '달력에서 고르기');
+        cal.innerHTML = DP_CAL_SVG;
+        cal.addEventListener('click', () => {
+            if (native.disabled) return;
+            if (dpPop && !dpPop.hidden && dpText === text) dpHide();
+            else dpShow(box, text);
+        });
         native.parentNode.insertBefore(box, native);
-        box.append(text, native);
+        box.append(text, cal, native);
 
         // 한 칸 -> date 입력. 8자리를 다 쳐야 값이 선다(덜 쳤으면 빈 값).
         // syncing 은 아래 pull 이 제 손으로 낸 change 를 되받지 않게 막는 빗장이다.
@@ -3233,6 +3241,127 @@
     function syncDateParts(el) {
         if (el && el.dpSync) el.dpSync();
     }
+
+    // ---- 월요일로 시작하는 달력 -------------------------------------------
+    // 브라우저가 그려 주는 달력은 한국어 환경에서 일요일부터 선다. 주간 탭도 장기 탭도
+    // 모두 월요일로 시작하는데 날짜를 고르는 창만 일요일부터면 한 칸씩 잘못 짚게 된다.
+    // 시작 요일은 브라우저 설정이라 바꿀 수 없으므로 달력을 직접 그린다. 창은 하나만
+    // 만들어 두고 누른 칸 옆으로 옮겨 가며 쓴다.
+    const DP_WD = ['월', '화', '수', '목', '금', '토', '일'];
+    const DP_CAL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="2" stroke-linecap="round" aria-hidden="true">'
+        + '<rect x="3" y="5" width="18" height="16" rx="2"/>'
+        + '<path d="M8 3v4M16 3v4M3 10h18"/></svg>';
+    let dpPop = null;       // 달력 창(하나만 만든다)
+    let dpText = null;      // 지금 고치는 중인 한 칸 입력
+    let dpView = null;      // 보고 있는 달의 1일
+
+    function dpEnsure() {
+        if (dpPop) return dpPop;
+        dpPop = el('div', 'dp-pop');
+        dpPop.hidden = true;
+        const head = el('div', 'dp-head');
+        const prev = el('button', 'dp-nav', '‹');
+        const title = el('span', 'dp-title');
+        const next = el('button', 'dp-nav', '›');
+        prev.type = 'button';
+        next.type = 'button';
+        prev.setAttribute('aria-label', '이전 달');
+        next.setAttribute('aria-label', '다음 달');
+        head.append(prev, title, next);
+        const wd = el('div', 'dp-wd');
+        DP_WD.forEach((w) => wd.appendChild(el('span', null, w)));
+        const grid = el('div', 'dp-grid');
+        const foot = el('div', 'dp-foot');
+        const todayBtn = el('button', 'dp-foot-btn', '오늘');
+        const clearBtn = el('button', 'dp-foot-btn', '지우기');
+        todayBtn.type = 'button';
+        clearBtn.type = 'button';
+        foot.append(todayBtn, clearBtn);
+        dpPop.append(head, wd, grid, foot);
+        document.body.appendChild(dpPop);
+        dpPop.dpTitle = title;
+        dpPop.dpGrid = grid;
+        const step = (n) => {
+            dpView = new Date(dpView.getFullYear(), dpView.getMonth() + n, 1);
+            dpPaint();
+        };
+        prev.addEventListener('click', () => step(-1));
+        next.addEventListener('click', () => step(1));
+        todayBtn.addEventListener('click', () => dpPick(new Date()));
+        clearBtn.addEventListener('click', () => dpPick(null));
+        grid.addEventListener('click', (e) => {
+            const b = e.target.closest('.dp-day');
+            if (b) dpPick(new Date(b.dataset.d + 'T00:00:00'));
+        });
+        return dpPop;
+    }
+
+    // 6주(42칸)를 늘 그린다. 달마다 줄 수가 달라지면 창 높이가 들썩인다.
+    function dpPaint() {
+        const grid = dpPop.dpGrid;
+        dpPop.dpTitle.textContent = dpView.getFullYear() + '년 ' + (dpView.getMonth() + 1) + '월';
+        grid.textContent = '';
+        const lead = (new Date(dpView.getFullYear(), dpView.getMonth(), 1).getDay() + 6) % 7;
+        const sel = dpText && dpText.value.length === 10 ? dpText.value : '';
+        const today = ymd(new Date());
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < 42; i++) {
+            const d = new Date(dpView.getFullYear(), dpView.getMonth(), 1 - lead + i);
+            const key = ymd(d);
+            const b = el('button', 'dp-day', String(d.getDate()));
+            b.type = 'button';
+            b.dataset.d = key;
+            if (d.getMonth() !== dpView.getMonth()) b.classList.add('is-out');
+            if (key === today) b.classList.add('is-today');
+            if (key === sel) b.classList.add('is-sel');
+            if ((d.getDay() + 6) % 7 >= 5) b.classList.add('is-weekend');
+            frag.appendChild(b);
+        }
+        grid.appendChild(frag);
+    }
+
+    // 고른 날짜를 한 칸에 넣는다. 저장은 한 칸이 내는 input 이 그대로 이어 간다.
+    function dpPick(d) {
+        if (dpText) {
+            dpText.value = d ? ymd(d) : '';
+            dpText.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        dpHide();
+    }
+
+    function dpHide() {
+        if (dpPop) dpPop.hidden = true;
+        dpText = null;
+    }
+
+    function dpShow(box, text) {
+        dpEnsure();
+        dpText = text;
+        const base = text.value.length === 10 ? new Date(text.value + 'T00:00:00') : new Date();
+        dpView = new Date(base.getFullYear(), base.getMonth(), 1);
+        dpPop.hidden = false;
+        dpPaint();
+        // 누른 칸 바로 아래. 아래가 모자라면 위로 올리고, 좌우는 화면 안으로 넣는다.
+        const r = box.getBoundingClientRect();
+        const w = dpPop.offsetWidth;
+        const h = dpPop.offsetHeight;
+        const room = document.documentElement.clientWidth;
+        let left = Math.min(r.left, room - w - 8);
+        let top = r.bottom + 4;
+        if (r.bottom + h + 8 > window.innerHeight) top = r.top - h - 4;
+        dpPop.style.left = Math.max(8, left) + window.scrollX + 'px';
+        dpPop.style.top = Math.max(8, top) + window.scrollY + 'px';
+    }
+
+    document.addEventListener('pointerdown', (e) => {
+        if (!dpPop || dpPop.hidden) return;
+        if (e.target.closest('.dp-pop') || e.target.closest('.dp-cal')) return;
+        dpHide();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') dpHide();
+    });
 
     // 'YYYY-MM-DD' 문자열(로컬 기준)
     function ymd(d) {
@@ -3466,9 +3595,14 @@
             if (u.row && u.row !== drag.row) return null;   // 다른 줄이면 블록 이동이다
             let best = null;
             let bestD = Infinity;
+            const mum = drag.bar.dataset.parent || '';
             drag.row.querySelectorAll('.gt-bar').forEach((o) => {
-                if (o === drag.bar || o.dataset.root === drag.bar.dataset.root
-                    || o.dataset.area !== drag.bar.dataset.area || !o.offsetParent) return;
+                if (o === drag.bar || !o.offsetParent) return;
+                // 같은 상위를 둔 형제끼리도 바꿀 수 있다(기간이 겹쳐 위아래로 나뉜 하위들)
+                const sib = mum && o.dataset.parent === mum
+                    && o.dataset.id !== drag.bar.dataset.id;
+                if (!sib && (o.dataset.root === drag.bar.dataset.root
+                             || o.dataset.area !== drag.bar.dataset.area)) return;
                 const r = o.getBoundingClientRect();
                 const cy = r.top + r.height / 2;
                 // 가장 가까운 칸을 먼저, 그 칸 안에서는 가로로 가까운 막대를 고른다

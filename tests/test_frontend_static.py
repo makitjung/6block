@@ -213,6 +213,23 @@ def test_장기_자동저장은_칸마다_다시_그리지_않는다():
     assert "refreshGantt" not in body, "한 칸 저장이 곧바로 격자를 다시 그린다"
 
 
+# -- 날짜 고르기(직접 그린 달력) ------------------------------------------------
+
+
+def test_달력은_월요일부터_시작한다():
+    """브라우저 기본 달력은 한국어 환경에서 일요일부터 선다. 그래서 직접 그린다."""
+    assert "const DP_WD = ['월', '화', '수', '목', '금', '토', '일'];" in APP_JS
+    # 그 달 1일이 몇 칸 뒤에 오는지: getDay() 는 일요일이 0 이라 +6 %7 로 월요일을 0 으로 맞춘다
+    assert "(new Date(dpView.getFullYear(), dpView.getMonth(), 1).getDay() + 6) % 7" in APP_JS
+
+
+def test_브라우저_기본_달력은_감춘다():
+    """날짜 칸 두 개가 서로 다른 시작 요일로 열리면 한 칸씩 잘못 짚는다."""
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert '.dp input[type="date"] { display: none; }' in css
+    assert "class = 'dp-cal'" in APP_JS or "cal.className = 'dp-cal';" in APP_JS
+
+
 # -- 템플릿 다섯 종류 -----------------------------------------------------------
 
 

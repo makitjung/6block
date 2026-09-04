@@ -190,8 +190,8 @@
                 <button type="button" class="ghost-btn gt-e-child" data-block="{{ row.key }}" data-area="{{ b.area_id }}" data-parent="{{ b.id }}" data-title="{{ b.title }}" data-start="{{ b.start_date }}" data-end="{{ b.end_date }}">하위 추가</button>
                 <span class="gt-e-crumb">{{ b.area_name }}{% for t in b.path %} <span class="gt-e-sep">›</span> {{ t }}{% endfor %} <span class="gt-e-sep">›</span> <b>{{ b.title }}</b></span>
                 <span class="gt-e-move" role="group" aria-label="세로 순서">
-                    <button type="button" class="ghost-btn gt-e-up" title="한 칸 위로 (같은 영역 안에서 계획 묶음째 올립니다)" aria-label="{{ b.title }} 한 칸 위로">↑</button>
-                    <button type="button" class="ghost-btn gt-e-down" title="한 칸 아래로 (같은 영역 안에서 계획 묶음째 내립니다)" aria-label="{{ b.title }} 한 칸 아래로">↓</button>
+                    <button type="button" class="ghost-btn gt-e-up" title="한 칸 위로 (같은 상위 아래 형제끼리, 형제가 없으면 같은 영역 안에서 계획 묶음째)" aria-label="{{ b.title }} 한 칸 위로">↑</button>
+                    <button type="button" class="ghost-btn gt-e-down" title="한 칸 아래로 (같은 상위 아래 형제끼리, 형제가 없으면 같은 영역 안에서 계획 묶음째)" aria-label="{{ b.title }} 한 칸 아래로">↓</button>
                 </span>
                 <span class="gt-e-act">
                     <button type="button" class="ghost-btn danger gt-e-del" data-id="{{ b.id }}">삭제</button>

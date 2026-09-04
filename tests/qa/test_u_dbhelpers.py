@@ -90,24 +90,6 @@ def test_data_summary_빈_db_count_0(conn):
 
 
 # ============================================================================
-# settings._block_scopes: 공통과 요일
-# ============================================================================
-
-
-def test_block_scopes_공통_포함(conn):
-    """공통 시간 스코프가 항상 포함되어야 한다."""
-    result = settings._block_scopes()
-    assert result[0]["key"] == ""
-    assert result[0]["label"] == "공통"
-
-
-def test_block_scopes_요일_7개(conn):
-    """월~일 7개 요일이 포함되어야 한다."""
-    result = settings._block_scopes()
-    assert len(result) == 8  # 공통 + 7요일
-
-
-# ============================================================================
 # settings._hides_last_category: 마지막 구분 보호
 # ============================================================================
 
@@ -168,6 +150,26 @@ def test_recent_errors_로그_없으면_count_0():
     result = settings._recent_errors()
     assert "count" in result
     assert isinstance(result["count"], int)
+
+
+def test_recent_errors_는_이번_기동_뒤의_500만_센다(tmp_path, monkeypatch):
+    """고치고 재시작했는데도 옛 500 이 계속 빨갛게 남으면 지금 고장과 구별할 수 없다."""
+    log = tmp_path / "uvicorn.out.log"
+    err = tmp_path / "uvicorn.err.log"
+    log.write_text('INFO: - "GET /week HTTP/1.1" 500 Internal Server Error\n', encoding="utf-8")
+    err.write_text("ERROR: 옛 트레이스백\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "_log_paths", lambda: (log, err))
+    monkeypatch.setattr(settings, "_LOG_START", {"out": 0, "err": 0})
+
+    settings.mark_log_start()                     # 여기서 서버가 떴다고 친다
+    assert settings._recent_errors()["count"] == 0, "이미 지나간 500 을 세고 있다"
+
+    with log.open("a", encoding="utf-8") as f:    # 기동 뒤에 새로 난 오류
+        f.write('INFO: - "GET /settings HTTP/1.1" 500 Internal Server Error\n')
+    with err.open("a", encoding="utf-8") as f:
+        f.write("ERROR: 지금 난 오류\n")
+    got = settings._recent_errors()
+    assert got["count"] == 1 and "지금 난 오류" in got["last"]
 
 
 # ============================================================================
