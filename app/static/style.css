@@ -1625,6 +1625,9 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .day-tpl-label { font-size: 12px; font-weight: 700; color: var(--text-soft); width: 54px; flex: none; }
 .day-tpl-sel { flex: 1; width: auto; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; }
 .day-tpl-hint { margin: 0; font-size: 11px; color: var(--text-subtle); }
+/* display:flex 가 브라우저 기본 [hidden]{display:none} 을 덮으므로 명시적으로 숨긴다.
+   이게 없어 일곱 날의 창이 모두 펴진 채로 서서 아래 블록을 가렸다. */
+.day-tpl-pop[hidden] { display: none; }
 
 /* 종류 탭(세션시간 S · 고정할일 T · 블록이름 N · 구분 C · 주간 W). 한 종류만 세운다 */
 .set-tpl-kinds { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
