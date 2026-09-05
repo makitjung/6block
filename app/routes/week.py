@@ -292,6 +292,11 @@ def _week_view(request: Request, monday: date):
                 ]
                 for k in ("S", "T", "N", "C")
             },
+            # 걸어 둔 것을 칩으로 보일 때 쓰는 이름표({12: 'S1(기본)'})
+            "tpl_titles": {
+                t["id"]: tpl_title(t["kind"], t["no"], t["name"])
+                for t in tpl_rows if t["kind"] in ("S", "T", "N", "C")
+            },
             "applied_week": next(
                 (r["tpl_id"] for r in applied_rows
                  if r["scope"] == "week" and r["kind"] == "W"), None),

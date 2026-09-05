@@ -172,6 +172,8 @@
             <button type="button" class="ghost-btn" id="wk-fill-themes" data-week="{{ week_start }}" title="주간 목표·이 주 장기 항목을 B1~B6 이름으로 나눠 빈 칸만 채웁니다">이번 주 계획으로 자동 채우기</button>
         </div>
 
+        {# 날짜 머리 창이 쓰는 종류 이름표. 콤보 묶음과 칩이 같은 순서로 서게 한 곳에 둔다 #}
+        {% set tpl_kinds = [('S', '세션시간'), ('T', '고정할일'), ('N', '블록이름'), ('C', '구분')] %}
         <div class="week-grid">
             {% for d in dates %}
             <article class="day-col">
@@ -186,19 +188,35 @@
                             data-date="{{ d }}" aria-expanded="false"
                             title="{{ d | short_date }} 하루에만 템플릿 걸기" aria-label="{{ d | short_date }} 하루에만 템플릿 걸기">⋯</button>
                 </h3>
+                {# 콤보 하나로 고른다. 종류(세션시간·고정할일·블록이름·구분)는 묶음 머리로만
+                   보이고, 고른 것 하나가 곧 그 종류로 걸린다. 이미 걸어 둔 것은 아래 칩으로
+                   서고 칩의 ✕ 로 뗀다 — 종류마다 콤보를 세우면 창이 격자를 가렸다. #}
                 <div class="day-tpl-pop" data-date="{{ d }}" hidden>
-                    {% for key, label in [('S', '세션시간'), ('T', '고정할일'), ('N', '블록이름'), ('C', '구분')] %}
-                    <label class="day-tpl-row">
-                        <span class="day-tpl-label">{{ label }}</span>
-                        <select class="day-tpl-sel" data-kind="{{ key }}" aria-label="{{ d | short_date }} {{ label }} 템플릿">
-                            <option value="">안 걸기</option>
+                    <select class="day-tpl-sel" aria-label="{{ d | short_date }} 하루에만 걸 템플릿">
+                        <option value="">템플릿 고르기</option>
+                        {% for key, label in tpl_kinds %}
+                        {% if day_templates[key] %}
+                        <optgroup label="{{ label }}">
                             {% for t in day_templates[key] %}
-                            <option value="{{ t.id }}" {% if applied_day[d].get(key) == t.id %}selected{% endif %}>{{ t.title }}</option>
+                            <option value="{{ key }}:{{ t.id }}">{{ t.title }}</option>
                             {% endfor %}
-                        </select>
-                    </label>
-                    {% endfor %}
-                    <p class="day-tpl-hint">고르는 즉시 이 날 하루에만 적용됩니다.</p>
+                        </optgroup>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                    {% if applied_day[d] %}
+                    <div class="day-tpl-chips">
+                        {% for key, label in tpl_kinds %}
+                        {% if applied_day[d].get(key) %}
+                        <span class="day-tpl-chip">{{ label }} {{ tpl_titles.get(applied_day[d][key], '') }}
+                            <button type="button" class="day-tpl-off" data-kind="{{ key }}"
+                                    title="{{ label }} 템플릿 떼기" aria-label="{{ d | short_date }} {{ label }} 템플릿 떼기">✕</button>
+                        </span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <p class="day-tpl-hint">고르면 이 날에만 걸립니다.</p>
                 </div>
                 <div class="day-allday">
                     {% for t in week_allday.get(d, []) %}

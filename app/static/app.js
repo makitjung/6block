@@ -4814,23 +4814,27 @@
                 btn.setAttribute('aria-expanded', show ? 'true' : 'false');
             });
         });
+        // 콤보에서 고른 값은 '종류:번호'(C:12). 종류를 따로 고르는 칸 없이 한 번에 건다.
+        const applyDayTpl = (pop, kind, tid) => {
+            postForm('/day/apply-template', {
+                date: pop.dataset.date, kind: kind, template_id: tid,
+            }).then((d) => {
+                if (!d || !d.ok) { toast('적용 실패'); return; }
+                toast(d.cleared ? '이 날 걸어 둔 것을 뗐습니다' : tplApplyMsg(d));
+                setTimeout(() => location.reload(), 1200);   // 칩·격자를 서버 값으로 다시 그린다
+            });
+        };
         document.querySelectorAll('.day-tpl-pop').forEach((pop) => {
-            pop.addEventListener('click', (e) => e.stopPropagation());
+            pop.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const off = e.target.closest('.day-tpl-off');
+                if (off) applyDayTpl(pop, off.dataset.kind, '');   // 칩의 ✕ · 그 종류만 뗀다
+            });
             pop.addEventListener('change', (e) => {
                 const sel = e.target.closest('.day-tpl-sel');
-                if (!sel) return;
-                postForm('/day/apply-template', {
-                    date: pop.dataset.date, kind: sel.dataset.kind,
-                    template_id: sel.value,
-                }).then((d) => {
-                    if (!d || !d.ok) { toast('적용 실패'); return; }
-                    const btn = document.querySelector(
-                        '.day-tpl-btn[data-date="' + pop.dataset.date + '"]');
-                    const any = [...pop.querySelectorAll('.day-tpl-sel')].some((x) => x.value);
-                    btn?.classList.toggle('is-on', any);
-                    toast(d.cleared ? '이 날 걸어 둔 것을 뗐습니다' : tplApplyMsg(d));
-                    setTimeout(() => location.reload(), 1200);
-                });
+                if (!sel || !sel.value) return;
+                const [kind, tid] = sel.value.split(':');
+                applyDayTpl(pop, kind, tid);
             });
         });
         if (document.querySelector('.day-tpl-pop')) {

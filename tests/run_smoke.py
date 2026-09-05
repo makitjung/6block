@@ -965,7 +965,9 @@ def run_checks(db_path):
         # 25-3. 주간을 건 뒤에도 하루만 다르게 간다(날짜 머리의 ⋯)
         code, html = get(f"/week/{WK}")
         check("날짜 머리에 ⋯ 가 있다", 'class="day-tpl-btn' in html)
-        check("그 날 창에 네 종류가 선다", html.count('class="day-tpl-sel') >= 28)
+        check("그 날 창은 콤보 하나로 고른다", html.count('class="day-tpl-sel') == 7)
+        check("콤보가 종류별 묶음으로 선다",
+              '<optgroup label="세션시간"' in html and '<optgroup label="구분"' in html)
         code, out = post("/settings/template/add", {"kind": "S"})
         s2 = out.get("id") if isinstance(out, dict) else None
         t2 = dict(times, template_id=str(s2))
@@ -975,6 +977,9 @@ def run_checks(db_path):
         code, out = post("/day/apply-template",
                          {"date": TUE, "kind": "S", "template_id": str(s2)})
         check("하루만 세션시간을 건다", code == 200 and out.get("days") == 1, out)
+        code, html = get(f"/week/{WK}")
+        check("걸어 둔 것이 칩으로 선다",
+              'class="day-tpl-chip"' in html and "세션시간 S" in html)
         row = db_query(db_path, "SELECT start_time FROM blocks "
                                 "WHERE date = ? AND block_label='B1'", (TUE,))
         check("그 화요일만 09:00 이 된다",
