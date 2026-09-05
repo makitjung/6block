@@ -2605,12 +2605,16 @@
             if (e.target.closest('.gt-bar, .gt-add')) return;
             closeAll();
         });
-        // 막대에 손을 얹으면 그 묶음을 밝힌다. 편집칸을 열어 둔 동안에는 그쪽을 그대로 둔다.
+        // 막대에 손을 얹으면 그 묶음을 밝힌다. 편집칸을 열어 둔 동안에는 아무 선도 켜지
+        // 않는다 — 적는 칸 뒤를 줄이 세로로 가로질러 글자를 읽기 어려웠다.
         gantt.addEventListener('mouseover', (e) => {
             if (gantt.querySelector('.gt-bar.is-dragging, .gt-bar.is-resizing')) return;
-            const b = e.target.closest('.gt-bar');
-            if (b) litGanttFamily(gantt, b);
-            else if (!gantt.querySelector('.gt-bar.is-editing')) litGanttFamily(gantt, null);
+            // 편집칸·추가칸이 열려 있으면 켜지 않는다(적는 칸 뒤가 깨끗해야 읽힌다)
+            if (gantt.querySelector('.gt-edit:not([hidden]), .gt-form:not([hidden])')) {
+                litGanttFamily(gantt, null);
+                return;
+            }
+            litGanttFamily(gantt, e.target.closest('.gt-bar'));
         });
 
         // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목·영역·기간을 물려받는다.
@@ -2747,7 +2751,6 @@
             box.hidden = wasOpen;
             if (wasOpen) return;
             bar.classList.add('is-editing');
-            litGanttFamily(gantt, bar);
             box.querySelector('.gt-e-title')?.focus();
             box.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         };
