@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/CREATE TABLE IF NOT EXISTS lt_item/,/\\\\\\);/' app/schema.sql)"
+    ]
+  }
+}
