@@ -225,11 +225,14 @@ def test_지운_날을_다시_열면_그대로_다시_만든다(client, fresh_db
 
 
 def _plan_with_bars(client):
-    """장기 항목 세 개를 만들어 막대가 있는 장기 탭을 얻는다."""
+    """장기 항목 세 개를 만들어 막대가 있는 장기 탭을 얻는다.
+
+    기본 화면은 '오늘이 낀 주' 라서 날짜를 박아 두면 몇 주 뒤엔 막대가 화면 밖으로 나간다.
+    """
     area = _rows("SELECT id FROM lt_area ORDER BY display_order LIMIT 1")[0]["id"]
     for i in range(3):
         r = client.post("/plan/item/add", data={
-            "title": f"항목{i}", "start": "2026-08-01", "end": "2026-08-31",
+            "title": f"항목{i}", "start": today_str(), "end": today_str(),
             "area_id": str(area),
         })
         assert r.json()["ok"], r.text
@@ -268,7 +271,7 @@ def test_장기_항목이_늘어도_화면에_서는_입력칸은_그대로다(c
     area = _rows("SELECT id FROM lt_area ORDER BY display_order LIMIT 1")[0]["id"]
     for i in range(12):
         client.post("/plan/item/add", data={
-            "title": f"더{i}", "start": "2026-08-01", "end": "2026-08-31",
+            "title": f"더{i}", "start": today_str(), "end": today_str(),
             "area_id": str(area),
         })
     many_html = client.get("/plan").text
