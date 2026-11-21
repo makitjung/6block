@@ -27,6 +27,7 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_ver() }}">
 </head>
 <body>
+    <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
     <header class="topbar">
         <div class="topbar-inner">
             {# 로고를 누르면 오늘 탭을 새로 받고, 뜬 뒤 지금 블록으로 맞춘다(initialScroll) #}
@@ -39,14 +40,15 @@
                 <button type="button" id="page-refresh" class="theme-toggle" title="이 화면 새로고침" aria-label="새로고침">↻</button>
             </div>
             <nav class="topnav">
-                <a href="/today" class="{% if active == 'today' %}is-active{% endif %}">오늘</a>
-                <a href="/week"  class="{% if active == 'week' %}is-active{% endif %}">주간</a>
-                <a href="/plan"  class="{% if active == 'plan' %}is-active{% endif %}">장기</a>
-                <a href="/reflect" class="{% if active == 'reflect' %}is-active{% endif %}">고결감</a>
-                <a href="/settings" class="{% if active in ['settings', 'analytics', 'data'] %}is-active{% endif %}">설정</a>
+                <a href="/today"{% if active == 'today' %} class="is-active" aria-current="page"{% endif %}>오늘</a>
+                <a href="/week"{% if active == 'week' %} class="is-active" aria-current="page"{% endif %}>주간</a>
+                <a href="/plan"{% if active == 'plan' %} class="is-active" aria-current="page"{% endif %}>장기</a>
+                <a href="/reflect"{% if active == 'reflect' %} class="is-active" aria-current="page"{% endif %}>고결감</a>
+                <a href="/settings"{% if active in ['settings', 'analytics', 'data'] %} class="is-active"{% if active == 'settings' %} aria-current="page"{% endif %}{% endif %}>설정</a>
             </nav>
             <div class="topbar-right">
-                <span id="net-status" class="net-status" hidden></span>
+                <button type="button" id="net-status" class="net-status" aria-controls="save-queue-dialog" hidden></button>
+                <span id="save-announcement" class="sr-only" role="status"></span>
                 <span id="now-clock" class="now-clock mono"></span>
                 <button type="button" id="theme-toggle" class="theme-toggle" title="라이트/다크 전환" aria-label="테마 전환">◐</button>
             </div>
@@ -65,8 +67,7 @@
         </nav>
     </div>
     {% endif %}
-    <!-- 고결감은 폰보다 웹에서 오래 보는 화면이라 본문 폭을 넓게 쓴다 -->
-    <main{% if active == 'reflect' %} class="main-wide"{% endif %}>{% block content %}{% endblock %}</main>
+    <main id="main-content" tabindex="-1"{% if active in ['today', 'week', 'plan', 'reflect'] %} class="main-wide main-{{ active }}"{% endif %}>{% block content %}{% endblock %}</main>
 
     <aside id="pomo" class="pomo" aria-label="포모도로 타이머">
         <button type="button" class="pomo-dial" title="집중 타이머 (눌러서 컨트롤 열고 닫기)" aria-expanded="false">

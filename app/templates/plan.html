@@ -2,18 +2,18 @@
 {% set active = 'plan' %}
 {% block title %}장기플랜 | 6block{% endblock %}
 {% block content %}
-<section class="hero">
+<section class="hero plan-hero">
     <div class="hero-nav">
         <a href="/plan?level={{ level }}&anchor={{ prev_anchor }}" class="icon-btn" aria-label="이전 기간">‹</a>
         <a href="/plan?level={{ level }}&anchor={{ next_anchor }}" class="icon-btn" aria-label="다음 기간">›</a>
     </div>
     <div class="hero-date">
-        <div class="hero-date-main">{{ header }}</div>
+        <h1 class="hero-date-main">{{ header }}</h1>
         <div class="hero-date-sub mono">{{ level_label }} 단위 · <a href="/plan?level={{ level }}">오늘로</a></div>
     </div>
     <div class="hero-actions">
-        {% if zoom_out %}<a href="/plan?level={{ zoom_out }}&anchor={{ anchor }}" class="ghost-btn" title="더 넓게 ({{ level_labels[zoom_out] }})">− 축소</a>{% endif %}
-        {% if zoom_in %}<a href="/plan?level={{ zoom_in }}&anchor={{ anchor }}" class="ghost-btn" title="더 잘게 ({{ level_labels[zoom_in] }})">+ 확대</a>{% endif %}
+        <button type="button" class="ghost-btn" id="pg-restore-item" hidden>삭제 되돌리기</button>
+        {% if areas %}<button type="button" class="primary-btn" id="pg-add-item">+ 항목 추가</button>{% endif %}
     </div>
 </section>
 
@@ -27,11 +27,10 @@
 
 <div class="plan-bar">
     <nav class="plan-levels" aria-label="단위 선택">
-        {# 다른 단위로 갈 때는 보던 기간(anchor)을 그대로 들고 간다. 지금 단위를 한 번 더
-           누르면 anchor 를 떼어 오늘로 돌아온다(오늘이 든 기간이 두 번째 칸에 오는 기본 상태). #}
+        {# 단위를 바꿀 때도 보고 있던 날짜를 유지한다. #}
         {% for lv in levels %}
         {% if lv == level %}
-        <a href="/plan?level={{ lv }}" class="is-active" title="{{ level_labels[lv] }} 기본 화면으로(오늘로)">{{ level_labels[lv] }}</a>
+        <a href="/plan?level={{ lv }}&amp;anchor={{ anchor }}" class="is-active" aria-current="page">{{ level_labels[lv] }}</a>
         {% else %}
         <a href="/plan?level={{ lv }}&anchor={{ anchor }}">{{ level_labels[lv] }}</a>
         {% endif %}
@@ -44,14 +43,13 @@
         {% endfor %}
     </span>
     <label class="plan-pastbox"><input type="checkbox" id="pg-today-line"> 오늘 선</label>
-    {% if past_count %}
-    <label class="plan-pastbox"><input type="checkbox" id="pg-past-hide"> 지난 항목 {{ past_count }}개 숨기기</label>
-    {% endif %}
-    {% if hidden_count or show_hidden %}
-    <label class="plan-pastbox"><input type="checkbox" id="pg-show-hidden" {% if show_hidden %}checked{% endif %}
-           data-url="/plan?level={{ level }}&amp;anchor={{ anchor }}"> 숨긴 항목 {{ hidden_count }}개 보기</label>
-    {% endif %}
-    <span class="plan-hint">좌우로 끌면 기간 이동(<b>주·월 화면은 하루</b>, 분기·연 화면은 주 단위) · 양 끝을 끌면 기간 조절 · <b>위아래로 끌면</b> 같은 줄에서 순서 바꾸기 · <b>다른 막대 위에서 잠깐 멈추면</b> 그 막대의 하위계획으로 · 다른 블록 줄 빈 자리에 놓으면 그 블록으로 이동(상위를 옮기면 <b>하위도 같이</b> 따라갑니다) · <b>빈 자리를 두 번 누르면</b> 그 날짜로 항목 추가</span>
+    <label class="plan-pastbox" id="pg-past-control"{% if not past_count %} hidden{% endif %}>
+        <input type="checkbox" id="pg-past-hide"> <span>지난 항목 {{ past_count }}개 숨기기</span>
+    </label>
+    <label class="plan-pastbox" id="pg-hidden-control"{% if not hidden_count and not show_hidden %} hidden{% endif %}>
+        <input type="checkbox" id="pg-show-hidden" {% if show_hidden %}checked{% endif %}> <span>숨긴 항목 {{ hidden_count }}개 보기</span>
+    </label>
+    <button type="button" class="hint" aria-label="간트 편집 방법" data-hint="막대를 누르면 편집합니다. 좌우로 옮겨 기간을 바꾸고 양 끝을 끌어 길이를 조절합니다. 다른 막대 위에 잠깐 머무르면 그 항목의 하위로 넣을 수 있습니다. 빈 자리를 두 번 누르면 그 날짜로 새 항목을 엽니다.">?</button>
 </div>
 
 <details class="card theme-fold">
@@ -89,13 +87,13 @@
 <div class="card ctx-empty">표시할 영역이 없습니다. 위의 영역 관리에서 추가하세요.</div>
 
 {% else %}
-<div class="plan-scroll">
+<div class="plan-workspace">
+<div class="plan-scroll" tabindex="0" role="region" aria-label="장기 계획 시간표">
     <div class="gantt" data-level="{{ level }}" data-days="{{ span_days }}"
-         data-start="{{ span_start }}" data-anchor="{{ anchor }}" style="--cols: {{ columns | length }}">
-        {# 해·분기·달이 바뀌는 자리에 세로선 하나. 격자 위에 겹쳐 그려 줄이 늘지 않는다. #}
-        {% for col in columns %}{% if col.brk %}
-        <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--i: {{ loop.index0 }}" aria-hidden="true"></span>
-        {% endif %}{% endfor %}
+         data-start="{{ span_start }}" data-anchor="{{ anchor }}" style="--cols: {{ columns | length }}; --gt-columns: {% for col in columns %}minmax(0, {{ col.days }}fr) {% endfor %}">
+        {% for col in columns[1:] %}
+        <span class="gt-brkline" data-lv="{{ col.brk_level }}" style="--p: {{ col.start_pct }}" aria-hidden="true"></span>
+        {% endfor %}
         {% if today_pct is not none %}
         <span class="gt-todayline" style="--p: {{ today_pct }}" data-label="오늘" aria-hidden="true"></span>
         {% endif %}
@@ -135,6 +133,7 @@
                 {% for b in row.bars %}
                 <button type="button"
                         class="gt-bar{% if b.has_children %} is-parent{% endif %}{% if b.clip_left %} clip-l{% endif %}{% if b.clip_right %} clip-r{% endif %}{% if b.past %} is-past{% endif %}{% if b.hidden %} is-hidden-item{% endif %}{% if b.masked %} is-masked-item{% endif %}{% if b.id == focus_id %} is-focus{% endif %}"
+                        aria-expanded="false"
                         data-level="{{ b.level }}" data-lane="{{ b.lane }}"
                         data-id="{{ b.id }}" data-parent="{{ b.parent_id or '' }}"
                         data-area="{{ b.area_id }}" data-blocks="{{ b.blocks }}"
@@ -153,14 +152,18 @@
             </div>
         </div>
         <div class="gt-form" data-block="{{ row.key }}" hidden>
+            <select class="gt-f-block" aria-label="블록">
+                <option value="">미지정</option>
+                {% for bl in core_blocks %}<option value="{{ bl }}"{% if bl == row.key %} selected{% endif %}>{{ bl }}</option>{% endfor %}
+            </select>
             <select class="gt-f-area" aria-label="영역">
                 {% for ar in areas %}
                 <option value="{{ ar.id }}">{{ ar.name }}</option>
                 {% endfor %}
             </select>
-            <input type="text" class="gt-f-title" placeholder="항목 이름 (예: 노무사 1차 과목 1회독)" autocomplete="off">
+            <input type="text" class="gt-f-title" placeholder="항목 이름" aria-label="새 항목 이름" autocomplete="off">
             <input type="date" class="gt-f-start" value="{{ default_start }}" aria-label="시작일">
-            <input type="date" class="gt-f-end" value="{{ span_end }}" aria-label="종료일">
+            <input type="date" class="gt-f-end" value="{{ default_end }}" aria-label="종료일">
             <span class="gt-f-len" role="group" aria-label="기간 길이">
                 <button type="button" class="gt-f-len-btn" data-len="week">1주</button>
                 <button type="button" class="gt-f-len-btn" data-len="month">1개월</button>
@@ -169,7 +172,7 @@
             </span>
             <input type="hidden" class="gt-f-parent" value="">
             <span class="gt-f-parent-label"></span>
-            <button type="button" class="primary-btn gt-f-save">{{ row.label }}에 추가</button>
+            <button type="button" class="primary-btn gt-f-save">항목 추가</button>
             <button type="button" class="ghost-btn gt-f-cancel">취소</button>
         </div>
         {% for b in row.bars %}
@@ -200,15 +203,22 @@
             </div>
             <div class="gt-e-row">
                 <input type="text" class="gt-e-title" value="{{ b.title }}" aria-label="항목 이름">
-                <span class="gt-e-dates">
+                <label class="gt-e-proglabel">진척
+                    <input type="number" class="gt-e-progress" min="0" max="100" step="1" value="{{ b.progress }}" {% if b.has_children %}disabled title="하위 항목의 진척으로 계산됩니다"{% endif %}>%
+                </label>
+            </div>
+            <div class="gt-e-period" role="group" aria-label="계획 기간">
+                <div class="gt-e-row">
+                    <span class="gt-e-dates">
                     <input type="date" class="gt-e-start" value="{{ b.start_date }}" aria-label="시작일">
                     <span class="gt-e-tilde">~</span>
                     <input type="date" class="gt-e-end" value="{{ b.end_date }}" aria-label="종료일">
+                    </span>
                     <span class="gt-e-days">{{ b.days }}일</span>
-                </span>
-                <label class="gt-e-proglabel">진척
-                    <input type="number" class="gt-e-progress" min="0" max="100" step="5" value="{{ b.progress }}" {% if b.has_children %}disabled{% endif %}>%
-                </label>
+                    <button type="button" class="ghost-btn gt-e-apply-period" disabled>기간 적용</button>
+                    <button type="button" class="ghost-btn gt-e-revert-period" hidden>취소</button>
+                </div>
+                <p class="gt-e-period-status" role="status" hidden></p>
             </div>
             <div class="gt-e-row">
                 <span class="gt-e-blocks" role="group" aria-label="블록(여러 개 고를 수 있음)">
@@ -223,7 +233,7 @@
                 </select>
                 <label class="gt-e-blk gt-e-hide"><input type="checkbox" class="gt-e-hidden" {% if b.hidden %}checked{% endif %}>숨김</label>
                 <label class="gt-e-blk gt-e-mask"><input type="checkbox" class="gt-e-masked" {% if b.masked %}checked{% endif %}>가리기</label>
-                <button type="button" class="hint" aria-label="숨김·가리기 설명" data-hint="숨김은 이 장기 탭에서만 막대를 접습니다. 위쪽 '숨긴 항목 보기'를 켜야 다시 나오고, 주간·오늘 탭에는 그대로 나옵니다. 가리기는 반대로 주간 탭과 오늘 탭에서만 빼고 장기 탭 막대는 그대로 둡니다. 둘 다 누른 막대 하나에만 걸리고 하위 계획은 따라오지 않습니다. 어느 쪽도 삭제가 아닙니다.">?</button>
+                <button type="button" class="hint" aria-label="숨김·가리기 설명" data-hint="숨김은 장기 화면에서 해당 막대를 접습니다. '숨긴 항목 보기'로 다시 볼 수 있습니다. 가리기는 주간·오늘 화면에서 해당 항목을 접습니다. 하위 계획의 표시 상태는 개별적으로 바꿀 수 있습니다.">?</button>
                 <span class="gt-e-act">
                     {% if b.parent_id %}<button type="button" class="ghost-btn gt-e-detach">상위에서 떼기</button>{% endif %}
                 </span>
@@ -234,6 +244,8 @@
         </div>
         {% endfor %}
     </div>
+</div>
+<aside class="plan-inspector" id="plan-inspector" aria-label="장기 항목 편집" hidden></aside>
 </div>
 {% endif %}
 {% endblock %}

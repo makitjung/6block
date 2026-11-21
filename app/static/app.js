@@ -50,11 +50,22 @@
     }
 
     // ---- time helpers ----------------------------------------------------
+    // 일정과 슬롯은 서버와 같은 한국 표준시로 계산한다.
+    const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    function kstClock(epoch = Date.now()) {
+        return new Date(epoch + KST_OFFSET_MS);
+    }
+    function kstDateString(epoch) {
+        return kstClock(epoch).toISOString().slice(0, 10);
+    }
+    function kstMinute(epoch) {
+        const clock = kstClock(epoch);
+        return clock.getUTCHours() * 60 + clock.getUTCMinutes();
+    }
     function currentSlotHHMM(date) {
-        const d = date || new Date();
-        const m = d.getMinutes();
-        const slot = m < 30 ? '00' : '30';
-        return `${String(d.getHours()).padStart(2, '0')}:${slot}`;
+        const minutes = kstMinute(date?.getTime());
+        const slot = minutes % 60 < 30 ? '00' : '30';
+        return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${slot}`;
     }
     // 화면에 그려진 슬롯 행의 시간 범위. 블록이 :00/:30이 아닌 시각(예: 09:10)에 시작해도
     // '지금' 슬롯을 찾을 수 있게 실제 행을 기준으로 판단한다. 목록은 페이지당 한 번만 만든다.
@@ -68,8 +79,8 @@
         return slotRangeCache;
     }
     function currentSlotEl(date) {
-        const d = date || new Date();
-        const m = d.getHours() * 60 + d.getMinutes();
+        if (!isTodayInKst(date?.getTime())) return null;
+        const m = kstMinute(date?.getTime());
         const hit = slotRanges().find((r) => m >= r.s && m < r.e);
         return hit ? hit.el : null;
     }
@@ -88,15 +99,12 @@
         if (!s) return -1;
         return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
     }
-    // 오늘의 '자정부터 몇 분' → epoch ms
+    // KST 오늘 자정부터 몇 분이 지났는지 실제 시각으로 바꾼다.
     function epochAtMin(min) {
-        const d = new Date();
-        d.setHours(Math.floor(min / 60), min % 60, 0, 0);
-        return d.getTime();
+        return Date.parse(kstDateString() + 'T00:00:00+09:00') + min * 60000;
     }
     function hhmmOfEpoch(ms) {
-        const d = new Date(ms);
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        return kstClock(ms).toISOString().slice(11, 16);
     }
     // 'HH:MM' 슬롯 시작 → 그 슬롯의 집중 종료시각(시작+25분)의 epoch ms (오늘 기준)
     function focusEndEpoch(slotStart) {
@@ -323,7 +331,7 @@
             // 장기플랜·고민·설정처럼 슬롯 행이 없는 화면에 탭이 떠 있어도 저절로 울리지 않는다.
             if (state.auto && sec < 3 && Date.now() - lastActiveAt < AUTO_IDLE_MS) {
                 const el = currentSlotEl(now);
-                const nowMin = now.getHours() * 60 + now.getMinutes();
+                const nowMin = kstMinute(now.getTime());
                 if (el && nowMin === hhmmToMin(el.dataset.start)
                     && lastBoundaryFired !== el.dataset.start) {
                     lastBoundaryFired = el.dataset.start;
@@ -408,10 +416,7 @@
     function render(force) {
         // top clock
         const tc = document.getElementById('now-clock');
-        if (tc) {
-            const d = new Date();
-            tc.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-        }
+        if (tc) tc.textContent = kstClock().toISOString().slice(11, 19);
 
         // pomo dial
         const pomo = document.getElementById('pomo');
@@ -468,9 +473,8 @@
 
             // 현재 시각 블록 강조 + 포커스 블록 지정 (실제 오늘을 보는 경우에만)
             const dayForm = document.querySelector('.day-form');
-            if (dayForm && isDeviceToday()) {
-                const d = new Date();
-                const m = d.getHours() * 60 + d.getMinutes();
+            if (dayForm && isTodayInKst()) {
+                const m = kstMinute();
                 const focus = focusBlock();
                 document.querySelectorAll('.block').forEach((blk) => {
                     const s = hhmmToMin(blk.dataset.start);
@@ -491,8 +495,7 @@
     function focusBlock() {
         const blocks = [...document.querySelectorAll('.block-stack .block')];
         if (!blocks.length) return null;
-        const d = new Date();
-        const m = d.getHours() * 60 + d.getMinutes();
+        const m = kstMinute();
         return blocks.find((b) => m >= hhmmToMin(b.dataset.start) && m < hhmmToMin(b.dataset.end))
             || blocks.find((b) => hhmmToMin(b.dataset.start) > m)
             || blocks[blocks.length - 1];
@@ -503,13 +506,19 @@
         const stack = document.querySelector('.block-stack');
         if (!stack) return;
         const blocks = stack.querySelectorAll('.block');
+        const current = stack.querySelector('.block.is-focus');
+        const linked = blockFromAddress();
+        const selected = linked || current;
+        document.querySelectorAll('.day-block-jump').forEach((link) => {
+            if (selected && link.hash === '#' + selected.id) link.setAttribute('aria-current', 'location');
+            else link.removeAttribute('aria-current');
+        });
         if (!stack.classList.contains('collapsed')) {
             blocks.forEach((b) => b.classList.remove('blk-collapsed'));
             return;
         }
-        const hasFocus = !!stack.querySelector('.block.is-focus');
         blocks.forEach((b) => {
-            b.classList.toggle('blk-collapsed', hasFocus && !b.classList.contains('is-focus'));
+            b.classList.toggle('blk-collapsed', !!current && b !== linked && b !== current);
         });
     }
 
@@ -517,8 +526,8 @@
     // 시작하는 실제 시간표와 어긋나므로(11:00에 11:30이라고 잘못 표시됐다) 슬롯 행을 따른다.
     // 남은 슬롯이 없으면 빈 문자열.
     function nextBoundary() {
-        const d = new Date();
-        const m = d.getHours() * 60 + d.getMinutes();
+        if (!isTodayInKst()) return '';
+        const m = kstMinute();
         const next = slotRanges().find((r) => r.s > m);
         return next ? next.el.dataset.start : '';
     }
@@ -565,30 +574,57 @@
     // 인터넷이 없을 때 저장·슬롯 체크·수집함 입력을 localStorage에 순서대로 쌓고,
     // 연결되면 들어온 순서대로 자동 전송한다(개인용 1인 기준 마지막 저장 우선).
     const Q_KEY = '6block-queue';
+    const Q_PREFIX = Q_KEY + ':';
     const FORM_HEADERS = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
-    function loadQueue() {
-        try { return JSON.parse(localStorage.getItem(Q_KEY) || '[]'); }
-        catch (e) { return []; }
+    const inMemoryWrites = new Map();
+    let lastQueuedAt = 0;
+    function legacyQueue() {
+        try {
+            const entries = JSON.parse(localStorage.getItem(Q_KEY) || '[]');
+            return Array.isArray(entries) ? entries : [];
+        } catch (e) { return []; }
     }
-    function saveQueue(q) {
-        try { localStorage.setItem(Q_KEY, JSON.stringify(q)); } catch (e) {}
+    function loadQueue() {
+        const entries = new Map(legacyQueue().map((op) => [op.id, op]));
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key?.startsWith(Q_PREFIX)) continue;
+                const op = JSON.parse(localStorage.getItem(key));
+                if (op?.id) entries.set(op.id, op);
+            }
+        } catch (e) {}
+        inMemoryWrites.forEach((op, id) => entries.set(id, op));
+        return [...entries.values()].sort((a, b) => (a.at || 0) - (b.at || 0));
+    }
+    // 변경마다 고유 키를 쓴다. 다른 탭이 추가한 항목이나 전송 중 새로 생긴 항목을 덮지 않는다.
+    function storeWrite(op) {
+        try {
+            localStorage.setItem(Q_PREFIX + op.id, JSON.stringify(op));
+            inMemoryWrites.delete(op.id);
+        } catch (e) {
+            inMemoryWrites.set(op.id, op);
+        }
     }
     function genId() {
         return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     }
     function enqueue(op) {
-        let q = loadQueue();
-        // 전체 폼 저장은 최신 1건만 남겨 큰 스냅샷이 쌓이지 않게 한다.
-        if (op.kind === 'form') q = q.filter((o) => !(o.kind === 'form' && o.url === op.url));
-        // 같은 필드 자동저장(dedupe 키 동일)은 최신 1건만 남긴다.
-        if (op.dedupe) q = q.filter((o) => o.dedupe !== op.dedupe);
-        q.push(op);
-        saveQueue(q);
+        lastQueuedAt = Math.max(Date.now(), lastQueuedAt + 1);
+        op.at = lastQueuedAt;
+        storeWrite(op);
         updateNetStatus();
     }
     function cancelQueued(opId) {
         if (!opId) return;
-        saveQueue(loadQueue().filter((o) => o.id !== opId));
+        inMemoryWrites.delete(opId);
+        try {
+            localStorage.removeItem(Q_PREFIX + opId);
+            const legacy = legacyQueue();
+            if (legacy.some((op) => op.id === opId)) {
+                localStorage.setItem(Q_KEY, JSON.stringify(legacy.filter((op) => op.id !== opId)));
+            }
+        } catch (e) {}
         updateNetStatus();
     }
     // navigator.onLine은 폰 PWA(특히 Tailscale 접속)에서 false로 잘못 나오는 일이 잦아
@@ -598,172 +634,256 @@
             .then((r) => { if (!r.ok) throw new Error('bad'); if (onOk) onOk(); })
             .catch(() => { enqueue(op); if (onQueued) onQueued(); });
     }
-    let flushing = false;
-    async function flushQueue() {
-        if (flushing) { updateNetStatus(); return; }
-        const q = loadQueue();
-        if (!q.length) { updateNetStatus(); return; }
-        flushing = true;
+    async function drainQueue() {
+        const waiting = new Set();
         let sent = 0;
-        while (q.length) {
-            const op = q[0];
+        while (true) {
+            // 같은 필드만 선행 변경을 기다린다. 실패한 항목이 다른 기록의 전송을 막지 않는다.
+            const op = loadQueue().find((entry) => {
+                const key = entry.writeKey || entry.id;
+                if (entry.failure) waiting.add(key);
+                return !waiting.has(key);
+            });
+            if (!op) break;
+            const key = op.writeKey || op.id;
+            if (!op.writeKey && ['form', 'autosave', 'slot'].includes(op.kind)) {
+                // 이전 버전의 초안에는 시간표나 저장 전 값이 없어 안전하게 자동 적용할 수 없다.
+                storeWrite({ ...op, failure: 'legacy-draft' });
+                continue;
+            }
             try {
-                const r = await fetch(op.url, { method: 'POST', headers: op.headers || {}, body: op.body });
-                if (!r.ok) throw new Error('bad');
-                q.shift(); saveQueue(q); sent += 1;
-            } catch (e) { break; }   // 끊기면 남은 건 다음 연결 때 다시
+                const r = await fetch(op.url, {
+                    method: 'POST', headers: op.headers || {}, body: op.body,
+                    keepalive: !!op.writeKey && new TextEncoder().encode(op.body).length < 48000,
+                    signal: AbortSignal.timeout?.(12000),
+                });
+                if (r.ok) {
+                    cancelQueued(op.id);
+                    sent++;
+                } else {
+                    waiting.add(key);
+                    if (r.status < 500 && ![408, 425, 429].includes(r.status)) {
+                        const data = await r.json().catch(() => ({}));
+                        storeWrite({ ...op, failure: data.error || String(r.status), currentValue: data.current_value });
+                    }
+                }
+            } catch (e) { break; }   // 연결이 끊겼다면 다음 연결에서 다시 시도
         }
-        flushing = false;
-        updateNetStatus();
-        if (sent) toast('동기화 완료 ' + sent + '건');
+        if (sent) autosaveToast();
+    }
+    let flushing;
+    function flushQueue() {
+        if (flushing || !loadQueue().length) return flushing;
+        // 여러 탭이 같은 저장 요청을 동시에 보내지 않도록 브라우저 잠금을 쓴다.
+        const run = navigator.locks
+            ? navigator.locks.request(Q_KEY, drainQueue)
+            : drainQueue();
+        flushing = run.catch(() => {}).finally(() => {
+            flushing = null;
+            updateNetStatus();
+        });
+        return flushing;
     }
     function updateNetStatus() {
         const el = document.getElementById('net-status');
         if (!el) return;
-        // navigator.onLine은 신뢰하지 않는다. 전송 못 한 항목이 쌓이면 그 수만 표시한다.
-        const n = loadQueue().length;
-        if (n) {
-            el.hidden = false; el.className = 'net-status pending';
-            el.textContent = '대기 ' + n + '건';
-        } else {
-            el.hidden = true; el.textContent = '';
+        const q = loadQueue();
+        const failures = q.filter((op) => op.failure).length;
+        el.hidden = !q.length && !document.querySelector('.day-form, .week-form');
+        el.classList.toggle('pending', q.length > 0);
+        el.classList.toggle('attention', failures > 0 || inMemoryWrites.size > 0);
+        const status = inMemoryWrites.size ? '임시 저장만 됨'
+            : failures ? '저장 확인 ' + failures + '건'
+            : q.length ? '저장 대기 ' + q.length + '건' : '자동저장';
+        if (el.textContent === status) return;
+        el.textContent = status;
+        const announcement = document.getElementById('save-announcement');
+        if (announcement) announcement.textContent = status;
+    }
+
+    function bindSaveStatus() {
+        const button = document.getElementById('net-status');
+        if (!button) return;
+        const dialog = el('dialog', 'save-queue');
+        dialog.id = 'save-queue-dialog';
+        dialog.setAttribute('aria-labelledby', 'save-queue-title');
+        const heading = el('h2', '', '저장 상태');
+        heading.id = 'save-queue-title';
+        const notice = el('p');
+        notice.setAttribute('role', 'status');
+        const list = el('div', 'save-queue-list');
+        const actions = el('div', 'save-queue-actions');
+        const retry = el('button', 'primary-btn', '다시 확인');
+        const close = el('button', 'ghost-btn', '닫기');
+        retry.type = close.type = 'button';
+        actions.append(retry, close);
+        dialog.append(heading, notice, list, actions);
+        document.body.append(dialog);
+
+        function showWrites() {
+            const groups = new Map();
+            for (const op of loadQueue()) {
+                const key = op.writeKey || op.id;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(op);
+            }
+            list.replaceChildren();
+            notice.textContent = inMemoryWrites.size ? '이 탭을 닫기 전에 내용을 보관하세요. 브라우저 저장 공간에 기록할 수 없습니다.'
+                : groups.size ? '보내지 못한 변경은 이 브라우저에 보관됩니다.' : '전송을 기다리는 변경이 없습니다.';
+            for (const entries of groups.values()) {
+                const latest = entries.at(-1);
+                const failure = entries.find((op) => op.failure);
+                const params = new URLSearchParams(latest.body);
+                const entry = el('section', 'save-queue-entry');
+                const title = el('h3', '', latest.label || '이전 저장 요청');
+                const value = el('textarea');
+                value.readOnly = true;
+                value.rows = 2;
+                value.setAttribute('aria-label', title.textContent + ' · 보관된 입력');
+                value.value = params.get('value') ?? (params.get('done') || [...params].map(([k, v]) => k + ' = ' + v).join('\n'));
+                entry.append(title, value);
+                if (failure?.failure === 'edit-conflict') {
+                    entry.append(el('p', '', '다른 탭에서 바뀐 값 · ' + (failure.currentValue || '비어 있음')));
+                    const replace = el('button', 'ghost-btn', '보관된 값으로 저장');
+                    replace.type = 'button';
+                    replace.addEventListener('click', async () => {
+                        params.set('expected_value', failure.currentValue ?? '');
+                        enqueue({ ...latest, id: genId(), body: params.toString(), failure: undefined, currentValue: undefined });
+                        entries.forEach((op) => cancelQueued(op.id));
+                        await flushQueue();
+                        showWrites();
+                    });
+                    entry.append(replace);
+                } else if (failure) {
+                    const messages = {
+                        'stale-schedule': '시간표가 바뀌었습니다. 이 내용을 복사하고 새로 연 화면의 알맞은 칸에 붙여넣으세요.',
+                        'not-found': '이 기록의 입력칸을 찾을 수 없습니다.',
+                        'legacy-draft': '이전 버전에서 보관한 입력입니다. 아래 내용을 복사해 현재 화면에서 붙여넣을 수 있습니다.',
+                    };
+                    entry.append(el('p', '', messages[failure.failure] || '서버에서 저장 요청을 다시 확인해야 합니다.'));
+                }
+                if (failure) {
+                    const clear = el('button', 'ghost-btn', '대기 항목에서 제거');
+                    clear.type = 'button';
+                    clear.addEventListener('click', () => {
+                        entries.forEach((op) => cancelQueued(op.id));
+                        const field = trackedFields.get(latest.writeKey);
+                        if (field && failure.currentValue !== undefined) {
+                            field.value = String(failure.currentValue ?? '');
+                            paintStoredField(field.el, field.params.field, field.value);
+                        }
+                        showWrites();
+                    });
+                    entry.append(clear);
+                }
+                list.append(entry);
+            }
         }
+        button.addEventListener('click', () => {
+            showWrites();
+            dialog.showModal();
+        });
+        close.addEventListener('click', () => dialog.close());
+        retry.addEventListener('click', async () => {
+            retry.disabled = true;
+            await flushEdits();
+            retry.disabled = false;
+            showWrites();
+        });
+        window.addEventListener('storage', (event) => {
+            if (event.key && event.key !== Q_KEY && !event.key.startsWith(Q_PREFIX)) return;
+            updateNetStatus();
+            if (dialog.open) showWrites();
+        });
     }
 
-    // ---- 오프라인·지난 날짜 감지 (테일스케일/와이파이 꺼짐 대응) ---------
-    // 서버에 못 닿으면 서비스워커가 마지막에 받은 '오늘' 화면(지난 날짜)을 보여준다.
-    // 기기(폰) 로컬 날짜와 화면 날짜가 어긋나면 안내 배너를 띄우고,
-    // 연결이 돌아오면(서버 도달) /today로 자동 이동해 오늘·현재 블록으로 포커스한다.
-    function localDateStr(d) {
-        d = d || new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // ---- 날짜가 바뀐 채 열려 있는 오늘 화면 -----------------------------------
+    function isTodayInKst(epoch) {
+        return document.querySelector('.day-form')?.dataset.date === kstDateString(epoch);
     }
-    function isStaleToday() {
-        const f = document.querySelector('.day-form');
-        return !!(f && f.dataset.today === '1' && f.dataset.date !== localDateStr());
-    }
-    // 현재 보고 있는 날짜 화면이 '기기 시계 기준 오늘'인가.
-    // 서버가 구운 data-today 대신 기기 날짜와 화면 날짜(data-date)를 비교하므로,
-    // 인터넷이 없어 캐시 페이지를 보더라도 그 페이지가 오늘이면 현재 블록·슬롯에 포커싱된다.
-    function isDeviceToday() {
-        const f = document.querySelector('.day-form');
-        return !!(f && f.dataset.date === localDateStr());
-    }
+    let checkingDate = false;
     function checkStale() {
+        const form = document.querySelector('.day-form');
         const banner = document.getElementById('stale-banner');
-        if (!isStaleToday()) { if (banner) banner.hidden = true; return; }
+        if (location.pathname !== '/today' || !form || isTodayInKst()) {
+            if (banner) banner.hidden = true;
+            return;
+        }
         if (banner) banner.hidden = false;
-        // 서버에 닿으면 오늘 날짜로 새로 렌더해 자동 이동(닿지 않으면 조용히 대기)
+        if (checkingDate || busyNow()) return;
+        checkingDate = true;
         fetch('/api/now', { cache: 'no-store' })
-            .then((r) => { if (r.ok) location.replace('/today'); })
-            .catch(() => {});
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+                const serverDate = data?.iso?.slice(0, 10);
+                if (!serverDate) return;
+                if (serverDate === form.dataset.date) {
+                    if (banner) banner.hidden = true;
+                } else if (!busyNow()) {
+                    flushEdits();
+                    location.replace('/today');
+                }
+            })
+            .catch(() => {})
+            .finally(() => { checkingDate = false; });
     }
 
-    // ---- form save (저장 버튼 → 백그라운드 저장 + 오프라인 대기열) -------
-    function saveDayForm(form) {
-        const op = {
-            id: genId(), kind: 'form', url: form.getAttribute('action'),
-            headers: FORM_HEADERS,
-            body: new URLSearchParams(new FormData(form)).toString(),
-        };
-        fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
-            .then((r) => { if (!r.ok) throw new Error('bad'); location.reload(); })
-            .catch(() => {
-                enqueue(op);
-                toast('저장 대기 ' + loadQueue().length + '건 · 연결되면 자동 전송');
-            });
-    }
+    // ---- form save ------------------------------------------------------
     function bindForm() {
-        // 저장 버튼을 없앤 뒤로 폼이 스스로 전송되는 길은 '칸에서 Enter' 하나뿐이다.
-        // 값은 칸마다 이미 자동저장되므로 화면을 새로 띄우지 않고, 그 칸만 확정(blur)해
-        // 곧바로 저장되게 한다. ⌘S 는 아래에서 그대로 전체 저장을 맡는다.
-        document.querySelectorAll('form.day-form, form.week-form').forEach((f) => {
+        const forms = document.querySelectorAll('form.day-form, form.week-form');
+        if (!forms.length) return;
+        forms.forEach((f) => {
             f.addEventListener('submit', (e) => {
                 e.preventDefault();
                 document.activeElement?.blur();
+                flushEdits();
             });
         });
         document.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.altKey) {
                 e.preventDefault();
-                const df = document.querySelector('form.day-form');
-                if (df) { saveDayForm(df); return; }
-                const wf = document.querySelector('form.week-form');
-                if (wf) wf.submit();
+                // 단축키도 변경한 칸만 보낸다. 오래 열린 폼으로 다른 기록을 덮지 않는다.
+                const sending = flushEdits();
+                if (!sending && !loadQueue().length) autosaveToast();
             }
         });
     }
 
-    // ---- 오늘/주간 폼의 각 필드에 자동저장 연결 --------------------------
-    // name 속성 규칙을 파싱: plan_{id}, see_{id}, do_{id}, did_{id}, cat_{id},
-    // bcat_{id}, bname_{id}, bloc_{id}, goal{1-3}, dplan{1-3}, memo, vow,
-    // theme_{lbl}(주간), weekly_goal/appointments/vow/memo(주간).
     function bindAutosaveAll() {
         const dayForm = document.querySelector('form.day-form');
-        const dateStr = dayForm ? dayForm.dataset.date : null;
         const weekForm = document.querySelector('form.week-form');
-        const weekStart = weekForm ? (weekForm.getAttribute('action') || '').split('/').pop() : null;
+        const inputs = 'textarea[name], input[name]:not([type=hidden]), select[name]';
+        const blockFields = { plan: 'plan_text', see: 'see_text', bname: 'bname', bcat: 'bcat', bloc: 'bloc' };
+        const slotFields = { do: 'do_text', did: 'did_text', cat: 'cat' };
+        dayForm?.querySelectorAll(inputs).forEach((el) => {
+            const match = /^(plan|see|bname|bcat|bloc|do|did|cat)_(\d+)$/.exec(el.name);
+            if (match) {
+                const [, field, id] = match;
+                if (blockFields[field]) {
+                    const extra = field === 'bname' && 'savedValue' in el.dataset ? { name_view: 'override' } : {};
+                    bindAutoSave(el, 'block', id, blockFields[field], extra);
+                }
+                else bindAutoSave(el, 'slot', id, slotFields[field]);
+            } else if (/^(?:(?:goal|dplan|grat|concept)[123]|memo|vow|day_review)$/.test(el.name)) {
+                bindAutoSave(el, 'meta', dayForm.dataset.date, el.name);
+            }
+        });
 
-        const each = (sel, fn) => document.querySelectorAll(sel).forEach((el) => { if (el.name) fn(el, el.name); });
-
-        if (dayForm) {
-            each('textarea[name], input[name]', (el, name) => {
+        if (weekForm) {
+            const ws = weekForm.getAttribute('action').split('/').pop();
+            weekForm.querySelectorAll(inputs).forEach((el) => {
+                const name = el.name;
                 let m;
-                if ((m = name.match(/^plan_(\d+)$/)))      bindAutoSave(el, 'block', m[1], 'plan_text');
-                else if ((m = name.match(/^see_(\d+)$/)))   bindAutoSave(el, 'block', m[1], 'see_text');
-                else if ((m = name.match(/^bname_(\d+)$/))) bindAutoSave(el, 'block', m[1], 'bname');
-                else if ((m = name.match(/^bloc_(\d+)$/)))  bindAutoSave(el, 'block', m[1], 'bloc');
-                else if ((m = name.match(/^do_(\d+)$/)))    bindAutoSave(el, 'slot', m[1], 'do_text');
-                else if ((m = name.match(/^did_(\d+)$/)))   bindAutoSave(el, 'slot', m[1], 'did_text');
-                else if ((m = name.match(/^goal([123])$/))) {
-                    el.dataset.asPrefix = 'goal';
-                    el.dataset.asIdx = m[1];
-                    bindAutoSave(el, 'meta', dateStr, 'goal' + m[1], { groupPrefix: 'goal' });
-                } else if ((m = name.match(/^dplan([123])$/))) {
-                    el.dataset.asPrefix = 'dplan';
-                    el.dataset.asIdx = m[1];
-                    bindAutoSave(el, 'meta', dateStr, 'dplan' + m[1], { groupPrefix: 'dplan' });
-                } else if ((m = name.match(/^grat([123])$/))) {
-                    el.dataset.asPrefix = 'grat';
-                    el.dataset.asIdx = m[1];
-                    bindAutoSave(el, 'meta', dateStr, 'grat' + m[1], { groupPrefix: 'grat' });
-                } else if ((m = name.match(/^concept([123])$/))) {
-                    el.dataset.asPrefix = 'concept';
-                    el.dataset.asIdx = m[1];
-                    bindAutoSave(el, 'meta', dateStr, 'concept' + m[1], { groupPrefix: 'concept' });
-                } else if (name === 'memo') bindAutoSave(el, 'meta', dateStr, 'memo');
-                else if (name === 'vow')    bindAutoSave(el, 'meta', dateStr, 'vow');
-                else if (name === 'day_review') bindAutoSave(el, 'meta', dateStr, 'day_review');
-            });
-            // 카테고리 셀렉트(change 로 즉시 저장)
-            each('select[name]', (el, name) => {
-                let m;
-                if ((m = name.match(/^bcat_(\d+)$/))) el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
-                else if ((m = name.match(/^cat_(\d+)$/))) el.addEventListener('change', () => saveField('slot', m[1], 'cat', el.value));
-            });
-        }
-
-        if (weekForm && weekStart) {
-            const ws = weekStart;
-            each('textarea[name], input[name]', (el, name) => {
-                let m;
-                if (['appointments', 'vow', 'memo'].indexOf(name) >= 0)
+                if (/^(?:appointments|vow|memo|wgoal[123])$/.test(name))
                     bindAutoSave(el, 'wmeta', ws, name);
-                else if ((m = name.match(/^wgoal([123])$/))) {
-                    el.dataset.asPrefix = 'wgoal';
-                    el.dataset.asIdx = m[1];
-                    bindAutoSave(el, 'wmeta', ws, 'wgoal' + m[1], { groupPrefix: 'wgoal' });
-                } else if ((m = name.match(/^ltgoal_(\d+)$/)))
-                    bindAutoSave(el, 'ltgoal', m[1], 'ltgoal', { extra: { week_start: ws } });
+                else if ((m = name.match(/^ltgoal_(\d+)$/)))
+                    bindAutoSave(el, 'ltgoal', m[1], 'ltgoal', { week_start: ws });
                 else if ((m = name.match(/^theme_(.+)$/)))
-                    bindAutoSave(el, 'theme', ws, 'theme', { extra: { label: m[1] } });
+                    bindAutoSave(el, 'theme', ws, 'theme', { label: m[1] });
                 else if ((m = name.match(/^bname_(\d+)$/)))
-                    bindAutoSave(el, 'block', m[1], 'bname');
-            });
-            each('select[name]', (el, name) => {
-                let m;
-                if ((m = name.match(/^bcat_(\d+)$/)))
-                    el.addEventListener('change', () => saveField('block', m[1], 'bcat', el.value));
+                    bindAutoSave(el, 'block', m[1], 'bname', { name_view: 'override' });
+                else if ((m = name.match(/^bcat_(\d+)$/)))
+                    bindAutoSave(el, 'block', m[1], 'bcat');
             });
         }
     }
@@ -932,15 +1052,20 @@
         }, 250);
     }
 
+    function blockFromAddress() {
+        return /^#blk-\d+$/.test(location.hash)
+            ? document.getElementById(location.hash.slice(1))
+            : null;
+    }
     function initialScroll() {
         let target = null;
         let isSlot = false;
-        const hash = location.hash;
-        if (hash && hash.indexOf('#blk-') === 0) {
-            target = document.querySelector(hash);
+        const linked = blockFromAddress();
+        if (linked) {
+            target = linked;
         } else {
             const dayForm = document.querySelector('.day-form');
-            if (dayForm && isDeviceToday()) {
+            if (dayForm && isTodayInKst()) {
                 // 현재 30분 슬롯을 우선 포커스, 없으면(블록 사이 틈 등) 포커스 블록
                 const slot = document.querySelector('.slot.is-now');
                 if (slot) { target = slot; isSlot = true; }
@@ -960,7 +1085,7 @@
     // 현재 30분 슬롯이 바뀌면 화면을 부드럽게 따라 이동(사용자 조작 중에는 억제)
     function autoFollowSlot() {
         const dayForm = document.querySelector('.day-form');
-        if (!dayForm || !isDeviceToday()) return;
+        if (!dayForm || !isTodayInKst() || blockFromAddress()) return;
         const cur = currentSlotKey();
         if (cur === lastNowSlot) return;
         if (lastNowSlot === '') { lastNowSlot = cur; return; }   // 초기 1회는 initialScroll이 담당
@@ -972,7 +1097,7 @@
     // 화면 회전·리사이즈 후 현재 슬롯을 다시 중앙에 맞춤(가로 전환 등에서 어긋남 방지)
     function refocusCurrent() {
         const dayForm = document.querySelector('.day-form');
-        if (!dayForm || !isDeviceToday()) return;
+        if (!dayForm || !isTodayInKst() || blockFromAddress()) return;
         const target = document.querySelector('.slot.is-now') || document.querySelector('.block.is-focus');
         if (target) target.scrollIntoView({ behavior: 'auto', block: 'center' });
         lastNowSlot = currentSlotKey();
@@ -1043,13 +1168,20 @@
             const group = curBtn.dataset.group, idx = curBtn.dataset.idx;
             const val = input.value.replace(/\s+/g, ' ').trim();
             const hid = hiddenOf(curBtn);
+            if (hid && dateStr) saveTrackedField(trackField(hid, 'meta', dateStr, group + idx), val);
             if (hid) hid.value = val;
             curBtn.textContent = val || '＃';
             curBtn.classList.toggle('has-tag', !!val);
-            if (dateStr) saveField('meta', dateStr, group, val, { [group + idx]: val });
             close();
         };
         document.querySelectorAll('.gp-tag-btn').forEach((btn) => {
+            const hidden = hiddenOf(btn);
+            if (hidden && dateStr) {
+                const field = btn.dataset.group + btn.dataset.idx;
+                trackField(hidden, 'meta', dateStr, field);
+                btn.textContent = hidden.value || '＃';
+                btn.classList.toggle('has-tag', !!hidden.value);
+            }
             btn.addEventListener('click', () => open(btn));
         });
         document.getElementById('tag-modal-save')?.addEventListener('click', save);
@@ -1059,64 +1191,6 @@
             if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save(); }
             else if (e.key === 'Escape') { e.preventDefault(); close(); }
         });
-    }
-
-    // ---- 화면 맨 위 구글 일정 배너 ---------------------------------------
-    // 일정 칸의 목록은 감춰 두고, 그날 일정을 여기서 한 건씩 번갈아 보여 준다.
-    // 제목이 길면 CSS(text-overflow)가 앞부분만 남기고 …로 자른다.
-    const HERO_CAL_MS = 4000;
-    let heroCalItems = [];
-    let heroCalKey = '';
-    let heroCalIdx = 0;
-    let heroCalTimer = null;
-
-    function paintHeroCal() {
-        const box = document.getElementById('hero-cal');
-        const it = heroCalItems[heroCalIdx];
-        if (!box || !it) return;
-        box.querySelector('.hero-cal-t').textContent = it.t;
-        box.querySelector('.hero-cal-x').textContent = it.x;
-        box.title = (it.t ? it.t + ' · ' : '') + it.x;
-    }
-
-    function startHeroCal() {
-        const box = document.getElementById('hero-cal');
-        if (!box) return;
-        clearInterval(heroCalTimer);
-        heroCalTimer = null;
-        box.hidden = !heroCalItems.length;
-        if (!heroCalItems.length) return;
-        if (heroCalIdx >= heroCalItems.length) heroCalIdx = 0;
-        paintHeroCal();
-        if (heroCalItems.length < 2) return;
-        heroCalTimer = setInterval(() => {
-            if (document.hidden) return;
-            heroCalIdx = (heroCalIdx + 1) % heroCalItems.length;
-            // 글자를 먼저 갈아 끼우고 애니메이션은 덧입히기만 한다. 예전에는 먼저 흐리게 만든 뒤
-            // setTimeout 으로 되살렸는데, 그 사이 탭이 뒤로 가면 타이머가 눌려 배너가 빈 채로 남았다.
-            paintHeroCal();
-            box.classList.remove('is-swap');
-            void box.offsetWidth;          // 같은 애니메이션을 처음부터 다시 돌리기 위한 리플로우
-            box.classList.add('is-swap');
-        }, HERO_CAL_MS);
-    }
-
-    // 목록이 그대로면 돌아가던 순번을 건드리지 않는다(60초 폴링마다 처음으로 돌아가지 않게).
-    function setHeroCalItems(items) {
-        const key = JSON.stringify(items);
-        if (key === heroCalKey) return;
-        heroCalKey = key;
-        heroCalItems = items;
-        heroCalIdx = 0;
-        startHeroCal();
-    }
-
-    function heroCalFromPage() {
-        setHeroCalItems([...document.querySelectorAll('#agenda-events .agenda-row.event')]
-            .map((r) => ({
-                t: r.querySelector('.t')?.textContent || '',
-                x: r.querySelector('.x')?.textContent || '',
-            })));
     }
 
     // ---- 주간 띠의 Things3 할 일 칩 --------------------------------------
@@ -1132,6 +1206,8 @@
             box.appendChild(node);
         });
         box.hidden = !tasks.length;
+        const empty = document.getElementById('wk-tasks-empty');
+        if (empty) empty.hidden = !!tasks.length;
     }
 
     function renderAgenda(data) {
@@ -1163,10 +1239,6 @@
             });
             if (!tasks.length) taskBox.appendChild(el('div', 'ctx-empty agenda-empty', 'Things3 Today가 비어 있습니다.'));
         }
-        // 감춘 목록에서 실제로 보이는 두 자리(맨 위 일정 배너·주간 띠 할 일)를 함께 갱신한다.
-        setHeroCalItems(events.map((ev) => ({
-            t: ev.all_day ? '종일' : (ev.start || ''), x: ev.title,
-        })));
         renderWkTasks(tasks);
         setupAgendaMoreAll();
     }
@@ -1240,51 +1312,64 @@
     // ---- DO 실행 체크 (즉시 저장) ---------------------------------------
     function bindSlotChecks() {
         document.querySelectorAll('.slot-check').forEach((cb) => {
+            const field = trackField(cb, 'slot', cb.dataset.slot, 'done');
             cb.addEventListener('change', () => {
-                const done = cb.checked ? '1' : '0';
                 cb.closest('.slot')?.classList.toggle('is-done', cb.checked);
-                sendOrQueue(
-                    { id: genId(), kind: 'slot', url: '/slot/done/' + cb.dataset.slot,
-                      headers: FORM_HEADERS, body: 'done=' + done },
-                    () => toast(cb.checked ? '완료 체크' : '체크 해제'),
-                    () => toast('전송 대기 · 자동 재시도'),
-                );
+                saveTrackedField(field, fieldValue(cb));
             });
         });
     }
 
     // ---- 블록 호버 버튼 + 현재/전체 토글 ---------------------------------
     function bindBlockTools() {
-        // 호버 버튼: 데스크톱은 CSS :hover, 모바일은 탭으로 팝오버 토글
-        // (슬롯 '한 일' 버튼도 같은 방식으로 탭하면 옆에 패널이 열린다)
+        function setPopover(wrap, show) {
+            wrap.classList.toggle('open', show);
+            const button = wrap.querySelector('button');
+            if (button?.hasAttribute('aria-expanded')) button.setAttribute('aria-expanded', String(show));
+        }
+        const closePopovers = () => document.querySelectorAll('.hover-wrap.open').forEach((wrap) => setPopover(wrap, false));
         document.querySelectorAll('.hover-btn, .slot-did-btn').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 const wrap = btn.closest('.hover-wrap');
                 const open = wrap.classList.contains('open');
-                document.querySelectorAll('.hover-wrap.open').forEach((w) => w.classList.remove('open'));
-                if (!open) wrap.classList.add('open');
+                closePopovers();
+                if (!open) {
+                    setPopover(wrap, true);
+                    wrap.querySelector('.slot-did-input')?.focus({ preventScroll: true });
+                }
             });
         });
         document.querySelectorAll('.hover-pop').forEach((p) => {
             p.addEventListener('click', (e) => e.stopPropagation());
         });
-        document.addEventListener('click', () => {
-            document.querySelectorAll('.hover-wrap.open').forEach((w) => w.classList.remove('open'));
+        document.addEventListener('click', closePopovers);
+        document.addEventListener('focusin', (e) => {
+            document.querySelectorAll('.slot-did.open').forEach((wrap) => {
+                if (!wrap.contains(e.target)) setPopover(wrap, false);
+            });
+        });
+        document.addEventListener('keydown', (e) => {
+            const wrap = e.target.closest?.('.slot-did.open');
+            if (!wrap || e.key !== 'Escape' || e.isComposing) return;
+            e.preventDefault();
+            wrap.querySelector('.slot-did-btn')?.focus();
+            setPopover(wrap, false);
         });
 
         // 현재 블록만 보기 ↔ 전체 보기 (오늘 화면에서만)
         const stack = document.querySelector('.block-stack');
         const toggle = document.getElementById('blocks-toggle');
         const dayForm = document.querySelector('.day-form');
-        if (stack && dayForm && isDeviceToday() && settingOn('collapse_blocks', true)) {
+        if (stack && dayForm && isTodayInKst() && settingOn('collapse_blocks', true)) {
             stack.classList.add('collapsed');  // 기본값(설정): 현재 블록만
         }
         if (stack && toggle) {
             toggle.addEventListener('click', () => {
                 const collapsed = stack.classList.toggle('collapsed');
                 toggle.textContent = collapsed ? '전체 블록 보기' : '현재 블록만 보기';
+                if (collapsed && blockFromAddress()) history.replaceState(null, '', location.pathname + location.search);
                 applyBlockCollapse();
                 const cur = stack.querySelector('.block.is-focus');
                 if (collapsed) {
@@ -1292,6 +1377,16 @@
                 } else {
                     setTimeout(initialScroll, 60);
                 }
+            });
+        }
+        if (stack) {
+            window.addEventListener('hashchange', () => {
+                applyBlockCollapse();
+                const target = blockFromAddress();
+                if (!target) return;
+                target.tabIndex = -1;
+                target.focus({ preventScroll: true });
+                scrollToEl(target);
             });
         }
     }
@@ -1373,11 +1468,12 @@
                         d.ai?.enabled ? d.ai.model : (d.ai?.has_key ? '주소·모델 필요' : '쓰지 않음')));
 
                     // 백업: 하루라도 밀리면 빨강(매일 23시에 돌아야 한다)
-                    (d.backup || []).forEach((b) => frag.appendChild(row(
-                        '백업 · ' + b.label,
-                        b.ok ? (b.age !== null && b.age <= 1) : false,
-                        b.ok ? `${b.name} · ${b.kb}KB · ${b.age === null ? '?' : b.age}일 전` : '없음',
-                    )));
+                    (d.backup || []).forEach((b) => {
+                        const verified = b.ok && b.age !== null && b.age <= 1 ? (b.verified ? true : null) : false;
+                        const file = b.name !== '없음' ? ` · ${b.name} · ${b.kb}KB` : '';
+                        const age = b.age !== null ? ` · ${b.age}일 전` : '';
+                        frag.appendChild(row('백업 · ' + b.label, verified, b.reason + file + age));
+                    });
 
                     // 기록 신선도: 이틀 넘게 비면 기록이 끊긴 것이다.
                     // 앞날에 미리 적어 둔 기록이 있으면 경과일이 음수가 되므로 그때는 안 붙인다.
@@ -2421,9 +2517,16 @@
         document.getElementById('set-backup-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget; btn.disabled = true;
             postForm('/settings/backup', {}).then((d) => {
-                toast(d && d.ok ? '백업 완료' : '백업 실패');
-                btn.disabled = false;
-            });
+                const status = document.getElementById('set-backup-status');
+                if (status && d?.backup) {
+                    status.replaceChildren(...d.backup.map((b) => {
+                        const file = b.name !== '없음' ? ` · ${b.name} · ${b.kb}KB` : '';
+                        const age = b.age !== null ? ` · ${b.age}일 전` : '';
+                        return el('span', b.ok ? 'bk' : 'bk bad', `${b.label} · ${b.reason}${file}${age}`);
+                    }));
+                }
+                toast(d?.ok ? '백업 완료 · 복원 검사 통과' : (d?.error || '백업 실패'));
+            }).finally(() => { btn.disabled = false; });
         });
         document.getElementById('set-csv-btn')?.addEventListener('click', () => {
             const s = document.getElementById('set-csv-start').value;
@@ -2460,7 +2563,7 @@
         const box = document.querySelector('.plan-scroll');
         try {
             sessionStorage.setItem(PLAN_SCROLL_KEY, JSON.stringify({
-                y: window.scrollY, x: box ? box.scrollLeft : 0, q: location.search,
+                y: window.scrollY, x: box?.scrollLeft || 0, innerY: box?.scrollTop || 0, q: location.search,
             }));
             // 브라우저가 제 나름대로 기억해 둔 자리를 나중에 덮어쓰지 못하게 잠근다.
             // 안 그러면 우리가 되돌린 뒤에 브라우저 것이 한 번 더 들어와 자리가 어긋난다.
@@ -2477,7 +2580,10 @@
         if (!saved) return;
         const box = document.querySelector('.plan-scroll');
         const put = () => {
-            if (box && saved.q === location.search) box.scrollLeft = saved.x || 0;
+            if (box && saved.q === location.search) {
+                box.scrollLeft = saved.x || 0;
+                box.scrollTop = saved.innerY || 0;
+            }
             window.scrollTo(0, saved.y || 0);
         };
         // 격자를 다 그린 뒤라야 세로 길이가 정해져 원하는 만큼 내려간다. 몇 번 더 짚는다.
@@ -2496,6 +2602,22 @@
     let pendingForm = null;     // 추가 폼 {block, area, parent, title, start, end}
     let pendingEdit = null;     // 편집칸 {id, block}
     let ganttBusy = false;
+    const PLAN_UNDO_KEY = 'plan-undo';
+    let deletedPlan = null;
+    try { deletedPlan = JSON.parse(sessionStorage.getItem(PLAN_UNDO_KEY) || 'null'); } catch (e) {}
+
+    function showPlanUndo(record) {
+        deletedPlan = record;
+        try {
+            if (record) sessionStorage.setItem(PLAN_UNDO_KEY, JSON.stringify(record));
+            else sessionStorage.removeItem(PLAN_UNDO_KEY);
+        } catch (e) {}
+        const undo = document.getElementById('pg-restore-item');
+        if (undo) {
+            undo.hidden = !record;
+            undo.title = record ? '최근 삭제한 ' + record.title + ' 복원(삭제 후 10분)' : '';
+        }
+    }
 
     // 화면 전체(location.reload) 대신 간트 부분만 새로 받아 갈아끼운다. 스크롤 자리와
     // 열어 둔 칸이 그대로 남아, 항목을 연달아 넣거나 순서를 잇달아 바꿀 수 있다.
@@ -2507,14 +2629,25 @@
         if (!box || ganttBusy) { savePlanScroll(); location.href = u.toString(); return; }
         ganttBusy = true;
         fetch(u.toString(), { credentials: 'same-origin', cache: 'no-store' })
-            .then((r) => r.text())
+            .then((r) => { if (!r.ok) throw new Error('no-gantt'); return r.text(); })
             .then((html) => {
-                const fresh = new DOMParser().parseFromString(html, 'text/html')
-                    .querySelector('.plan-scroll');
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const fresh = doc.querySelector('.plan-scroll');
                 if (!fresh) throw new Error('no-gantt');
                 const x = box.scrollLeft;
+                const y = box.scrollTop;
+                const inspector = document.getElementById('plan-inspector');
+                if (inspector) { inspector.replaceChildren(); inspector.hidden = true; }
                 box.replaceWith(fresh);
                 fresh.scrollLeft = x;
+                fresh.scrollTop = y;
+                for (const id of ['pg-hidden-control', 'pg-past-control']) {
+                    const control = document.getElementById(id);
+                    const next = doc.getElementById(id);
+                    if (!control || !next) continue;
+                    control.hidden = next.hidden;
+                    control.querySelector('span').textContent = next.querySelector('span').textContent;
+                }
                 // 서버가 방금 옮긴 항목을 따라 보는 기간을 바꿨으면 주소도 그 기간으로 맞춘다
                 const anchor = fresh.querySelector('.gantt')?.dataset.anchor;
                 if (anchor) u.searchParams.set('anchor', anchor);
@@ -2571,6 +2704,10 @@
     function bindGantt(again) {
         const gantt = document.querySelector('.gantt');
         if (!gantt) return;
+        const inspector = document.getElementById('plan-inspector');
+        let editing = null;
+        let adding = null;
+        const groupFor = (block) => gantt.querySelector('.gt-group[data-block="' + block + '"]');
         // 위쪽 체크박스로 켜 둔 상태를 새 격자에도 옮긴다(부분 새로고침에서 잃지 않게)
         gantt.classList.toggle('show-today',
                                !!document.getElementById('pg-today-line')?.checked);
@@ -2587,12 +2724,38 @@
             refreshGantt(id);
             return true;
         };
-        const closeAll = () => {
+        const mayClose = () => {
+            if (editing?.box.dataset.periodSaving === '1') return false;
+            return editing?.box.dataset.periodDirty !== '1'
+                || window.confirm('적용하지 않은 기간 변경을 취소할까요?');
+        };
+        const closeAll = (focus = false) => {
+            if (!mayClose()) return false;
+            const old = editing;
+            if (old) {
+                old.box.resetPeriod?.();
+                old.box.hidden = true;
+                old.bar.setAttribute('aria-expanded', 'false');
+                if (inspector && inspector.contains(old.box)) {
+                    groupFor(old.box.dataset.block).append(old.box);
+                    inspector.hidden = true;
+                }
+                editing = null;
+            }
+            if (adding) {
+                adding.hidden = true;
+                if (inspector && inspector.contains(adding)) {
+                    groupFor(adding.dataset.block).append(adding);
+                    inspector.hidden = true;
+                }
+                adding = null;
+            }
             gantt.querySelectorAll('.gt-edit, .gt-form').forEach((el) => { el.hidden = true; });
             gantt.querySelectorAll('.gt-bar.is-editing')
                  .forEach((b) => b.classList.remove('is-editing'));
             litGanttFamily(gantt, null);
-            flushRedraw();
+            if (!flushRedraw() && focus) old?.bar.focus();
+            return true;
         };
         // 격자의 빈 곳을 누르면 닫는다. 입력칸 안이라도 칸·버튼이 아닌 빈 자리를 누르면
         // 마찬가지로 닫는다(입력칸 자신이나 줄 묶음이 눌린 경우).
@@ -2610,7 +2773,7 @@
         gantt.addEventListener('mouseover', (e) => {
             if (gantt.querySelector('.gt-bar.is-dragging, .gt-bar.is-resizing')) return;
             // 편집칸·추가칸이 열려 있으면 켜지 않는다(적는 칸 뒤가 깨끗해야 읽힌다)
-            if (gantt.querySelector('.gt-edit:not([hidden]), .gt-form:not([hidden])')) {
+            if (editing || gantt.querySelector('.gt-form:not([hidden])')) {
                 litGanttFamily(gantt, null);
                 return;
             }
@@ -2620,20 +2783,28 @@
         // 항목 추가 폼 열기(블록 줄마다 하나). 하위 추가면 상위 항목·영역·기간을 물려받는다.
         const openForm = (opt) => {
             const o = opt || {};
-            if (dirtyRedraw) { pendingForm = o; flushRedraw(); return; }
-            closeAll();
+            if (dirtyRedraw) {
+                if (mayClose()) { pendingForm = o; flushRedraw(); }
+                return;
+            }
+            if (!closeAll()) return;
             const form = gantt.querySelector('.gt-form[data-block="' + (o.block || '') + '"]');
             if (!form) return;
+            adding = form;
+            if (inspector && window.matchMedia('(min-width: 1180px)').matches) {
+                inspector.append(form);
+                inspector.hidden = false;
+            }
             form.hidden = false;
+            form.querySelector('.gt-f-block').value = o.block || '';
             const area = form.querySelector('.gt-f-area');
             if (area && o.area) area.value = o.area;
             form.querySelector('.gt-f-parent').value = o.parent || '';
             const label = form.querySelector('.gt-f-parent-label');
             if (label) label.textContent = o.parent ? ('하위 · ' + o.title) : '';
             [['start', '.gt-f-start'], ['end', '.gt-f-end']].forEach(([k, sel]) => {
-                if (!o[k]) return;
                 const el = form.querySelector(sel);
-                el.value = o[k];
+                el.value = o[k] || el.getAttribute('value');
                 syncDateParts(el);      // 코드가 넣은 값을 한 칸 입력에도 반영
             });
             const t = form.querySelector('.gt-f-title');
@@ -2644,6 +2815,26 @@
 
         gantt.querySelectorAll('.gt-add').forEach((btn) =>
             btn.addEventListener('click', () => openForm({ block: btn.dataset.block })));
+        const addItem = document.getElementById('pg-add-item');
+        if (addItem) addItem.onclick = () => openForm({});
+        const restore = document.getElementById('pg-restore-item');
+        if (restore) {
+            showPlanUndo(deletedPlan);
+            restore.onclick = async () => {
+                if (!deletedPlan || !mayClose()) return;
+                restore.disabled = true;
+                const d = await postForm('/plan/item/restore', { token: deletedPlan.undo_token });
+                restore.disabled = false;
+                if (d?.ok) {
+                    showPlanUndo(null);
+                    toast('장기 항목 ' + d.restored + '개 복원');
+                    refreshGantt(d.id);
+                } else {
+                    toast(d?.error || '복원 실패');
+                    if (d?.error === '복원할 수 있는 시간이 지났습니다') showPlanUndo(null);
+                }
+            };
+        }
 
         // 빈 자리를 두 번 누르면 그 날짜로 시작하는 1주짜리 항목을 그 블록 줄에 만든다
         const spanStart = gantt.dataset.start;
@@ -2671,20 +2862,22 @@
                 const end = form.querySelector('.gt-f-end').value;
                 if (!title) { toast('항목 이름을 입력하세요'); return; }
                 if (!start || !end) { toast('시작일과 종료일을 고르세요'); return; }
+                if (start > end) { toast('종료일은 시작일과 같거나 뒤여야 합니다'); return; }
                 sending = true;
                 const parent = form.querySelector('.gt-f-parent').value;
                 const area = form.querySelector('.gt-f-area').value;
+                const block = form.querySelector('.gt-f-block').value;
                 const ptext = form.querySelector('.gt-f-parent-label')?.textContent || '';
                 postForm('/plan/item/add', {
                     area_id: area,
-                    block: form.dataset.block,
+                    block: block,
                     title: title, start: start, end: end,
                     parent_id: parent,
                 }).then((d) => {
                     if (d && d.ok) {
                         // 같은 자리에 폼을 그대로 다시 열어 연달아 적을 수 있게 한다
                         pendingForm = {
-                            block: form.dataset.block, area: area, parent: parent,
+                            block: block, area: area, parent: parent,
                             title: ptext.replace(/^하위 · /, ''), start: start, end: end,
                         };
                         refreshGantt(d.id);
@@ -2702,7 +2895,7 @@
                     submit();
                 }
             });
-            form.querySelector('.gt-f-cancel')?.addEventListener('click', () => { form.hidden = true; });
+            form.querySelector('.gt-f-cancel')?.addEventListener('click', () => { closeAll(); addItem?.focus(); });
             // 길이 버튼: 어느 화면 단위에서든 1주·1개월·1분기·1년짜리 막대를 바로 만든다.
             form.querySelectorAll('.gt-f-len-btn').forEach((b) => {
                 b.addEventListener('click', () => {
@@ -2738,19 +2931,25 @@
         };
 
         const openEdit = (bar) => {
+            if (editing?.bar === bar) { closeAll(true); return; }
             const box = editBoxFor(bar);
             if (!box) return;
-            const wasOpen = !box.hidden;
             if (dirtyRedraw) {
-                pendingEdit = wasOpen ? null
-                    : { id: bar.dataset.id, block: bar.closest('.gt-group')?.dataset.block };
-                flushRedraw();
+                if (mayClose()) {
+                    pendingEdit = { id: bar.dataset.id, block: bar.closest('.gt-group')?.dataset.block };
+                    flushRedraw();
+                }
                 return;
             }
-            closeAll();
-            box.hidden = wasOpen;
-            if (wasOpen) return;
+            if (!closeAll()) return;
+            editing = {bar, box};
+            if (inspector && window.matchMedia('(min-width: 1180px)').matches) {
+                inspector.append(box);
+                inspector.hidden = false;
+            }
+            box.hidden = false;
             bar.classList.add('is-editing');
+            bar.setAttribute('aria-expanded', 'true');
             box.querySelector('.gt-e-title')?.focus();
             box.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         };
@@ -2761,23 +2960,40 @@
             });
         });
 
-        const removeItem = (id, hasKids) => {
-            const msg = hasKids
-                ? '이 항목을 삭제합니다. 하위 항목도 함께 지워집니다.'
-                : '이 항목을 삭제합니다.';
-            if (!window.confirm(msg)) return;
-            postForm('/plan/item/delete', { id: id }).then((d) => {
-                if (d && d.ok) refreshGantt();
-                else toast('삭제 실패');
-            });
+        let deleting = false;
+        const removeItem = async (id) => {
+            if (deleting || !mayClose()) return;
+            deleting = true;
+            try {
+                const response = await fetch('/plan/item/delete-preview/' + encodeURIComponent(id));
+                const preview = await response.json();
+                if (!preview?.ok) { toast(preview?.error || '삭제 범위를 확인하지 못했습니다'); return; }
+                let message = '「' + preview.title + '」을 삭제할까요?';
+                if (preview.descendants) {
+                    message += '\n하위 항목 ' + preview.descendants + '개';
+                    if (preview.hidden_descendants) message += ' (숨긴 항목 ' + preview.hidden_descendants + '개 포함)';
+                    message += '도 함께 삭제됩니다.';
+                }
+                if (!window.confirm(message)) return;
+                const d = await postForm('/plan/item/delete', { id: id, revision: preview.revision });
+                if (!d?.ok) { toast(d?.error || '삭제 실패'); return; }
+                if (d.undo_token) {
+                    showPlanUndo(d);
+                    toast(d.deleted + '개 삭제 · 10분 안에 되돌릴 수 있습니다');
+                }
+                refreshGantt();
+            } catch (e) {
+                toast('삭제 범위를 확인하지 못했습니다. 연결을 확인하세요.');
+            } finally {
+                deleting = false;
+            }
         };
         // 막대 위 ✕: 편집창을 열지 않고 바로 지운다(하위가 있으면 함께 지워진다고 알린다)
         gantt.querySelectorAll('.gt-del').forEach((x) => {
             x.addEventListener('pointerdown', (e) => e.stopPropagation());
             x.addEventListener('click', (e) => {
                 e.stopPropagation();
-                removeItem(x.dataset.id,
-                           !!x.closest('.gt-bar')?.classList.contains('is-parent'));
+                removeItem(x.dataset.id);
             });
         });
 
@@ -2807,7 +3023,8 @@
             return best;
         };
         const moveOrder = (box, dir) => {
-            const bar = box.closest('.gt-group')
+            if (!mayClose()) return;
+            const bar = groupFor(box.dataset.block)
                 ?.querySelector('.gt-bar[data-id="' + box.dataset.id + '"]');
             const peer = bar && neighbourBar(bar, dir);
             if (!peer) {
@@ -2843,10 +3060,11 @@
         function saveItemField(id, data, redraw) {
             const body = { id: id };
             Object.keys(data).forEach((k) => { body[k] = data[k]; });
-            postForm('/plan/item/update', body).then((d) => {
-                if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return; }
+            return postForm('/plan/item/update', body).then((d) => {
+                if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return d; }
                 autosaveToast();
                 if (redraw) dirtyRedraw = id;
+                return d;
             });
         }
 
@@ -2882,15 +3100,52 @@
                     timer = setTimeout(flushTitle, 1200);
                 });
             }
-            [['.gt-e-start', 'start'], ['.gt-e-end', 'end']].forEach(([sel, key]) => {
-                const el = box.querySelector(sel);
-                el?.addEventListener('change', () => {
-                    // 덜 친 날짜는 한 칸 입력이 빈 값으로 내려보낸다. 그때는 그냥 둔다.
-                    if (!el.value) return;
-                    const one = {};
-                    one[key] = el.value;
-                    saveItemField(id, one, true);
-                });
+            const start = box.querySelector('.gt-e-start');
+            const end = box.querySelector('.gt-e-end');
+            const apply = box.querySelector('.gt-e-apply-period');
+            const revert = box.querySelector('.gt-e-revert-period');
+            const feedback = box.querySelector('.gt-e-period-status');
+            let savedPeriod = [start.value, end.value];
+            const periodMessage = (message, error = false) => {
+                feedback.textContent = message;
+                feedback.hidden = !message;
+                feedback.classList.toggle('is-error', error);
+            };
+            const validatePeriod = () => {
+                const dirty = start.value !== savedPeriod[0] || end.value !== savedPeriod[1];
+                const message = !start.value || !end.value ? '시작일과 종료일을 모두 입력하세요.'
+                    : end.value < start.value ? '종료일은 시작일과 같거나 뒤여야 합니다.' : '';
+                box.dataset.periodDirty = dirty ? '1' : '0';
+                apply.disabled = !dirty || !!message || box.dataset.periodSaving === '1';
+                revert.hidden = !dirty;
+                periodMessage(dirty ? message || '두 날짜를 한 번에 적용합니다.' : '', !!message);
+            };
+            box.resetPeriod = () => {
+                [start.value, end.value] = savedPeriod;
+                syncDateParts(start);
+                syncDateParts(end);
+                validatePeriod();
+            };
+            [start, end].forEach((el) => el.addEventListener('change', validatePeriod));
+            revert.addEventListener('click', () => box.resetPeriod());
+            apply.addEventListener('click', async () => {
+                if (apply.disabled) return;
+                const range = {start: start.value, end: end.value};
+                box.dataset.periodSaving = '1';
+                apply.disabled = true;
+                revert.disabled = true;
+                periodMessage('기간 저장 중…');
+                const result = await saveItemField(id, range, true);
+                box.dataset.periodSaving = '0';
+                revert.disabled = false;
+                if (result?.ok) {
+                    savedPeriod = [range.start, range.end];
+                    const days = Math.round((Date.parse(range.end) - Date.parse(range.start)) / 86400000) + 1;
+                    box.querySelector('.gt-e-days').textContent = days + '일';
+                }
+                validatePeriod();
+                if (result?.ok) periodMessage('기간 저장됨');
+                else periodMessage(result?.error || '기간을 저장하지 못했습니다. 다시 시도하세요.', true);
             });
             const prog = box.querySelector('.gt-e-progress');
             prog?.addEventListener('change', () => {
@@ -2921,6 +3176,7 @@
 
             // 영역(막대 색)을 바꾼다. 하위 항목이면 상위에서 빠져 그 영역의 최상위가 된다.
             box.querySelector('.gt-e-area')?.addEventListener('change', (ev) => {
+                if (!mayClose()) { ev.target.value = box.dataset.area; return; }
                 postForm('/plan/item/reparent', { id: id, area_id: ev.target.value })
                     .then((d) => {
                         if (d && d.ok) refreshGantt(id);
@@ -2932,6 +3188,7 @@
             // 상위에서 떼기. 예전에는 막대를 아래로 끄는 몸짓이었는데, 그 자리를 순서
             // 바꾸기가 쓰게 되어 버튼으로 옮겼다(실수로 떨어지던 일도 함께 사라진다).
             box.querySelector('.gt-e-detach')?.addEventListener('click', () => {
+                if (!mayClose()) return;
                 postForm('/plan/item/reparent', { id: id, area_id: box.dataset.area })
                     .then((d) => {
                         if (d && d.ok) refreshGantt(id);
@@ -2939,11 +3196,9 @@
                     });
             });
             box.querySelector('.gt-e-del')?.addEventListener('click', () => {
-                const bar = box.closest('.gt-group')
-                    ?.querySelector('.gt-bar[data-id="' + id + '"]');
-                removeItem(id, !!bar?.classList.contains('is-parent'));
+                removeItem(id);
             });
-            box.querySelector('.gt-e-close')?.addEventListener('click', closeAll);
+            box.querySelector('.gt-e-close')?.addEventListener('click', () => closeAll(true));
             // 하위 추가. 상위의 기간을 그대로 물려받아 날짜를 다시 고르지 않아도 되게 한다.
             box.querySelector('.gt-e-child')?.addEventListener('click', (ev) => {
                 const b = ev.currentTarget;
@@ -2954,6 +3209,10 @@
         }
         // 이미 서 있는 편집칸(부분 새로고침 전에 열어 두었던 것)에도 붙인다.
         gantt.querySelectorAll('.gt-edit').forEach(bindEditBox);
+        const workspace = gantt.closest('.plan-workspace');
+        if (workspace) workspace.onkeydown = (e) => {
+            if (e.key === 'Escape' && (!dpPop || dpPop.hidden) && (editing || adding)) closeAll(true);
+        };
 
         // 부분 새로고침 전에 열려 있던 칸을 그대로 다시 연다(연달아 넣기·순서 바꾸기)
         if (pendingForm) {
@@ -2977,9 +3236,12 @@
             });
             // 숨긴 항목은 서버에서 아예 빼고 그리므로 화면을 다시 불러 온다(칸 배치가 달라진다).
             document.getElementById('pg-show-hidden')?.addEventListener('change', (e) => {
-                const u = e.target.dataset.url;
+                const u = new URL(location.href);
+                u.searchParams.delete('focus');
+                if (e.target.checked) u.searchParams.set('show_hidden', '1');
+                else u.searchParams.delete('show_hidden');
                 savePlanScroll();       // 통째로 다시 그리므로 보던 자리를 적어 둔다
-                location.href = u + (e.target.checked ? '&show_hidden=1' : '');
+                location.href = u.toString();
             });
             const pastBox = document.getElementById('pg-past-hide');
             pastBox?.addEventListener('change', () => {
@@ -3071,6 +3333,11 @@
             const hidden = box.querySelector('input[type="hidden"]');
             const btn = box.querySelector('.wl-btn');
             const multi = box.dataset.multi === '1';
+            const target = /^wt([bs])_(\d+)$/.exec(hidden.name);
+            const yearDay = hidden.closest('form.day-form')?.dataset.date;
+            const field = target
+                ? trackField(hidden, target[1] === 'b' ? 'block' : 'slot', target[2], 'wk_todo')
+                : trackField(hidden, 'meta', yearDay, hidden.name);
             const keys = () => (hidden.value || '').split(',').filter(Boolean);
 
             const paint = () => {
@@ -3081,21 +3348,7 @@
             };
             paint();
 
-            const save = () => {
-                const m = /^wt([bs])_(\d+)$/.exec(hidden.name);
-                if (m) {
-                    saveField(m[1] === 'b' ? 'block' : 'slot', m[2], 'wk_todo', hidden.value);
-                    return;
-                }
-                const g = /^goallink([123])$/.exec(hidden.name);
-                if (!g) return;
-                const form = document.querySelector('form.day-form');
-                const extra = {};
-                document.querySelectorAll('input[name^="goallink"]').forEach((el) => {
-                    extra[el.name] = el.value;
-                });
-                saveField('meta', form.dataset.date, 'goallink' + g[1], hidden.value, extra);
-            };
+            const save = () => saveTrackedField(field, hidden.value);
 
             btn.addEventListener('click', () => {
                 if (openBox === box) { closePop(); return; }
@@ -3906,15 +4159,17 @@
         ta.addEventListener('keydown', (e) => {
             const s = ta.selectionStart, en = ta.selectionEnd;
             const ls = ta.value.lastIndexOf('\n', s - 1) + 1;   // 현재 줄 시작 위치
-            if (e.key === 'Tab') {
+            if (e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing
+                    && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
                 e.preventDefault();
+                const outdent = e.code === 'BracketLeft';
                 const le = ta.value.indexOf('\n', s);
                 const lineEnd = le === -1 ? ta.value.length : le;
                 const line = ta.value.slice(ls, lineEnd);
                 const lm = listMatch(line);
-                // 목록 줄: Tab은 하위레벨 시작(순서목록 1.부터), Shift+Tab은 한 단계 위로(번호 재계산)
-                if (lm && !(e.shiftKey && lm.indent.length === 0)) {
-                    const newIndent = e.shiftKey
+                // Ctrl+[와 Ctrl+]로 단계만 바꾼다. Tab 이동은 브라우저에 맡긴다.
+                if (lm && !(outdent && lm.indent.length === 0)) {
+                    const newIndent = outdent
                         ? lm.indent.slice(0, Math.max(0, lm.indent.length - INDENT.length))
                         : lm.indent + INDENT;
                     const marker = lm.kind === 'o'
@@ -3928,7 +4183,7 @@
                     return;
                 }
                 // 목록이 아니면 기존 동작: 공백 들여쓰기 / 내어쓰기
-                if (e.shiftKey) {
+                if (outdent) {
                     const cut = ta.value.slice(ls).match(/^ {1,2}/);
                     if (cut) {
                         const n = cut[0].length;
@@ -3980,53 +4235,110 @@
         if (asToastTimer) clearTimeout(asToastTimer);
         asToastTimer = setTimeout(() => t.classList.remove('show'), AS_TOAST_MS);
     }
-    // 같은 엔티티+id+field 의 자동저장 요청은 마지막 것만 남긴다(전체 폼 저장과 동일 전략).
-    function asOpKey(entity, id, field) { return 'as:' + entity + ':' + id + ':' + field; }
-    const asInflight = {};   // key -> 이전 요청이 진행 중인가 (중복 전송 억제)
-    function saveField(entity, id, field, value, extra) {
-        const key = asOpKey(entity, id, field);
-        const bodyObj = { entity: entity, id: String(id), field: field, value: value };
-        if (extra) Object.keys(extra).forEach((k) => { bodyObj[k] = extra[k]; });
-        const op = {
-            id: genId(), kind: 'autosave', url: '/save/field', headers: FORM_HEADERS,
-            body: new URLSearchParams(bodyObj).toString(),
-            dedupe: key,
-        };
-        // 진행 중인 동일 필드 요청이 있으면 결과는 무시(마지막 값이 대기열/새 요청으로 이김)
-        asInflight[key] = true;
-        sendOrQueue(
-            op,
-            () => { asInflight[key] = false; autosaveToast(); },
-            () => toast('저장 대기 · 연결되면 자동 전송'),
-        );
+    const pendingEdits = new Set();
+    const trackedFields = new Map();
+    let savedDrafts;
+    const fieldLabels = {
+        bname: '블록 이름', bcat: '블록 구분', bloc: '장소', plan_text: '블록 계획', see_text: '블록 회고',
+        do_text: '할 일', did_text: '한 일', cat: '구분', done: '실행 완료', wk_todo: '주간 계획 연결',
+        memo: '메모', vow: '각오', day_review: '하루 평가', ltgoal: '이번 주 계획',
+        appointments: '약속·특이사항',
+    };
+    function fieldIdentity(el, entity) {
+        const block = el?.closest('[data-block-label]');
+        if (!block || !['block', 'slot'].includes(entity)) return {};
+        const row = entity === 'slot' ? el.closest('.slot') : block;
+        if (!row) return {};
+        const identity = { date: block.dataset.date, start_time: row.dataset.start, end_time: row.dataset.end };
+        if (entity === 'block') identity.block_label = block.dataset.blockLabel;
+        return identity;
     }
-    function bindAutoSave(el, entity, id, field, opts) {
-        if (!el || el.dataset.autosave) return;
-        el.dataset.autosave = '1';
-        opts = opts || {};
-        let timer = null;
-        const flush = () => {
-            if (timer) { clearTimeout(timer); timer = null; }
-            let value = el.value;
-            // 3칸 묶음(goal/dplan)은 그룹의 나머지 값도 같이 보내 서버에서 합치게 한다.
-            // 정적 extra(예: 주간 테마의 label)는 항상 같이 보낸다.
-            let extra = opts.extra ? Object.assign({}, opts.extra) : null;
-            if (opts.groupPrefix) {
-                extra = extra || {};
-                document.querySelectorAll('[data-as-prefix="' + opts.groupPrefix + '"]').forEach((g) => {
-                    extra[opts.groupPrefix + g.dataset.asIdx] = g.value;
-                });
+    function normalizeField(field, value) {
+        const text = String(value ?? '');
+        if (/^(?:goal|dplan|grat|concept|wgoal|goaltag|plantag|grattag|goallink)[123]$/.test(field)) {
+            return text.replace(/[\r\n]/g, ' ').trim();
+        }
+        return /^(?:bname|ltgoal|theme)$/.test(field) ? text.trim() : text;
+    }
+    function fieldValue(el) {
+        return el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+    }
+    function paintStoredField(el, field, value) {
+        if (field === 'done') {
+            el.checked = value === '1';
+            el.closest('.slot')?.classList.toggle('is-done', el.checked);
+        } else if (el.type !== 'checkbox') {
+            el.value = value;
+            if (el.matches('select.cat-select')) paintCategory(el);
+            if (field === 'did_text') {
+                el.closest('.slot-did')?.querySelector('.slot-did-btn')?.classList.toggle('has-did', !!value);
             }
-            saveField(entity, id, field, value, extra);
+        }
+    }
+    function trackField(el, entity, id, field, extra = {}) {
+        const params = { entity, id: String(id), field, ...fieldIdentity(el, entity), ...extra };
+        const { date, start_time, end_time, week_start, label } = params;
+        const key = JSON.stringify([entity, params.id, field, date, start_time, end_time, week_start, label]);
+        if (trackedFields.has(key)) return trackedFields.get(key);
+        if (!savedDrafts) {
+            savedDrafts = new Map(loadQueue().filter((op) => op.writeKey).map((op) => [op.writeKey, op]));
+        }
+        const draft = savedDrafts.get(key);
+        const serverText = field !== 'done' && el.type === 'checkbox' ? '' : fieldValue(el);
+        const previous = normalizeField(field, el.dataset.savedValue ?? serverText);
+        const name = el.getAttribute('aria-label')
+            || el.closest('label')?.querySelector('.field-label')?.textContent.trim()
+            || fieldLabels[field] || el.getAttribute('placeholder') || '기록';
+        const tracked = { el, key, params, value: previous, name };
+        if (draft) {
+            tracked.value = new URLSearchParams(draft.body).get('value') ?? previous;
+            paintStoredField(el, field, tracked.value);
+        }
+        trackedFields.set(key, tracked);
+        return tracked;
+    }
+    function saveTrackedField(tracked, text) {
+        const value = normalizeField(tracked.params.field, text);
+        if (tracked.value === value) return;
+        const fields = { ...tracked.params, value, expected_value: tracked.value };
+        const isDone = fields.field === 'done';
+        if (isDone) fields.done = value;
+        enqueue({
+            id: genId(), kind: 'autosave', writeKey: tracked.key,
+            url: isDone ? '/slot/done/' + fields.id : '/save/field',
+            headers: FORM_HEADERS, body: new URLSearchParams(fields).toString(), label: tracked.name,
+        });
+        tracked.value = value;
+        flushQueue();
+    }
+    function flushEdits() {
+        pendingEdits.forEach((save) => save());
+        return flushQueue();
+    }
+    function bindAutoSave(el, entity, id, field, extra) {
+        if (el.dataset.autosave) return;
+        el.dataset.autosave = '1';
+        const tracked = trackField(el, entity, id, field, extra);
+        let shownValue = normalizeField(field, fieldValue(el));
+        let timer;
+        const flush = () => {
+            clearTimeout(timer);
+            pendingEdits.delete(flush);
+            const value = normalizeField(field, fieldValue(el));
+            if (value === shownValue) return;
+            shownValue = value;
+            saveTrackedField(tracked, value);
+        };
+        const schedule = (e) => {
+            clearTimeout(timer);
+            pendingEdits.add(flush);
+            if (!e.isComposing) timer = setTimeout(flush, 800);
         };
         el.addEventListener('change', flush);
         el.addEventListener('blur', flush);
-        el.addEventListener('input', () => {
-            if (timer) clearTimeout(timer);
-            timer = setTimeout(flush, 1200);
-        });
+        el.addEventListener('input', schedule);
+        el.addEventListener('compositionend', schedule);
     }
-
 
     // ---- 고결감 공용 태그 헬퍼 -------------------------------------------
     // 태그를 견줄 때 쓰는 맨몸 형태. 6block 은 '#AI', Record 는 'AI' 로 적어 두므로
@@ -4692,11 +5004,17 @@
             const input = row.querySelector('.cu-did');
             const check = row.querySelector('.cu-check');
             const same = row.querySelector('.cu-same');
+            const checkInBlock = document.querySelector('.slot-check[data-slot="' + id + '"]');
+            if (!checkInBlock) return;
+            const didInBlock = document.querySelector('textarea[name="did_' + id + '"]');
+            const didField = trackField(didInBlock || checkInBlock, 'slot', id, 'did_text');
+            const doneField = trackField(checkInBlock, 'slot', id, 'done');
+            input.value = didField.value;
 
             const saveDid = () => {
                 const v = input.value.trim();
                 if (!v) return;
-                saveField('slot', id, 'did_text', v);
+                saveTrackedField(didField, v);
                 mirror(id, v, null);
                 settle(row);
             };
@@ -4712,13 +5030,7 @@
             });
 
             check.addEventListener('change', () => {
-                const done = check.checked ? '1' : '0';
-                sendOrQueue(
-                    { id: genId(), kind: 'slot', url: '/slot/done/' + id,
-                      headers: FORM_HEADERS, body: 'done=' + done },
-                    () => toast(check.checked ? '완료 체크' : '체크 해제'),
-                    () => toast('전송 대기 · 자동 재시도'),
-                );
+                saveTrackedField(doneField, fieldValue(check));
                 mirror(id, null, check.checked);
                 if (check.checked) settle(row);
             });
@@ -4925,14 +5237,16 @@
         // 오늘 탭 '평가'(하루 지표 + 하루 평가·내일 한 가지 + 기록이 빈 슬롯).
         // 날짜 줄 오른쪽 버튼으로 그 자리에서 편다. 빈 슬롯 개수 뱃지는 그대로 둔다.
         const kpiBtn = document.getElementById('kpi-toggle');
+        const kpiLabel = kpiBtn?.firstChild?.nodeValue.trim();
         kpiBtn?.addEventListener('click', () => {
             const box = document.getElementById('eval-panel');
             if (!box) return;
             const show = box.hidden;
             box.hidden = !show;
             kpiBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
-            kpiBtn.firstChild.nodeValue = (show ? '평가 접기' : '평가')
+            kpiBtn.firstChild.nodeValue = (show ? kpiLabel + ' 접기' : kpiLabel)
                 + (kpiBtn.querySelector('.count') ? ' ' : '');
+            if (show) box.focus({ preventScroll: true });
         });
 
         // 맨 위 막대: 새로고침 아이콘(지금 화면을 서버에서 다시 받는다)
@@ -5021,7 +5335,6 @@
         // 실시간 폴링 + 앱 재진입 시 현재 블록 재포커싱
         if (document.querySelector('.day-form')) {
             fillTaskPopsFromPage();   // 첫 폴링 전까지 블록 팝오버를 채워 둔다
-            heroCalFromPage();        // 맨 위 일정 배너도 서버가 그려 준 목록에서 시작한다
             setInterval(pollDay, 60000);
             let hiddenAt = 0;
             document.addEventListener('visibilitychange', () => {
@@ -5043,10 +5356,20 @@
         setupTagModal();
 
         // 대기열 자동 전송: 로드 직후 + 30초마다 재시도 + 연결 복구 이벤트 때
+        bindSaveStatus();
         updateNetStatus();
         flushQueue();
         setInterval(flushQueue, 30000);
         window.addEventListener('online', () => { updateNetStatus(); flushQueue(); checkStale(); });
+        window.addEventListener('pagehide', flushEdits);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) flushEdits();
+        });
+        window.addEventListener('beforeunload', (e) => {
+            if (!inMemoryWrites.size) return;
+            e.preventDefault();
+            e.returnValue = '';
+        });
 
         // 오프라인·지난 날짜 감지: 로드 직후 + 주기적 재시도(연결되면 오늘로 자동 이동)
         checkStale();

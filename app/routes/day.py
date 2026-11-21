@@ -1,4 +1,9 @@
 # 오늘/특정 날짜 화면과 그 저장(블록·슬롯·수집함·외부 입력)을 담당하는 라우터
+import hashlib
+import hmac
+import json
+import secrets
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request
@@ -16,6 +21,7 @@ from app.common import (
     int_id,
     lt_leaves,
     opt_id,
+    schedule_version,
     templates,
     today_str,
     week_start,
@@ -181,11 +187,11 @@ def _day_view(request: Request, date_str: str):
     is_today = date_str == today_str()
     with get_conn() as conn:
         ensure_day_skeleton(conn, date_str)
+        version = schedule_version(conn, (date_str,), include_slots=True)
         categories = [
-            {"id": r["id"], "name": r["name"], "tone": r["tone"]}
+            dict(r)
             for r in conn.execute(
-                "SELECT id, name, tone FROM categories "
-                "WHERE is_active = 1 ORDER BY display_order"
+                "SELECT id, name, tone, is_active FROM categories ORDER BY display_order"
             )
         ]
         blocks = conn.execute(
@@ -296,6 +302,7 @@ def _day_view(request: Request, date_str: str):
         "today.html",
         {
             "date_str": date_str,
+            "schedule_version": version,
             "prev_date": prev_date,
             "next_date": next_date,
             "is_today": is_today,
@@ -339,7 +346,13 @@ async def save_day(date_str: str, request: Request):
     form = await request.form()
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         ensure_day_skeleton(conn, date_str)
+        if form.get("schedule_version") and form["schedule_version"] != schedule_version(
+            conn, (date_str,), include_slots=True
+        ):
+            conn.rollback()
+            return _stale_schedule()
         # 일간 블록 이름 덮어쓰기 판정을 위해 주간 이름과 블록 라벨을 미리 로드
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         wk = week_start(d).strftime("%Y-%m-%d")
@@ -349,6 +362,7 @@ async def save_day(date_str: str, request: Request):
                 "SELECT id, block_label FROM blocks WHERE date = ?", (date_str,)
             )
         }
+        slot_ids = {r["id"] for r in conn.execute("SELECT id FROM slots WHERE date = ?", (date_str,))}
         weekly_name = {
             r["block_label"]: (r["theme_text"] or "").strip()
             for r in conn.execute(
@@ -363,6 +377,10 @@ async def save_day(date_str: str, request: Request):
             # (예전에는 아주 큰 숫자가 그대로 쿼리에 들어가 저장 전체가 500 이 됐다).
             sid = opt_id(suffix)
             if sid is None:
+                continue
+            if prefix in {"plan", "see", "wtb", "bcat", "bname", "bloc"} and sid not in block_label_by_id:
+                continue
+            if prefix in {"do", "did", "wts", "cat"} and sid not in slot_ids:
                 continue
             if prefix == "plan":
                 conn.execute(
@@ -400,8 +418,9 @@ async def save_day(date_str: str, request: Request):
             elif prefix == "cat":
                 cid = opt_id(val)
                 conn.execute(
-                    "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
-                    (cid, now, sid),
+                    "UPDATE slots SET category_id = ?, updated_at = ?, is_routine = "
+                    "CASE WHEN category_id IS ? THEN is_routine ELSE 0 END WHERE id = ?",
+                    (cid, now, cid, sid),
                 )
             elif prefix == "bcat":
                 cid = opt_id(val)
@@ -501,27 +520,68 @@ _META_TRIPLES = (
 _META_SINGLES = ("memo", "vow", "day_review")
 
 
-def _merge3(conn, date_str: str, prefix: str, col: str, form) -> None:
-    """3칸 중 폼에 온 칸만 갈아끼워 줄바꿈으로 합쳐 저장한다.
+def _stale_schedule():
+    return JSONResponse({"ok": False, "error": "stale-schedule"}, status_code=409)
 
-    한 칸이 바뀌어도 화면은 세 칸을 prefix1~3 으로 함께 보내므로, 온 칸만 덮어쓰고
-    나머지는 저장돼 있던 값을 지킨다. 칸 안의 줄바꿈은 공백으로 눌러 3칸 구분(줄바꿈)이
-    깨지지 않게 한다. 세 칸이 모두 비면 빈 문자열로 저장해 '입력 없음'과 같게 둔다.
-    """
+
+def _identity_error(row, form, *, block=False):
+    keys = ("date", "start_time", "end_time")
+    if block or "block_label" in form:
+        keys += ("block_label",)
+    if any(key in form for key in keys):
+        if row is None or any(form.get(key) != row[key] for key in keys):
+            return _stale_schedule()
+    if row is None:
+        return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+    return None
+
+
+def _edit_conflict(form, current, submitted, *, done=None, normalize=None):
+    """Allow an already-applied retry while rejecting edits from an obsolete view."""
+    current = str(current) if current is not None else ""
+    submitted = str(submitted) if submitted is not None else ""
+    expected = form.get("expected_value")
+    if expected is None:
+        return None
+    if normalize is not None:
+        current, expected, submitted = map(normalize, (current, expected, submitted))
+    if current == submitted:
+        result = {"ok": True}
+        if done is not None:
+            result["done"] = done
+        return JSONResponse(result)
+    if expected != current:
+        return JSONResponse({"ok": False, "error": "edit-conflict", "current_value": current},
+                            status_code=409)
+    return None
+
+
+def _merge3(conn, key: str, prefix: str, col: str, field: str, value: str, form, *, weekly=False):
+    """Merge the changed field, also accepting grouped forms from older clients."""
+    table, key_col = ("weekly_meta", "week_start") if weekly else ("daily_meta", "date")
     row = conn.execute(
-        f"SELECT {col} FROM daily_meta WHERE date = ?", (date_str,)
+        f"SELECT {col} FROM {table} WHERE {key_col} = ?", (key,)
     ).fetchone()
-    parts = (((row[col] or "").split("\n") if row else []) + ["", "", ""])[:3]
+    parts = _split3(row[col] if row else None)
+    def normalize(text: str) -> str:
+        return text.replace("\r", " ").replace("\n", " ").strip()
+
+    requested = normalize(form.get(field, value) or "")
+    error = _edit_conflict(form, parts[int(field[-1]) - 1], requested, normalize=normalize)
+    if error is not None:
+        return error
+    changes = {field: requested} if "expected_value" in form else {**dict(form), field: requested}
     for i in range(3):
-        key = f"{prefix}{i + 1}"
-        if key in form:
-            parts[i] = (form.get(key, "") or "").replace("\r", " ").replace("\n", " ")
-    joined = "\n".join(p.strip() for p in parts)
+        change = f"{prefix}{i + 1}"
+        if change in changes:
+            parts[i] = normalize(changes[change] or "")
+    joined = "\n".join(parts)
     conn.execute(
-        f"INSERT INTO daily_meta (date, {col}) VALUES (?, ?) "
-        f"ON CONFLICT(date) DO UPDATE SET {col} = excluded.{col}",
-        (date_str, joined if joined.strip() else ""),
+        f"INSERT INTO {table} ({key_col}, {col}) VALUES (?, ?) "
+        f"ON CONFLICT({key_col}) DO UPDATE SET {col} = excluded.{col}",
+        (key, joined if joined.strip() else ""),
     )
+    return None
 
 
 @router.post("/save/field")
@@ -544,14 +604,20 @@ async def save_field(request: Request):
     # 달성(dplan) 자동저장이면 저장 뒤 성과 캘린더에 반영할 날짜를 담는다(없으면 None).
     achieve_date = None
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         if entity == "block":
             if field not in _VALID_BLOCK_FIELDS:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
             row = conn.execute(
-                "SELECT date, block_label FROM blocks WHERE id = ?", (rid,)
+                "SELECT * FROM blocks WHERE id = ?", (rid,)
             ).fetchone()
-            if not row:
-                return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+            error = _identity_error(row, form, block=True)
+            if error is not None:
+                return error
+            col = {"bname": "name", "bcat": "category_id", "bloc": "location"}.get(field, field)
+            current = row[col]
+            stored = value
+            submitted = value
             if field == "bname":
                 # 일간 덮어쓰기 판정을 위해 주간 이름과 비교(None이면 상속)
                 wk = week_start(
@@ -562,26 +628,38 @@ async def save_field(request: Request):
                     "WHERE week_start = ? AND block_label = ?",
                     (wk, row["block_label"]),
                 ).fetchone()
-                override = _name_override(value, (wrow["theme_text"] if wrow else ""))
-                conn.execute(
-                    "UPDATE blocks SET name = ?, updated_at = ? WHERE id = ?",
-                    (override, now, rid),
-                )
+                inherited = ((wrow["theme_text"] if wrow else "") or "").strip()
+                current = (current or "").strip()
+                stored = _name_override(value, inherited)
+                submitted = stored
+                if form.get("name_view") != "override":
+                    current = current or inherited
+                    submitted = stored or inherited
             elif field == "bcat":
-                cid = opt_id(value)
-                conn.execute(
-                    "UPDATE blocks SET category_id = ?, updated_at = ? WHERE id = ?",
-                    (cid, now, rid),
-                )
-            else:  # plan_text | see_text | bloc | wk_todo
-                col = "location" if field == "bloc" else field
-                conn.execute(
-                    f"UPDATE blocks SET {col} = ?, updated_at = ? WHERE id = ?",
-                    ((value or None) if field in ("bloc", "wk_todo") else value, now, rid),
-                )
+                stored = opt_id(value)
+                submitted = stored
+            elif field in ("bloc", "wk_todo"):
+                stored = value or None
+            error = _edit_conflict(form, current, submitted)
+            if error is not None:
+                return error
+            conn.execute(
+                f"UPDATE blocks SET {col} = ?, updated_at = ? WHERE id = ?", (stored, now, rid),
+            )
         elif entity == "slot":
             if field not in _VALID_SLOT_FIELDS:
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+            row = conn.execute(
+                "SELECT s.*, b.block_label FROM slots s JOIN blocks b ON b.id = s.block_id "
+                "WHERE s.id = ?", (rid,),
+            ).fetchone()
+            error = _identity_error(row, form)
+            if error is not None:
+                return error
+            col = "category_id" if field == "cat" else field
+            error = _edit_conflict(form, row[col], opt_id(value) if field == "cat" else value)
+            if error is not None:
+                return error
             # 사람이 값을 바꾼 칸은 고정 할일 표시를 푼다(그때부터 계획으로 잡히고, 템플릿을
             # 다시 적용해도 덮이지 않는다). 자동저장은 그냥 지나가기만 해도(blur) 한 번 부르므로
             # 값이 실제로 달라졌을 때만 푼다. SQLite 는 SET 식을 옛 행 값으로 계산한다.
@@ -612,20 +690,22 @@ async def save_field(request: Request):
             if not _parse_date(date_str):
                 return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
             if field in _META_SINGLES:
+                row = conn.execute(f"SELECT {field} FROM daily_meta WHERE date = ?", (date_str,)).fetchone()
+                error = _edit_conflict(form, row[field] if row else None, value)
+                if error is not None:
+                    return error
                 conn.execute(
                     f"INSERT INTO daily_meta (date, {field}) VALUES (?, ?) "
                     f"ON CONFLICT(date) DO UPDATE SET {field} = excluded.{field}",
                     (date_str, value),
                 )
             else:
-                # 화면(app.js bindAutoSave)은 3칸을 늘 함께 보내지만, 다른 클라이언트가
-                # {entity, field, value} 만 보낼 수도 있다. 그러면 _merge3 가 찾을 키가
-                # 없어 200 을 돌려주면서 값을 조용히 버린다. 그 경우에만 이 칸 하나를 채워 준다.
-                triple_form = form if field in form else {**dict(form), field: value}
                 for prefix, col in _META_TRIPLES:
-                    if not field.startswith(prefix):
+                    if field[:-1] != prefix or field[-1] not in "123":
                         continue
-                    _merge3(conn, date_str, prefix, col, triple_form)
+                    error = _merge3(conn, date_str, prefix, col, field, value, form)
+                    if error is not None:
+                        return error
                     if prefix == "dplan":
                         achieve_date = date_str   # 달성이 바뀌었으니 성과 캘린더 반영
                     break
@@ -638,16 +718,18 @@ async def save_field(request: Request):
             ws = form.get("id") or ""
             if not _parse_date(ws):
                 return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
-            if field.startswith("wgoal"):
-                col, value = "weekly_goal", _join3(form, "wgoal")
-            elif field in ("appointments", "vow", "memo"):
-                col = field
-            else:
+            if field in {"wgoal1", "wgoal2", "wgoal3"}:
+                error = _merge3(conn, ws, "wgoal", "weekly_goal", field, value, form, weekly=True)
+                return error if error is not None else JSONResponse({"ok": True})
+            if field not in ("appointments", "vow", "memo"):
                 return JSONResponse({"ok": False, "error": "bad-field"}, status_code=400)
+            row = conn.execute(f"SELECT {field} FROM weekly_meta WHERE week_start = ?", (ws,)).fetchone()
+            error = _edit_conflict(form, row[field] if row else None, value)
+            if error is not None:
+                return error
             conn.execute(
-                "INSERT INTO weekly_meta (week_start, %s) VALUES (?, ?) "
-                "ON CONFLICT(week_start) DO UPDATE SET %s = excluded.%s"
-                % (col, col, col),
+                f"INSERT INTO weekly_meta (week_start, {field}) VALUES (?, ?) "
+                f"ON CONFLICT(week_start) DO UPDATE SET {field} = excluded.{field}",
                 (ws, value),
             )
         elif entity == "ltgoal":
@@ -656,6 +738,11 @@ async def save_field(request: Request):
             item_id = opt_id(form.get("id"))
             if not _parse_date(ws) or item_id is None:
                 return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+            row = conn.execute("SELECT goal_text FROM weekly_lt_goal WHERE week_start = ? AND item_id = ?",
+                               (ws, item_id)).fetchone()
+            error = _edit_conflict(form, row["goal_text"] if row else None, value.strip())
+            if error is not None:
+                return error
             conn.execute(
                 "INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at) "
                 "VALUES (?, ?, ?, ?) "
@@ -671,6 +758,11 @@ async def save_field(request: Request):
             label = (form.get("label") or "").strip()
             if not label:
                 return JSONResponse({"ok": False, "error": "bad-label"}, status_code=400)
+            row = conn.execute("SELECT theme_text FROM weekly_block_themes WHERE week_start = ? AND block_label = ?",
+                               (ws, label)).fetchone()
+            error = _edit_conflict(form, row["theme_text"] if row else None, value)
+            if error is not None:
+                return error
             conn.execute(
                 "INSERT INTO weekly_block_themes (week_start, block_label, theme_text, "
                 "updated_at) VALUES (?, ?, ?, ?) "
@@ -788,12 +880,18 @@ async def inbox_assign(request: Request):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
-        it = conn.execute("SELECT text FROM inbox WHERE id = ?", (item_id,)).fetchone()
+        conn.execute("BEGIN IMMEDIATE")
+        it = conn.execute("SELECT text, done FROM inbox WHERE id = ?", (item_id,)).fetchone()
         blk = conn.execute(
-            "SELECT plan_text FROM blocks WHERE id = ?", (block_id,)
+            "SELECT * FROM blocks WHERE id = ?", (block_id,)
         ).fetchone()
-        if not it or not blk:
+        error = _identity_error(blk, form, block=True)
+        if error is not None:
+            return error
+        if not it:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if it["done"]:
+            return JSONResponse({"ok": False, "error": "inbox-already-handled"}, status_code=409)
         cur = (blk["plan_text"] or "").rstrip()
         plan_text = f"{cur}\n{it['text']}" if cur else it["text"]
         conn.execute(
@@ -802,6 +900,15 @@ async def inbox_assign(request: Request):
         )
         conn.execute("UPDATE inbox SET done = 1 WHERE id = ?", (item_id,))
     return JSONResponse({"ok": True, "block_id": block_id, "plan_text": plan_text})
+
+
+_ROLLOVER_KEY = secrets.token_bytes(32)
+
+
+def _rollover_token(data) -> str:
+    body = urlsafe_b64encode(json.dumps(data, separators=(",", ":")).encode()).decode()
+    signature = hmac.new(_ROLLOVER_KEY, body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{signature}"
 
 
 @router.post("/block/rollover")
@@ -830,19 +937,27 @@ async def block_rollover(request: Request):
         block_id = int_id(form.get("block_id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    mode = form.get("mode", "")
+    if mode not in ("", "preview", "apply"):
+        return JSONResponse({"ok": False, "error": "bad-mode"}, status_code=400)
 
     def on_screen(key: str, saved) -> str:
         """화면에서 온 값이 있으면 그것, 없으면 저장값."""
         sent = form.get(key)
         return (sent if sent is not None else (saved or "")).strip()
 
-    now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         src = conn.execute(
-            "SELECT date, block_label, plan_text FROM blocks WHERE id = ?", (block_id,)
+            "SELECT * FROM blocks WHERE id = ?", (block_id,)
         ).fetchone()
-        if not src:
-            return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        error = _identity_error(src, form, block=True)
+        if error is not None:
+            return error
+        if form.get("schedule_version") and form["schedule_version"] != schedule_version(
+            conn, (src["date"],), include_slots=True
+        ):
+            return _stale_schedule()
         plan = on_screen("plan", src["plan_text"])
         # 내일로 넘길 (시각, 블록 안 순번, 글) 목록. 순번은 그 블록에서 몇 번째 칸인지다.
         carry = []
@@ -851,9 +966,9 @@ async def block_rollover(request: Request):
             "WHERE block_id = ? ORDER BY slot_index",
             (block_id,),
         )):
-            if s["is_routine"]:
-                continue
             text = on_screen(f"do_{s['id']}", s["do_text"])
+            if s["is_routine"] and text == (s["do_text"] or "").strip():
+                continue
             if text:
                 carry.append((s["start_time"], pos, text))
         if not plan and not carry:
@@ -863,45 +978,116 @@ async def block_rollover(request: Request):
         nxt = (d + timedelta(days=1)).strftime("%Y-%m-%d")
         ensure_day_skeleton(conn, nxt)
         dst = conn.execute(
-            "SELECT id, block_order FROM blocks WHERE date = ? AND block_label = ?",
+            "SELECT * FROM blocks WHERE date = ? AND block_label = ?",
             (nxt, src["block_label"]),
         ).fetchone()
         if not dst:
             return JSONResponse({"ok": False, "error": "no-target"}, status_code=404)
 
-        if plan:
-            # 이어 붙이지 않고 갈아끼운다. 같은 블록을 이틀 잇달아 넘기면 예전에는 같은
-            # 글이 두 번 쌓였다.
-            conn.execute(
-                "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
-                (plan, now, dst["id"]),
-            )
-
         dst_slots = [
             dict(r)
             for r in conn.execute(
-                "SELECT id, start_time FROM slots WHERE block_id = ? ORDER BY slot_index",
+                "SELECT id, start_time, end_time, do_text, did_text, done, is_routine "
+                "FROM slots WHERE block_id = ? ORDER BY slot_index",
                 (dst["id"],),
             )
         ]
         by_time = {r["start_time"]: r for r in dst_slots}
-        moved = 0
+        # 같은 시각을 모두 먼저 예약하고 같은 순번으로 옮길 때는 그 자리가 비었을 때만 복사한다.
+        reserved = {by_time[start]["id"] for start, _, _ in carry if start in by_time}
+        assignments = []
+        skipped = []
         for start_time, pos, text in carry:
             target = by_time.get(start_time)
-            if target is None and pos < len(dst_slots):
+            if target is None and pos < len(dst_slots) and dst_slots[pos]["id"] not in reserved:
                 target = dst_slots[pos]
             if target is None:
-                continue        # 내일 그 블록이 더 짧아 그 순번 칸이 없다
+                skipped.append({"slot": start_time, "text": text})
+                continue
+            reserved.add(target["id"])
+            assignments.append((start_time, target, text))
+
+        conflicts = []
+        if plan and dst["plan_text"] and plan != dst["plan_text"]:
+            conflicts.append({"slot": "PLAN", "current": dst["plan_text"],
+                              "replacement": plan, "has_actual": False})
+        for _, target, text in assignments:
+            prior = target["do_text"] or ""
+            has_actual = bool(target["done"] or (target["did_text"] or "").strip())
+            if text != prior and (prior.strip() or has_actual):
+                conflicts.append({"slot": target["start_time"], "current": prior,
+                                  "replacement": text, "has_actual": has_actual})
+        result = {"ok": True, "date": nxt, "label": dst["block_label"],
+                  "block_order": dst["block_order"], "moved": len(assignments),
+                  "skipped": len(skipped), "plan": bool(plan)}
+        # Preview and confirmation can run before the destination day exists; use logical
+        # times and values so temporary IDs do not make otherwise identical previews stale.
+        snapshot = [
+            src["date"], nxt, src["block_label"], dst["start_time"], dst["end_time"], plan,
+            dst["plan_text"],
+            [(source, {k: v for k, v in target.items() if k != "id"}, value)
+             for source, target, value in assignments],
+            skipped,
+        ]
+        preview_token = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
+        if mode == "preview":
+            conn.rollback()
+            return JSONResponse({**result, "preview_token": preview_token, "conflicts": conflicts,
+                                 "skipped_slots": skipped})
+        if mode == "apply" and form.get("preview_token") != preview_token:
+            conn.rollback()
+            return JSONResponse({"ok": False, "error": "rollover-changed"}, status_code=409)
+
+        now = datetime.now(KST)
+        stamp = now.isoformat(timespec="microseconds")
+        undo = {"date": nxt, "stamp": stamp, "expires": (now + timedelta(minutes=5)).timestamp(),
+                "version": schedule_version(conn, (nxt,), include_slots=True), "slots": []}
+        if plan:
             conn.execute(
-                "UPDATE slots SET do_text = ?, is_routine = 0, updated_at = ? WHERE id = ?",
-                (text, now, target["id"]),
+                "UPDATE blocks SET plan_text = ?, updated_at = ? WHERE id = ?",
+                (plan, stamp, dst["id"]),
             )
-            moved += 1
-    return JSONResponse({
-        "ok": True, "date": nxt, "label": src["block_label"],
-        "block_order": dst["block_order"],
-        "moved": moved, "skipped": len(carry) - moved, "plan": bool(plan),
-    })
+            undo["block"] = [dst["id"], dst["plan_text"]]
+        for _, target, text in assignments:
+            conn.execute("UPDATE slots SET do_text = ?, is_routine = 0, updated_at = ? WHERE id = ?",
+                         (text, stamp, target["id"]))
+            undo["slots"].append([target["id"], target["do_text"], target["is_routine"]])
+        if mode == "apply" and (plan or assignments):
+            result["undo_token"] = _rollover_token(undo)
+    return JSONResponse(result)
+
+
+@router.post("/block/rollover/undo")
+async def undo_rollover(request: Request):
+    form = await request.form()
+    body, _, signature = (form.get("undo_token") or "").partition(".")
+    expected = hmac.new(_ROLLOVER_KEY, body.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        return JSONResponse({"ok": False, "error": "invalid-undo"}, status_code=400)
+    undo = json.loads(urlsafe_b64decode(body))
+    now = datetime.now(KST)
+    if undo["expires"] < now.timestamp():
+        return JSONResponse({"ok": False, "error": "undo-expired"}, status_code=409)
+    stamp = now.isoformat(timespec="microseconds")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if undo["version"] != schedule_version(conn, (undo["date"],), include_slots=True):
+            return _stale_schedule()
+        block = undo.get("block")
+        if block is not None:
+            saved = conn.execute("UPDATE blocks SET plan_text = ?, updated_at = ? "
+                                 "WHERE id = ? AND updated_at = ?",
+                                 (block[1], stamp, block[0], undo["stamp"]))
+            if not saved.rowcount:
+                return JSONResponse({"ok": False, "error": "rollover-changed"}, status_code=409)
+        for row_id, text, is_routine in undo["slots"]:
+            saved = conn.execute("UPDATE slots SET do_text = ?, is_routine = ?, updated_at = ? "
+                                 "WHERE id = ? AND updated_at = ?",
+                                 (text, is_routine, stamp, row_id, undo["stamp"]))
+            if not saved.rowcount:
+                conn.rollback()
+                return JSONResponse({"ok": False, "error": "rollover-changed"}, status_code=409)
+    return JSONResponse({"ok": True, "date": undo["date"]})
 
 
 @router.post("/meta/tomorrow-goal")
@@ -909,25 +1095,36 @@ async def meta_tomorrow_goal(request: Request):
     """하루 마감에서 적은 '내일 가장 중요한 일'을 다음 날 목표 1번에 저장한다."""
     form = await request.form()
     date_str = (form.get("date") or "").strip()
-    text = (form.get("text") or "").strip()
-    try:
-        d = datetime.strptime(date_str, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
+    text = (form.get("text") or "").replace("\r", " ").replace("\n", " ").strip()
+    d = _parse_date(date_str)
+    if d is None:
         return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
-    nxt = (d + timedelta(days=1)).strftime("%Y-%m-%d")
+    mode = form.get("mode", "")
+    if mode not in ("", "preview", "apply"):
+        return JSONResponse({"ok": False, "error": "bad-mode"}, status_code=400)
+    nxt = (d + timedelta(days=1)).isoformat()
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT today_goal FROM daily_meta WHERE date = ?", (nxt,)
+            "SELECT today_goal, goal_tags, goal_links FROM daily_meta WHERE date = ?", (nxt,)
         ).fetchone()
-        base = (row["today_goal"] if row and row["today_goal"] else "")
-        parts = (base.split("\n") + ["", "", ""])[:3]
-        parts[0] = text
-        joined = "\n".join(p.strip() for p in parts)
-        joined = joined if joined.strip() else ""
+        goals, tags, links = (_split3(row[key] if row else None)
+                               for key in ("today_goal", "goal_tags", "goal_links"))
+        snapshot = [nxt, goals[0], tags[0], links[0], text]
+        version = hashlib.sha256(json.dumps(snapshot).encode()).hexdigest()
+        if mode == "preview":
+            return JSONResponse({"ok": True, "date": nxt, "current": goals[0],
+                                 "preview_token": version})
+        if mode == "apply" and form.get("preview_token") != version:
+            return JSONResponse({"ok": False, "error": "goal-changed"}, status_code=409)
+        if goals[0] != text:
+            goals[0], tags[0], links[0] = text, "", ""
+        fields = ["\n".join(parts) if any(parts) else "" for parts in (goals, tags, links)]
         conn.execute(
-            "INSERT INTO daily_meta (date, today_goal) VALUES (?, ?) "
-            "ON CONFLICT(date) DO UPDATE SET today_goal = excluded.today_goal",
-            (nxt, joined),
+            "INSERT INTO daily_meta (date, today_goal, goal_tags, goal_links) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(date) DO UPDATE SET today_goal = excluded.today_goal, "
+            "goal_tags = excluded.goal_tags, goal_links = excluded.goal_links",
+            (nxt, *fields),
         )
     return JSONResponse({"ok": True, "date": nxt})
 
@@ -942,6 +1139,17 @@ async def slot_done(slot_id: RowId, request: Request):
     val = 1 if (form.get("done") in ("1", "true", "on")) else 0
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT s.date, s.start_time, s.end_time, s.done, b.block_label "
+            "FROM slots s JOIN blocks b ON b.id = s.block_id WHERE s.id = ?", (slot_id,),
+        ).fetchone()
+        error = _identity_error(row, form)
+        if error is not None:
+            return error
+        error = _edit_conflict(form, row["done"], val, done=val)
+        if error is not None:
+            return error
         conn.execute(
             "UPDATE slots SET done = ?, updated_at = ? WHERE id = ?",
             (val, now, slot_id),

@@ -1,17 +1,26 @@
 # SQLite DB를 .sql 덤프로 백업하고, 오래된 덤프와 불어난 로그를 정리하는 일별 스크립트
 # (launchd io.6block.backup 이 매일 23시에 실행)
+import fcntl
+import os
 import re
+import shutil
 import sqlite3
 import sys
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+if __name__ == "__main__":
+    sys.path.insert(0, str(ROOT))
 
 from app.config import BACKUP_DIR, CLOUD_BACKUP_DIR, DB_PATH  # noqa: E402
 
 KEEP_DAYS = 30  # 이보다 오래된 일별 덤프는 자동 삭제(로컬·클라우드 모두). 무한 누적 방지.
+RESTORE_MARKER = "-- 6block restore checked"
+KST = ZoneInfo("Asia/Seoul")
 _NAME_RE = re.compile(r"^blocks-(\d{8})\.sql$")
 # 손으로 뜬 일회성 스냅샷(스키마를 건드리기 전 안전용). 이름에 붙은 날짜로 같이 걷어낸다.
 # 이게 없으면 blocks-cats-20260608-092802.db 같은 파일이 영원히 남는다.
@@ -66,7 +75,7 @@ def _rotate(target: Path, now: datetime):
             d = datetime.strptime(m.group(1), "%Y%m%d")
         except ValueError:
             continue
-        if (now - d).days > KEEP_DAYS:
+        if (now.date() - d.date()).days > KEEP_DAYS:
             try:
                 f.unlink()
                 removed += 1
@@ -95,23 +104,88 @@ def _purge_empty_days():
         print(f"[purge] skip: {e}")
 
 
-def dump():
-    if not DB_PATH.exists():
-        print(f"[skip] DB not found: {DB_PATH}")
-        return
-    _purge_empty_days()
-    now = datetime.now()
-    today = now.strftime("%Y%m%d")
-    for target in (BACKUP_DIR, CLOUD_BACKUP_DIR):
-        target.mkdir(parents=True, exist_ok=True)
-        out = target / f"blocks-{today}.sql"
-        with sqlite3.connect(DB_PATH) as conn, out.open("w", encoding="utf-8") as fp:
-            for line in conn.iterdump():
+def backup_targets(local: Path, secondary: Path):
+    cloud_label = "OneDrive" if any(p.startswith("OneDrive-") for p in secondary.parts) else "보조 폴더"
+    return (("로컬", local), (cloud_label, secondary))
+
+
+def dump_state(path: Path) -> tuple[bool, bool]:
+    """덤프가 끝까지 작성됐는지와 복원 시험 표시가 있는지 확인한다."""
+    with path.open("rb") as fp:
+        fp.seek(max(os.fstat(fp.fileno()).st_size - 256, 0))
+        tail = fp.read().rstrip()
+    checked = tail.endswith(b"COMMIT;\n" + RESTORE_MARKER.encode())
+    return checked or tail.endswith(b"COMMIT;"), checked
+
+
+def _checked_dump(workdir: Path) -> Path:
+    source_uri = f"{DB_PATH.resolve().as_uri()}?mode=ro"
+    with closing(sqlite3.connect(source_uri, uri=True)) as source, closing(
+        sqlite3.connect(workdir / "snapshot.db")
+    ) as snapshot:
+        source.backup(snapshot)
+        sql_file = workdir / "dump.sql"
+        with sql_file.open("w", encoding="utf-8") as fp:
+            for line in snapshot.iterdump():
                 fp.write(f"{line}\n")
-        print(f"[ok] dumped -> {out}")
-        _rotate(target, now)
-    _trim_logs()
+
+    sql = sql_file.read_text(encoding="utf-8")
+    if not sql.rstrip().endswith("COMMIT;"):
+        raise sqlite3.DatabaseError("백업 덤프 작성이 끝나지 않았습니다")
+    with closing(sqlite3.connect(workdir / "restore.db")) as restored:
+        restored.executescript(sql)
+        if restored.in_transaction or restored.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+            raise sqlite3.DatabaseError("백업 덤프 복원 검사에 실패했습니다")
+        if restored.execute("PRAGMA foreign_key_check").fetchone():
+            raise sqlite3.DatabaseError("백업 덤프의 참조 무결성 검사에 실패했습니다")
+    with sql_file.open("a", encoding="utf-8") as fp:
+        fp.write(f"{RESTORE_MARKER}\n")
+    return sql_file
+
+
+def _publish_dump(source: Path, destination: Path):
+    """정상 덤프를 같은 디렉터리의 임시 파일에서 준비한 뒤 한 번에 교체한다."""
+    temp = None
+    try:
+        with NamedTemporaryFile(dir=destination.parent, prefix=".blocks-", delete=False) as out:
+            temp = Path(out.name)
+            with source.open("rb") as fp:
+                shutil.copyfileobj(fp, out)
+            out.flush()
+            os.fsync(out.fileno())
+        temp.replace(destination)
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
+
+
+def dump() -> list[dict]:
+    if not DB_PATH.is_file():
+        raise FileNotFoundError("백업할 데이터베이스가 없습니다")
+    results = []
+    # 수동 백업과 launchd 백업이 겹쳐도 먼저 읽은 스냅샷으로 새 덤프를 덮지 않게 한다.
+    with (DB_PATH.parent / ".backup.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        now = datetime.now(KST)
+        with TemporaryDirectory(prefix="6block-backup-") as work:
+            checked = _checked_dump(Path(work))
+            for label, target in backup_targets(BACKUP_DIR, CLOUD_BACKUP_DIR):
+                out = target / f"blocks-{now:%Y%m%d}.sql"
+                try:
+                    target.mkdir(parents=True, exist_ok=True)
+                    _publish_dump(checked, out)
+                except OSError as exc:
+                    print(f"[error] dump -> {out}: {exc}", file=sys.stderr)
+                    results.append({"label": label, "ok": False, "error": str(exc)})
+                    continue
+                print(f"[ok] dumped and restore checked -> {out}")
+                results.append({"label": label, "ok": True, "name": out.name})
+                _rotate(target, now)
+        if all(r["ok"] for r in results):
+            _purge_empty_days()
+        _trim_logs()
+    return results
 
 
 if __name__ == "__main__":
-    dump()
+    sys.exit(0 if all(r["ok"] for r in dump()) else 1)

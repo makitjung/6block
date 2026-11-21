@@ -17,17 +17,19 @@ from app.common import (
     _parse_date,
     _rule_distribute,
     _short_date,
+    _skeleton_matches_config,
     _split3,
     ensure_day_skeleton,
     int_id,
     opt_id,
+    schedule_version,
     templates,
     today_str,
     tpl_title,
     week_lt_items,
     week_start,
 )
-from app.config import WEEK_CORE_BLOCKS, hhmm_to_min, slots_for_day
+from app.config import WEEK_CORE_BLOCKS, hhmm_to_min
 from app.db import (
     _json_obj,
     get_conn,
@@ -108,6 +110,7 @@ def _week_view(request: Request, monday: date):
     with get_conn() as conn:
         for ds in dates:
             ensure_day_skeleton(conn, ds)
+        version = schedule_version(conn, dates)
         rows = conn.execute(
             f"SELECT id, date, block_label, block_order, is_core, plan_text, "
             f"       see_text, name, category_id, start_time, end_time FROM blocks "
@@ -115,10 +118,9 @@ def _week_view(request: Request, monday: date):
             dates,
         ).fetchall()
         categories = [
-            {"id": r["id"], "name": r["name"], "tone": r["tone"]}
+            dict(r)
             for r in conn.execute(
-                "SELECT id, name, tone FROM categories "
-                "WHERE is_active = 1 ORDER BY display_order"
+                "SELECT id, name, tone, is_active FROM categories ORDER BY display_order"
             )
         ]
         # 슬롯 구분이 비면(NULL) 그 슬롯이 속한 블록 구분을 따른다(블록→슬롯 상속).
@@ -131,6 +133,8 @@ def _week_view(request: Request, monday: date):
         # 그리고 categories 는 LEFT JOIN 이다. INNER JOIN 이던 시절에는 구분을 안 고른
         # 슬롯이 통째로 빠져, 코어 블록에 하루를 다 쓰고도 '기록된 시간'이 0 이었다.
         # 이제 구분이 없는 시간은 '미지정' 한 줄로 모아 보여 준다.
+        week_total_hours = conn.execute(f"SELECT COUNT(*) FROM slots WHERE date IN ({placeholders})",
+                                        dates).fetchone()[0] * 0.5
         cat_summary = conn.execute(
             f"""
             SELECT COALESCE(c.name, '미지정') AS name,
@@ -261,6 +265,7 @@ def _week_view(request: Request, monday: date):
         "week.html",
         {
             "week_start": week_start_str,
+            "schedule_version": version,
             "week_no": week_no,
             "prev_week": prev_week,
             "next_week": next_week,
@@ -272,9 +277,7 @@ def _week_view(request: Request, monday: date):
             "total_core": used_core_total,
             "achieve_pct": achieve_pct,
             # 요일마다 블록 시간이 다를 수 있으므로 7일치 슬롯 수를 각각 세어 합친다.
-            "week_total_hours": sum(
-                len(slots_for_day(get_day_blocks(i, week_start_str))) for i in range(7)
-            ) * 0.5,
+            "week_total_hours": week_total_hours,
             "wmeta": wmeta,
             # 목표 열의 자유 란 3개(장기와 무관한 그 주만의 목표)
             "weekly_goals": _split3(wmeta["weekly_goal"] if wmeta else ""),
@@ -318,11 +321,16 @@ def _week_view(request: Request, monday: date):
 
 @router.post("/week/save/{week_start_str}")
 async def save_week(week_start_str: str, request: Request):
-    if _parse_date(week_start_str) is None:
+    d0 = _parse_date(week_start_str)
+    if d0 is None:
         return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
     form = await request.form()
     now = datetime.now(KST).isoformat(timespec="seconds")
+    wk_dates = [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if form.get("schedule_version") and form["schedule_version"] != schedule_version(conn, wk_dates):
+            return JSONResponse({"ok": False, "error": "stale-schedule"}, status_code=409)
         conn.execute(
             """
             INSERT INTO weekly_meta (week_start, weekly_goal, appointments, vow, memo)
@@ -370,8 +378,6 @@ async def save_week(week_start_str: str, request: Request):
                 (week_start_str, label, txt, now),
             )
         # 7일보기에서 직접 편집한 블록 이름·구분 저장(이름이 비거나 주간 이름과 같으면 상속)
-        d0 = datetime.strptime(week_start_str, "%Y-%m-%d").date()
-        wk_dates = [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
         ph = ",".join("?" * len(wk_dates))
         block_label_by_id = {
             r["id"]: r["block_label"]
@@ -386,7 +392,7 @@ async def save_week(week_start_str: str, request: Request):
             prefix, _, suffix = key.partition("_")
             # 칸 이름 뒤 숫자가 행 id 다. 못 읽거나 범위를 벗어나면 맞는 행이 없으니 건너뛴다.
             sid = opt_id(suffix)
-            if sid is None:
+            if sid not in block_label_by_id:
                 continue
             if prefix == "bname":
                 label = block_label_by_id.get(sid, "")
@@ -439,189 +445,285 @@ def _mark_applied(conn, scope: str, key: str, kind: str, tid, now: str):
     )
 
 
-def _apply_time_tpl(conn, tpl, dates, week_key: str | None) -> tuple[int, int]:
-    """세션시간(S)을 적용한다. week_key 를 주면 그 주에, 없으면 날짜마다 따로 적는다.
+def _applied_template(conn, scope, key, kind):
+    row = conn.execute(
+        "SELECT tpl_id FROM tpl_applied WHERE scope = ? AND key = ? AND kind = ?",
+        (scope, key, kind),
+    ).fetchone()
+    return _tpl(conn, row["tpl_id"], kind) if row and row["tpl_id"] else None
 
-    적어 둔 것이 있는 날은 골격을 다시 만들면 칸이 어긋나 글이 사라지므로 건너뛴다.
-    (적용한 날 수, 건너뛴 날 수)를 돌려준다.
-    """
-    if not template_has_times(tpl["times_common"], tpl["times_wd"]):
-        return 0, 0
+
+def _weekly_part(conn, ws, kind):
+    tracked = _applied_template(conn, "week", ws, kind)
+    if tracked is not None:
+        return tracked
+    week = _applied_template(conn, "week", ws, "W")
+    part_id = week[kind.lower() + "_id"] if week else None
+    return _tpl(conn, part_id, kind) if part_id else None
+
+
+_TEMPLATE_FIELDS = {
+    "blocks": {"name", "category_id"},
+    "slots": {"category_id", "do_text"},
+    "weekly_block_themes": {"theme_text"},
+}
+_ROUTINE_UNTOUCHED = (
+    "is_routine = 1 AND done = 0 AND TRIM(COALESCE(did_text, '')) = '' "
+    "AND TRIM(COALESCE(wk_todo, '')) = ''"
+)
+
+
+def _restore_template_fields(conn, ds, kind, scope=None):
+    """Remove copied values only if the user has not subsequently edited them."""
+    params = [ds, kind]
+    where = "date = ? AND kind = ?"
+    if scope is not None:
+        where += " AND scope = ?"
+        params.append(scope)
+    rows = conn.execute(f"SELECT * FROM template_values WHERE {where} ORDER BY field", params).fetchall()
+    restored = 0
+    for row in rows:
+        table, field = row["table_name"], row["field"]
+        if field not in _TEMPLATE_FIELDS.get(table, ()):
+            continue
+        extra_set = ", is_routine = 0" if field == "do_text" else ""
+        guard = f" AND {_ROUTINE_UNTOUCHED}" if kind == "T" else ""
+        updated = conn.execute(
+            f"UPDATE {table} SET {field} = ?{extra_set} WHERE id = ? AND {field} IS ?{guard}",
+            (row["previous_value"], row["row_id"], row["applied_value"]),
+        )
+        restored += updated.rowcount
+    conn.execute(f"DELETE FROM template_values WHERE {where}", params)
+    return restored
+
+
+def _set_template_field(conn, ds, scope, kind, table, row, field, value, now):
+    previous = row[field]
+    if previous is not None and str(previous).strip():
+        return False
+    extra_set = ", is_routine = 1" if field == "do_text" else ""
+    conn.execute(f"UPDATE {table} SET {field} = ?, updated_at = ?{extra_set} WHERE id = ?",
+                 (value, now, row["id"]))
+    conn.execute(
+        "INSERT INTO template_values(date, scope, kind, table_name, row_id, field, "
+        "previous_value, applied_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT (table_name, row_id, field) DO UPDATE SET date = excluded.date, "
+        "scope = excluded.scope, kind = excluded.kind, previous_value = excluded.previous_value, "
+        "applied_value = excluded.applied_value",
+        (ds, scope, kind, table, row["id"], field, previous, value),
+    )
+    return True
+
+
+def _schedule_can_change(conn, ds, wanted):
+    if _skeleton_matches_config(conn, ds, wanted):
+        return True, False
+    # Names and categories copied by templates can be rebuilt. Preserve all
+    # current values and their source metadata if the day has explicit entries.
+    conn.execute("SAVEPOINT check_schedule")
+    _restore_template_fields(conn, ds, "N", "day")
+    _restore_template_fields(conn, ds, "C")
+    can_change = not _day_has_content(conn, ds)
+    if not can_change:
+        conn.execute("ROLLBACK TO check_schedule")
+    conn.execute("RELEASE check_schedule")
+    return can_change, can_change
+
+
+def _template_times(tpl, weekday):
+    return template_day_blocks(tpl["times_common"], tpl["times_wd"], weekday)
+
+
+def _time_pairs(blocks):
+    return [{"start": start, "end": end} for _label, _core, start, end in blocks]
+
+
+def _apply_session_times(conn, tpl, dates, week_key, out):
+    """Apply effective schedules, retaining the previous schedule on skipped days."""
+    changed = set()
+    if tpl and not template_has_times(tpl["times_common"], tpl["times_wd"]):
+        return changed
     if week_key:
-        # 7요일을 모두 풀어 적는다. 나중에 설정을 고쳐도 이 주는 안 흔들린다.
-        set_week_block_times(week_key, {
-            str(w): [
-                {"start": s_, "end": e_}
-                for _l, _c, s_, e_ in template_day_blocks(
-                    tpl["times_common"], tpl["times_wd"], w)
-            ]
-            for w in range(7)
-        }, conn)
-    else:
-        for ds in dates:
-            wd = datetime.strptime(ds, "%Y-%m-%d").date().weekday()
-            set_day_block_times(ds, [
-                {"start": s_, "end": e_}
-                for _l, _c, s_, e_ in template_day_blocks(
-                    tpl["times_common"], tpl["times_wd"], wd)
-            ], conn)
-    days = skipped = 0
+        saved = conn.execute("SELECT times FROM week_block_time WHERE week_start = ?",
+                             (week_key,)).fetchone()
+        times = _json_obj(saved["times"] if saved else None)
     for ds in dates:
-        if _day_has_content(conn, ds):
-            skipped += 1
-        else:
-            days += 1
-    return days, skipped
-
-
-def _apply_name_tpl(conn, tpl, dates, week_key: str | None, now: str) -> int:
-    """블록이름(N)을 적용한다. 주간이면 그 주 이름, 하루면 그 날만의 이름 칸에 넣는다."""
-    names = {
-        k: str(v).strip() for k, v in _json_obj(tpl["block_names"]).items()
-        if k in CORE_LABELS and str(v or "").strip()
-    }
-    if not names:
-        return 0
-    n = 0
-    for label, text in names.items():
+        d = date.fromisoformat(ds)
+        weekday = d.weekday()
+        if week_key and conn.execute("SELECT 1 FROM day_block_time WHERE date = ?", (ds,)).fetchone():
+            # The new weekly hours are available when this daily override is detached.
+            times[str(weekday)] = _time_pairs(_template_times(tpl, weekday))
+            out["overridden_dates"].append(ds)
+            continue
+        wanted = (_template_times(tpl, weekday) if tpl else
+                  get_day_blocks(weekday, week_start(d).isoformat(), conn=conn))
+        can_change, rebuild = _schedule_can_change(conn, ds, wanted)
+        if not can_change:
+            out["skipped_dates"].append(ds)
+            continue
         if week_key:
-            conn.execute(
-                "INSERT INTO weekly_block_themes "
-                "(week_start, block_label, theme_text, updated_at) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(week_start, block_label) DO UPDATE SET "
-                "theme_text = excluded.theme_text, updated_at = excluded.updated_at",
-                (week_key, label, text, now),
-            )
-            n += 1
+            times[str(weekday)] = _time_pairs(wanted)
         else:
-            for ds in dates:
-                cur = conn.execute(
-                    "UPDATE blocks SET name = ?, updated_at = ? "
-                    "WHERE date = ? AND block_label = ? AND is_core = 1",
-                    (text, now, ds, label),
-                )
-                n += cur.rowcount
-    return n
+            set_day_block_times(ds, _time_pairs(wanted) if tpl else None, conn)
+        if rebuild:
+            changed.add(ds)
+        out["days"] += 1
+    if week_key and times:
+        set_week_block_times(week_key, times, conn)
+    out["skipped_days"] = len(out["skipped_dates"])
+    return changed
 
 
-def _apply_cat_tpl(conn, tpl, dates, now: str) -> tuple[int, int]:
-    """구분(C)을 적용한다. 블록 42칸을 먼저, 적어 둔 칸 단위(B1p4)를 그 위에 덮는다."""
-    cells: dict[tuple[int, str], int] = {}
-    for r in conn.execute(
-        "SELECT weekday, block_label, category_id FROM cat_template_cell "
-        "WHERE template_id = ?",
-        (tpl["id"],),
-    ):
-        if r["category_id"] is not None:
-            cells[(r["weekday"], r["block_label"])] = r["category_id"]
-    slot_cells: dict[int, list] = {}
-    for r in conn.execute(
-        "SELECT weekday, block_label, p, category_id FROM cat_template_slot "
-        "WHERE template_id = ? ORDER BY p",
-        (tpl["id"],),
-    ):
-        if r["category_id"] is not None:
-            slot_cells.setdefault(r["weekday"], []).append(
-                (r["block_label"], r["p"], r["category_id"]))
-    applied = slotted = 0
-    for ds in dates:
-        wd = datetime.strptime(ds, "%Y-%m-%d").date().weekday()
-        for label in CORE_LABELS:
-            cid = cells.get((wd, label))
-            if cid is None:
-                continue
+def _apply_name_tpl(conn, tpl, key, scope, now):
+    names = _json_obj(tpl["block_names"])
+    changed = preserved = 0
+    _restore_template_fields(conn, key, "N", scope)
+    for label in CORE_LABELS:
+        text = str(names.get(label) or "").strip()
+        if not text:
+            continue
+        if scope == "week":
             conn.execute(
-                "UPDATE blocks SET category_id = ?, updated_at = ? "
-                "WHERE date = ? AND block_label = ? AND is_core = 1",
-                (cid, now, ds, label),
+                "INSERT INTO weekly_block_themes(week_start, block_label, theme_text, updated_at) "
+                "VALUES (?, ?, '', ?) ON CONFLICT(week_start, block_label) DO NOTHING",
+                (key, label, now),
             )
+            table, key_field, name_field = "weekly_block_themes", "week_start", "theme_text"
+        else:
+            table, key_field, name_field = "blocks", "date", "name"
+        row = conn.execute(f"SELECT id, {name_field} FROM {table} "
+                           f"WHERE {key_field} = ? AND block_label = ?", (key, label)).fetchone()
+        if row and _set_template_field(conn, key, scope, "N", table, row, name_field, text, now):
+            changed += 1
+        elif row:
+            preserved += 1
+    return changed, preserved
+
+
+def _apply_cat_tpl(conn, tpl, ds, scope, now):
+    _restore_template_fields(conn, ds, "C")
+    weekday = date.fromisoformat(ds).weekday()
+    applied = slotted = preserved = 0
+    for row in conn.execute(
+        "SELECT b.id, b.category_id, c.category_id AS tpl_category "
+        "FROM cat_template_cell c JOIN blocks b ON b.block_label = c.block_label "
+        "WHERE c.template_id = ? AND c.weekday = ? AND b.date = ? AND b.is_core = 1 "
+        "AND c.category_id IS NOT NULL", (tpl["id"], weekday, ds),
+    ).fetchall():
+        if _set_template_field(conn, ds, scope, "C", "blocks", row, "category_id", row["tpl_category"], now):
             applied += 1
-        # 칸 단위는 그 블록의 p번째 칸에만 놓는다. 요일마다 블록 길이가 달라
-        # 그 칸이 없는 날은 건너뛴다.
-        for label, p, cid in slot_cells.get(wd, []):
-            row = conn.execute(
-                "SELECT s.id FROM slots s JOIN blocks b ON b.id = s.block_id "
-                "WHERE b.date = ? AND b.block_label = ? "
-                "ORDER BY s.slot_index LIMIT 1 OFFSET ?",
-                (ds, label, p - 1),
-            ).fetchone()
-            if not row:
-                continue
-            conn.execute(
-                "UPDATE slots SET category_id = ?, updated_at = ? WHERE id = ?",
-                (cid, now, row["id"]),
-            )
+        else:
+            preserved += 1
+    for cell in conn.execute(
+        "SELECT block_label, p, category_id FROM cat_template_slot "
+        "WHERE template_id = ? AND weekday = ? AND category_id IS NOT NULL",
+        (tpl["id"], weekday),
+    ).fetchall():
+        row = conn.execute(
+            "SELECT s.id, s.category_id FROM slots s JOIN blocks b ON b.id = s.block_id "
+            "WHERE s.date = ? AND b.block_label = ? ORDER BY s.slot_index LIMIT 1 OFFSET ?",
+            (ds, cell["block_label"], cell["p"] - 1),
+        ).fetchone()
+        if row and _set_template_field(conn, ds, scope, "C", "slots", row,
+                                       "category_id", cell["category_id"], now):
             slotted += 1
-    return applied, slotted
+        elif row:
+            preserved += 1
+    return applied, slotted, preserved
 
 
-def _apply_rule_tpl(conn, tpl, dates, now: str) -> int:
-    """고정할일(T)을 적용한다. 지난번에 넣어 둔 칸을 먼저 비우고 새 규칙대로 채운다.
+def _clear_routine(conn, ds):
+    restored = _restore_template_fields(conn, ds, "T")
+    # Older applications used only the flag. Preserve categories with unknown
+    # provenance, and keep completed or annotated routine slots.
+    legacy = conn.execute(
+        f"UPDATE slots SET do_text = NULL, is_routine = 0 WHERE date = ? AND {_ROUTINE_UNTOUCHED}",
+        (ds,),
+    )
+    return restored + legacy.rowcount
 
-    그래서 규칙을 고치고 다시 골라도 옛 문구가 남지 않는다. 사람이 쓴 칸은 안 건드린다.
-    """
-    rules = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT weekdays, start_time, span, do_text, category_id "
-            "FROM routine_rule WHERE template_id = ? ORDER BY display_order, id",
-            (tpl["id"],),
-        )
-        if (r["do_text"] or "").strip() and (r["weekdays"] or "").strip()
-    ]
-    if not rules:
-        return 0
-    filled = 0
-    for ds in dates:
-        wd = datetime.strptime(ds, "%Y-%m-%d").date().weekday()
-        conn.execute(
-            "UPDATE slots SET do_text = NULL, category_id = NULL, is_routine = 0, "
-            "updated_at = ? WHERE date = ? AND is_routine = 1",
-            (now, ds),
-        )
-        for rule in rules:
-            if wd not in {int(p) for p in rule["weekdays"].split(",")
-                          if p.strip().isdigit()}:
-                continue
-            # 요일마다 블록 시간이 다를 수 있다. 그 시각에 칸이 없는 날은 건너뛴다.
-            row = conn.execute(
-                "SELECT slot_index FROM slots WHERE date = ? AND start_time = ?",
-                (ds, rule["start_time"]),
-            ).fetchone()
+
+def _apply_rule_tpl(conn, tpl, ds, scope, now):
+    _clear_routine(conn, ds)
+    slots = {r["start_time"]: r["id"] for r in conn.execute(
+        "SELECT id, start_time FROM slots WHERE date = ?", (ds,),
+    )}
+    weekday = str(date.fromisoformat(ds).weekday())
+    filled = skipped = 0
+    for rule in conn.execute(
+        "SELECT weekdays, start_time, span, do_text, category_id "
+        "FROM routine_rule WHERE template_id = ? ORDER BY display_order, id", (tpl["id"],),
+    ).fetchall():
+        text = (rule["do_text"] or "").strip()
+        if not text or weekday not in rule["weekdays"].split(","):
+            continue
+        time = rule["start_time"]
+        span = min(4, max(1, rule["span"] or 1))
+        for step in range(span):
+            row = conn.execute("SELECT * FROM slots WHERE id = ?", (slots.get(time),)).fetchone()
             if not row:
+                skipped += span - step
+                break
+            time = row["end_time"]
+            if row["done"] or (row["did_text"] or "").strip() or (row["wk_todo"] or "").strip():
+                skipped += 1
                 continue
-            span = min(4, max(1, rule["span"] or 1))
-            cur = conn.execute(
-                "UPDATE slots SET do_text = ?, is_routine = 1, updated_at = ?, "
-                "category_id = COALESCE(?, category_id) "
-                "WHERE date = ? AND slot_index >= ? AND slot_index < ? "
-                "  AND TRIM(COALESCE(do_text, '')) = ''",
-                ((rule["do_text"] or "").strip(), now, rule["category_id"],
-                 ds, row["slot_index"], row["slot_index"] + span),
-            )
-            filled += cur.rowcount
-    return filled
+            if not _set_template_field(conn, ds, scope, "T", "slots", row, "do_text", text, now):
+                skipped += 1
+                continue
+            filled += 1
+            if rule["category_id"] is not None:
+                _set_template_field(conn, ds, scope, "T", "slots", row, "category_id",
+                                    rule["category_id"], now)
+    return filled, skipped
 
 
-def _apply_parts(conn, parts: dict, dates: list, week_key: str | None, now: str) -> dict:
-    """고른 부분들을 그 날짜들에 적용한다. parts 는 {'S': 줄, 'T': 줄, ...}.
+def _template_response():
+    return {"days": 0, "skipped_days": 0, "skipped_dates": [], "overridden_dates": [],
+            "names": 0, "applied": 0, "slots": 0, "filled": 0,
+            "preserved_cells": 0, "routine_skipped": 0}
 
-    세션시간이 가장 먼저다. 시간표가 바뀌면 그 날 골격이 다시 만들어지므로, 구분을
-    먼저 넣으면 방금 넣은 것이 지워진다.
-    """
-    out = {"days": 0, "skipped_days": 0, "names": 0,
-           "applied": 0, "slots": 0, "filled": 0}
-    if parts.get("S"):
-        out["days"], out["skipped_days"] = _apply_time_tpl(
-            conn, parts["S"], dates, week_key)
+
+def _apply_choices(conn, parts, dates, week_key, now, *, detach_time=False):
+    out = _template_response()
+    rebuilt = set()
+    if "S" in parts or detach_time:
+        rebuilt = _apply_session_times(conn, parts.get("S"), dates, week_key, out)
     for ds in dates:
-        ensure_day_skeleton(conn, ds)
-    if parts.get("N"):
-        out["names"] = _apply_name_tpl(conn, parts["N"], dates, week_key, now)
-    if parts.get("C"):
-        out["applied"], out["slots"] = _apply_cat_tpl(conn, parts["C"], dates, now)
-    if parts.get("T"):
-        out["filled"] = _apply_rule_tpl(conn, parts["T"], dates, now)
+        ensure_day_skeleton(conn, ds, schedule_change=ds in rebuilt)
+    if week_key and "N" in parts:
+        out["names"], out["preserved_cells"] = _apply_name_tpl(
+            conn, parts["N"], week_key, "week", now,
+        )
+    for ds in dates:
+        ws = week_key or week_start(date.fromisoformat(ds)).isoformat()
+        if (not week_key and "N" in parts) or ds in rebuilt:
+            names = parts.get("N") if not week_key else None
+            names = names or _applied_template(conn, "day", ds, "N")
+            if names:
+                changed, preserved = _apply_name_tpl(conn, names, ds, "day", now)
+                out["names"] += changed
+                out["preserved_cells"] += preserved
+        for kind in ("C", "T"):
+            day_choice = _applied_template(conn, "day", ds, kind)
+            if not week_key and kind in parts:
+                tpl, scope = parts[kind], "day"
+            elif kind in parts and not day_choice:
+                tpl, scope = parts[kind], "week"
+            elif ds in rebuilt:
+                tpl = day_choice or _weekly_part(conn, ws, kind)
+                scope = "day" if day_choice else "week"
+            else:
+                continue
+            if tpl and kind == "C":
+                applied, slots, preserved = _apply_cat_tpl(conn, tpl, ds, scope, now)
+                out["applied"] += applied
+                out["slots"] += slots
+                out["preserved_cells"] += preserved
+            elif tpl:
+                filled, skipped = _apply_rule_tpl(conn, tpl, ds, scope, now)
+                out["filled"] += filled
+                out["routine_skipped"] += skipped
     return out
 
 
@@ -635,14 +737,15 @@ async def week_apply_template(request: Request):
     """
     form = await request.form()
     ws = (form.get("week_start") or "").strip()
-    try:
-        monday = datetime.strptime(ws, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
+    monday = _parse_date(ws)
+    if monday is None or monday.weekday() != 0:
         return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+    ws = monday.isoformat()
     raw = (form.get("template_id") or "").strip()
     now = datetime.now(KST).isoformat(timespec="seconds")
     dates = [(monday + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         if not raw:
             _mark_applied(conn, "week", ws, "W", None, now)
             return JSONResponse({"ok": True, "cleared": True})
@@ -662,7 +765,14 @@ async def week_apply_template(request: Request):
         if not parts:
             return JSONResponse(
                 {"ok": False, "error": "empty-template"}, status_code=400)
-        out = _apply_parts(conn, parts, dates, ws, now)
+        # Keep previously selected components when another weekly template only
+        # replaces a subset. Historic rows stored only the W choice.
+        for kind in ("S", "T", "N", "C"):
+            if kind not in parts and (prior := _weekly_part(conn, ws, kind)):
+                _mark_applied(conn, "week", ws, kind, prior["id"], now)
+        out = _apply_choices(conn, parts, dates, ws, now)
+        for kind, part in parts.items():
+            _mark_applied(conn, "week", ws, kind, part["id"], now)
         _mark_applied(conn, "week", ws, "W", tid, now)
     out["ok"] = True
     return JSONResponse(out)
@@ -678,20 +788,42 @@ async def day_apply_template(request: Request):
     """
     form = await request.form()
     ds = (form.get("date") or "").strip()
-    if _parse_date(ds) is None:
+    d = _parse_date(ds)
+    if d is None:
         return JSONResponse({"ok": False, "error": "bad-date"}, status_code=400)
+    ds = d.isoformat()
     kind = (form.get("kind") or "").strip().upper()
     if kind not in ("S", "T", "N", "C"):
         return JSONResponse({"ok": False, "error": "bad-kind"}, status_code=400)
     raw = (form.get("template_id") or "").strip()
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         if not raw:
-            _mark_applied(conn, "day", ds, kind, None, now)
+            out = _template_response()
+            active = _applied_template(conn, "day", ds, kind)
+            ws = week_start(d).isoformat()
             if kind == "S":
-                set_day_block_times(ds, None, conn)
-                ensure_day_skeleton(conn, ds)
-            return JSONResponse({"ok": True, "cleared": True})
+                out = _apply_choices(conn, {}, [ds], None, now, detach_time=True)
+                if out["skipped_days"]:
+                    return JSONResponse({**out, "ok": False, "error": "schedule-in-use"}, status_code=409)
+            elif active and kind in ("C", "N"):
+                had_provenance = conn.execute(
+                    "SELECT 1 FROM template_values WHERE date = ? AND scope = 'day' AND kind = ?",
+                    (ds, kind),
+                ).fetchone()
+                _restore_template_fields(conn, ds, kind, "day")
+                out["retained_untracked"] = not bool(had_provenance)
+                if kind == "C" and (weekly := _weekly_part(conn, ws, "C")):
+                    out["applied"], out["slots"], out["preserved_cells"] = _apply_cat_tpl(
+                        conn, weekly, ds, "week", now,
+                    )
+            elif active and kind == "T":
+                _clear_routine(conn, ds)
+                if weekly := _weekly_part(conn, ws, "T"):
+                    out["filled"], out["routine_skipped"] = _apply_rule_tpl(conn, weekly, ds, "week", now)
+            _mark_applied(conn, "day", ds, kind, None, now)
+            return JSONResponse({**out, "ok": True, "cleared": True})
         try:
             tid = int_id(raw)
         except (TypeError, ValueError):
@@ -699,8 +831,16 @@ async def day_apply_template(request: Request):
         row = _tpl(conn, tid, kind)
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
-        out = _apply_parts(conn, {kind: row}, [ds], None, now)
-        _mark_applied(conn, "day", ds, kind, tid, now)
+        conn.execute("SAVEPOINT day_template")
+        out = _apply_choices(conn, {kind: row}, [ds], None, now)
+        counts = {"S": out["days"], "N": out["names"], "C": out["applied"] + out["slots"],
+                  "T": out["filled"]}
+        out["applied_template"] = counts[kind] > 0
+        if out["applied_template"]:
+            _mark_applied(conn, "day", ds, kind, tid, now)
+        else:
+            conn.execute("ROLLBACK TO day_template")
+        conn.execute("RELEASE day_template")
     out["ok"] = True
     return JSONResponse(out)
 

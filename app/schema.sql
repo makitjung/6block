@@ -147,6 +147,14 @@ CREATE TABLE IF NOT EXISTS lt_item (
 CREATE INDEX IF NOT EXISTS idx_lt_item_area ON lt_item(area_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_lt_item_parent ON lt_item(parent_id);
 
+-- 장기 항목을 지운 직후 하위 항목과 주별 계획을 한꺼번에 복원하기 위한 임시 사본.
+CREATE TABLE IF NOT EXISTS lt_deleted_plan (
+    token TEXT PRIMARY KEY,
+    expires_at TEXT NOT NULL,
+    max_item_id INTEGER NOT NULL,
+    snapshot TEXT NOT NULL
+);
+
 -- 고결감(고민·결정·감사)을 기록하고 구글 캘린더에 양방향으로 반영한다.
 -- '다시 볼 날짜'를 넣으면 그 날짜로 사본 한 줄이 따로 생기고 source_id 로 원본을 가리킨다.
 CREATE TABLE IF NOT EXISTS reflection (
@@ -169,6 +177,22 @@ CREATE INDEX IF NOT EXISTS idx_reflection_kind ON reflection(kind, id);
 -- 오늘 탭 '오늘 다시 볼 고결감'과 주간 리뷰가 날짜로 훑고, 사본은 원본 id 로 찾는다.
 CREATE INDEX IF NOT EXISTS idx_reflection_date ON reflection(event_date);
 CREATE INDEX IF NOT EXISTS idx_reflection_source ON reflection(source_id);
+
+-- 캘린더 전송 대기와 삭제 표식. 기록을 고친 트랜잭션에서 함께 저장한다.
+CREATE TABLE IF NOT EXISTS reflection_sync_job (
+    calendar_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    item_id INTEGER,                       -- 삭제 작업에는 로컬 기록이 없다
+    operation TEXT NOT NULL CHECK (operation IN ('create', 'update', 'delete')),
+    revision TEXT NOT NULL,
+    move_date INTEGER NOT NULL DEFAULT 0,
+    done INTEGER NOT NULL DEFAULT 0,
+    confirmed INTEGER NOT NULL DEFAULT 0,  -- 캘린더 목록에서 이 전송의 revision을 읽음
+    retry_at INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (calendar_id, event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reflection_sync_item ON reflection_sync_job(item_id);
 
 -- 템플릿. 한 표가 다섯 종류를 모두 담는다(표 이름은 옛 '구분 템플릿'에서 왔다).
 --   S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간
@@ -249,6 +273,21 @@ CREATE TABLE IF NOT EXISTS tpl_applied (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (scope, key, kind)
 );
+
+-- 셀에 복사한 템플릿 값의 출처. 그 값이 유지된 칸만 다시 적용하거나 원래 값으로 복원한다.
+CREATE TABLE IF NOT EXISTS template_values (
+    date TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    row_id INTEGER NOT NULL,
+    field TEXT NOT NULL,
+    previous_value,
+    applied_value,
+    PRIMARY KEY (table_name, row_id, field)
+);
+
+CREATE INDEX IF NOT EXISTS idx_template_values_date ON template_values(date, kind, scope);
 
 -- 그 주에만 쓰는 세션시간. 주간 탭에서 세션시간을 담은 템플릿을 고르면 여기에 적힌다.
 -- times 는 7요일을 모두 풀어 둔 {"0": [{start,end} × 8], ... "6": [...]} 이다.

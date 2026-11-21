@@ -468,7 +468,7 @@ def _conn_or(conn):
 def get_week_block_times(conn=None) -> dict:
     """주별 세션시간 전체. {"2026-09-07": {"0": [{start,end}...], ...}} 형태."""
     global _week_times_cache
-    if _week_times_cache is not None:
+    if conn is None and _week_times_cache is not None:
         return _week_times_cache
     out: dict = {}
     try:
@@ -482,7 +482,8 @@ def get_week_block_times(conn=None) -> dict:
                     out[r["week_start"]] = data
     except Exception:
         return {}       # 실패하면 설정값만 쓰고 캐시하지 않는다(다음에 재시도)
-    _week_times_cache = out
+    if conn is None:
+        _week_times_cache = out
     return out
 
 
@@ -493,7 +494,7 @@ _day_times_cache: dict | None = None
 def get_day_block_times(conn=None) -> dict:
     """날짜별 세션시간 전체. {"2026-09-08": [{start,end} × 8]} 형태."""
     global _day_times_cache
-    if _day_times_cache is not None:
+    if conn is None and _day_times_cache is not None:
         return _day_times_cache
     out: dict = {}
     try:
@@ -504,7 +505,8 @@ def get_day_block_times(conn=None) -> dict:
                     out[r["date"]] = t
     except Exception:
         return {}       # 실패하면 주·설정값만 쓰고 캐시하지 않는다(다음에 재시도)
-    _day_times_cache = out
+    if conn is None:
+        _day_times_cache = out
     return out
 
 
@@ -522,16 +524,7 @@ def set_day_block_times(date_str: str, times, conn=None):
             )
         else:
             c.execute("DELETE FROM day_block_time WHERE date = ?", (date_str,))
-    if conn is None:
-        _day_times_cache = None
-        return
-    # 바깥 트랜잭션 안이면 캐시를 그 자리에서 고친다. 비워 두면 다음 읽기가 새 연결로
-    # 가서 아직 커밋 안 된 줄을 못 보고, 방금 적은 시간표가 골격에 안 반영된다.
-    cache = get_day_block_times(conn)
-    if times:
-        cache[date_str] = times
-    else:
-        cache.pop(date_str, None)
+    _day_times_cache = None
 
 
 def set_week_block_times(week_start_str: str, times: dict, conn=None):
@@ -550,14 +543,7 @@ def set_week_block_times(week_start_str: str, times: dict, conn=None):
             c.execute(
                 "DELETE FROM week_block_time WHERE week_start = ?", (week_start_str,)
             )
-    if conn is None:
-        _week_times_cache = None
-        return
-    cache = get_week_block_times(conn)
-    if times:
-        cache[week_start_str] = times
-    else:
-        cache.pop(week_start_str, None)
+    _week_times_cache = None
 
 
 def _json_obj(raw) -> dict:
@@ -593,7 +579,7 @@ def template_day_blocks(times_common, times_wd, weekday: int):
 
 
 def get_day_blocks(weekday: int | None = None, week_start_str: str | None = None,
-                   date_str: str | None = None):
+                   date_str: str | None = None, *, conn=None):
     """효과적인 하루 8블록 목록. 정하는 차례는 그 날 → 그 주 → 설정 요일 → 설정 공통이다.
 
     weekday 는 date.weekday() (0=월 ~ 6=일). None 이면 공통 시간만 쓴다.
@@ -603,13 +589,19 @@ def get_day_blocks(weekday: int | None = None, week_start_str: str | None = None
     base = _apply_times(DAY_BLOCKS, _parse_times(get_settings().get(BLOCK_TIMES_KEY)))
     if weekday is None:
         return base
-    if date_str:
-        times = get_day_block_times().get(date_str)
-        if times:
-            return _apply_times(DAY_BLOCKS, times)
-    if week_start_str:
-        wk = get_week_block_times().get(week_start_str)
-        times = _parse_times((wk or {}).get(str(weekday)))
-        if times:
-            return _apply_times(DAY_BLOCKS, times)
+    if date_str or week_start_str:
+        # Point reads use this transaction's SQLite snapshot. They never publish
+        # a partially applied template to another request's in-process cache.
+        with _conn_or(conn) as c:
+            if date_str:
+                entry = c.execute("SELECT times FROM day_block_time WHERE date = ?", (date_str,)).fetchone()
+                times = _parse_times(entry["times"]) if entry else None
+                if times:
+                    return _apply_times(DAY_BLOCKS, times)
+            if week_start_str:
+                entry = c.execute("SELECT times FROM week_block_time WHERE week_start = ?",
+                                  (week_start_str,)).fetchone()
+                times = _parse_times(_json_obj(entry["times"] if entry else None).get(str(weekday)))
+                if times:
+                    return _apply_times(DAY_BLOCKS, times)
     return _apply_times(base, _parse_times(get_weekday_overrides().get(str(weekday))))

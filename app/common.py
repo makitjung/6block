@@ -1,5 +1,6 @@
 # 화면(라우터) 모듈이 공통으로 쓰는 것들. 템플릿 엔진, 시간·날짜 도우미,
 # 하루 골격 생성, 3칸 입력 처리, 계획 자동 세분화를 모아 둔다.
+import hashlib
 import json
 import time
 from calendar import monthrange
@@ -165,7 +166,7 @@ def tpl_title(kind, no, name=None) -> str:
     return f"{base}({name})" if name else base
 
 
-def day_blocks_for(date_str: str):
+def day_blocks_for(date_str: str, conn=None):
     """그 날짜의 효과적인 8블록. 그 주에 따로 적어 둔 시간표가 있으면 그것이 이긴다.
 
     주간 탭에서 세션시간을 담은 템플릿을 고르면 그 주에만 시간표가 적힌다(week_block_time).
@@ -173,10 +174,10 @@ def day_blocks_for(date_str: str):
     """
     d = datetime.strptime(date_str, "%Y-%m-%d").date()
     return get_day_blocks(_weekday_of(date_str), week_start(d).strftime("%Y-%m-%d"),
-                          date_str)
+                          date_str, conn=conn)
 
 
-def _skeleton_matches_config(conn, date_str: str) -> bool:
+def _skeleton_matches_config(conn, date_str: str, day_blocks=None) -> bool:
     """DB의 그날 블록 골격이 현재 효과적 설정(요일별 시간 편집 반영)과 정확히 같은지."""
     have = [
         (r["block_label"], r["start_time"], r["end_time"])
@@ -188,9 +189,26 @@ def _skeleton_matches_config(conn, date_str: str) -> bool:
     ]
     want = [
         (label, start, end)
-        for (label, _core, start, end) in day_blocks_for(date_str)
+        for (label, _core, start, end) in (day_blocks or day_blocks_for(date_str, conn))
     ]
     return have == want
+
+
+def schedule_version(conn, dates, *, include_slots=False) -> str:
+    """Fingerprint form row identities without including editable content."""
+    placeholders = ",".join("?" for _ in dates)
+    blocks = conn.execute(
+        f"SELECT id, date, block_label, start_time, end_time FROM blocks "
+        f"WHERE date IN ({placeholders}) ORDER BY date, block_order", dates,
+    )
+    rows = [tuple(row) for row in blocks]
+    if include_slots:
+        slots = conn.execute(
+            f"SELECT id, date, block_id, start_time, end_time FROM slots "
+            f"WHERE date IN ({placeholders}) ORDER BY date, slot_index", dates,
+        )
+        rows.extend(tuple(row) for row in slots)
+    return hashlib.sha256(json.dumps(rows).encode()).hexdigest()
 
 
 def _day_has_content(conn, date_str: str) -> bool:
@@ -239,19 +257,33 @@ SLOT_HAS_CONTENT = (
 )
 
 
-def ensure_day_skeleton(conn, date_str: str):
+def _has_applied_day_values(conn, date_str: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM template_values WHERE date = ? AND table_name IN ('blocks','slots') "
+        "UNION ALL SELECT 1 FROM slots WHERE date = ? AND is_routine = 1 LIMIT 1",
+        (date_str, date_str),
+    ).fetchone() is not None
+
+
+def ensure_day_skeleton(conn, date_str: str, *, schedule_change=False):
     """블록·슬롯이 없으면 생성한다. 설정이 바뀌었고 입력이 없는 날은 새 배치로 자동 재생성한다."""
+    day_blocks = day_blocks_for(date_str, conn)
     if conn.execute(
         "SELECT 1 FROM blocks WHERE date = ? LIMIT 1", (date_str,)
     ).fetchone():
         # 골격이 현재 설정과 같거나, 사용자가 입력한 내용이 있으면 그대로 둔다.
-        if _skeleton_matches_config(conn, date_str) or _day_has_content(conn, date_str):
+        if _skeleton_matches_config(conn, date_str, day_blocks) or _day_has_content(conn, date_str):
+            return
+        # An explicit template change clears and reapplies these copies together.
+        # Browsing an older date must not erase its routine after a settings edit.
+        if not schedule_change and _has_applied_day_values(conn, date_str):
             return
         # 설정이 바뀌었고 입력이 없는 날은 옛 골격을 지우고 새 배치로 다시 만든다.
         conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
         conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
+        conn.execute("DELETE FROM template_values WHERE date = ? AND table_name IN ('blocks','slots')",
+                     (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
-    day_blocks = day_blocks_for(date_str)
     # 점심·저녁 버퍼 블록은 기본 구분을 '기타'로 시드해 시간 분포 통계에 잡히게 한다.
     etc_row = conn.execute(
         "SELECT id FROM categories WHERE name = '기타' LIMIT 1"
@@ -317,10 +349,12 @@ def purge_empty_days(conn, keep_days: int = 180) -> int:
     ]
     removed = 0
     for d in dates:
-        if _day_has_content(conn, d):
+        if _day_has_content(conn, d) or _has_applied_day_values(conn, d):
             continue
         conn.execute("DELETE FROM slots WHERE date = ?", (d,))
         conn.execute("DELETE FROM blocks WHERE date = ?", (d,))
+        conn.execute("DELETE FROM template_values WHERE date = ? AND table_name IN ('blocks','slots')",
+                     (d,))
         removed += 1
     return removed
 

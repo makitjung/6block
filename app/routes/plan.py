@@ -1,5 +1,8 @@
 # 장기플랜(연·분기·월·주 계획 막대)과 영역·항목 관리를 담당하는 라우터
 from datetime import date, datetime, timedelta
+from hashlib import sha256
+import json
+from secrets import token_urlsafe
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -313,11 +316,15 @@ def _lt_descendants(conn, item_id: int) -> list[int]:
     """그 항목 아래의 모든 하위 항목 id(깊이 무관)."""
     out: list[int] = []
     stack = [item_id]
+    seen = {item_id}
     while stack:
         cur = stack.pop()
         for r in conn.execute("SELECT id FROM lt_item WHERE parent_id = ?", (cur,)):
-            out.append(r["id"])
-            stack.append(r["id"])
+            child = r["id"]
+            if child not in seen:
+                seen.add(child)
+                out.append(child)
+                stack.append(child)
     return out
 
 
@@ -400,8 +407,8 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
         "       block_label, hidden, masked, sort_order FROM lt_item "
         "ORDER BY start_date, id"
     ):
-        # 접어 둔 항목은 '숨긴 항목 보기'를 켰을 때만 끌어온다(하위도 함께 빠진다)
-        if r["area_id"] in tones and (show_hidden or not r["hidden"]):
+        # 숨김은 표시 속성이다. 하위와 상위 진척률 집계에는 그대로 참여한다.
+        if r["area_id"] in tones:
             children.setdefault(r["parent_id"], []).append(dict(r))
 
     def overlaps(it) -> bool:
@@ -455,7 +462,7 @@ def _gantt_blocks(conn, areas, span_start: date, span_end: date,
         # 블록은 항목마다 제 것만 본다. 안 고르면 미지정 줄로 간다(상위를 따라가지 않는다).
         blocks = _split_blocks(it["block_label"]) or [""]
         b = bar(it, blocks, level, hue, rank, path, root_id)
-        if b["visible"]:
+        if b["visible"] and (show_hidden or not b["hidden"]):
             for k in blocks:
                 bars_by_block[k].append({**b})   # 줄마다 칸(lane)이 달라 사본으로 담는다
         for c in children.get(it["id"], []):
@@ -500,6 +507,7 @@ async def plan_item_add(request: Request):
                             status_code=400)
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         parent_id = None
         if raw_parent:
             try:
@@ -518,13 +526,17 @@ async def plan_item_add(request: Request):
             "SELECT 1 FROM lt_area WHERE id = ?", (area_id,)
         ).fetchone():
             return JSONResponse({"ok": False, "error": "영역 없음"}, status_code=404)
-        cur = conn.execute(
-            "INSERT INTO lt_item (area_id, parent_id, title, start_date, end_date, "
-            "progress, block_label, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-            (area_id, parent_id, title, start.isoformat(), end.isoformat(),
+        conn.execute("DELETE FROM lt_deleted_plan WHERE expires_at <= ?", (now,))
+        new_id = conn.execute(
+            "SELECT MAX(COALESCE((SELECT MAX(id) FROM lt_item), 0), "
+            "COALESCE((SELECT MAX(max_item_id) FROM lt_deleted_plan), 0)) + 1"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO lt_item (id, area_id, parent_id, title, start_date, end_date, "
+            "progress, block_label, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
+            (new_id, area_id, parent_id, title, start.isoformat(), end.isoformat(),
              _clean_blocks(form.get("block")) or None, now),
         )
-        new_id = cur.lastrowid
         _lt_rollup(conn, new_id)
     return JSONResponse({"ok": True, "id": new_id})
 
@@ -572,6 +584,11 @@ async def plan_item_update(request: Request):
         ).fetchone()
         if not row:
             return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
+        if "progress" in fields and conn.execute(
+            "SELECT 1 FROM lt_item WHERE parent_id = ? LIMIT 1", (item_id,)
+        ).fetchone():
+            return JSONResponse({"ok": False, "error": "상위 항목의 진척은 하위 항목에서 계산됩니다"},
+                                status_code=409)
         s = fields.get("start_date", row["start_date"])
         e = fields.get("end_date", row["end_date"])
         if e < s:
@@ -820,6 +837,42 @@ async def plan_item_reparent(request: Request):
     return JSONResponse({"ok": True, "changed": True})
 
 
+_RESTORE_FIELDS = (
+    "id", "area_id", "parent_id", "title", "start_date", "end_date",
+    "progress", "block_label", "hidden", "masked", "sort_order", "updated_at",
+)
+_PLAN_UNDO_MINUTES = 10
+
+
+def _deletion_items(conn, item_id: int) -> list[dict]:
+    ids = [item_id, *_lt_descendants(conn, item_id)]
+    marks = ",".join("?" for _ in ids)
+    columns = ", ".join(_RESTORE_FIELDS)
+    by_id = {r["id"]: dict(r) for r in conn.execute(
+        f"SELECT {columns} FROM lt_item WHERE id IN ({marks})", ids
+    )}
+    # 상위부터 복원할 수 있도록 순회 순서를 유지한다.
+    return [by_id[key] for key in ids] if item_id in by_id else []
+
+
+def _deletion_revision(items: list[dict]) -> str:
+    return sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()
+
+
+@router.get("/plan/item/delete-preview/{item_id}")
+def plan_item_delete_preview(item_id: int):
+    with get_conn() as conn:
+        conn.execute("BEGIN")
+        items = _deletion_items(conn, item_id)
+    if not items:
+        return JSONResponse({"ok": False, "error": "이미 삭제된 항목입니다"}, status_code=404)
+    return JSONResponse({
+        "ok": True, "title": items[0]["title"], "descendants": len(items) - 1,
+        "hidden_descendants": sum(bool(item["hidden"]) for item in items[1:]),
+        "revision": _deletion_revision(items),
+    })
+
+
 @router.post("/plan/item/delete")
 async def plan_item_delete(request: Request):
     """간트 항목을 지운다. 하위 항목도 함께 지워지고 상위 기간은 다시 계산된다."""
@@ -828,21 +881,79 @@ async def plan_item_delete(request: Request):
         item_id = int_id(form.get("id"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad-id"}, status_code=400)
+    now = datetime.now(KST)
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT parent_id FROM lt_item WHERE id = ?", (item_id,)
-        ).fetchone()
-        if not row:
+        conn.execute("BEGIN IMMEDIATE")
+        items = _deletion_items(conn, item_id)
+        if not items:
             return JSONResponse({"ok": True})
+        revision = form.get("revision")
+        if revision is not None and revision != _deletion_revision(items):
+            return JSONResponse({"ok": False, "error": "하위 항목이 바뀌었습니다. 삭제 범위를 다시 확인하세요"},
+                                status_code=409)
+        ids = [item["id"] for item in items]
+        marks = ",".join("?" for _ in ids)
+        goals = [dict(r) for r in conn.execute(
+            "SELECT week_start, item_id, goal_text, updated_at FROM weekly_lt_goal "
+            f"WHERE item_id IN ({marks})", ids
+        )]
+        token = token_urlsafe(24)
+        expires_at = (now + timedelta(minutes=_PLAN_UNDO_MINUTES)).isoformat(timespec="seconds")
+        conn.execute("DELETE FROM lt_deleted_plan WHERE expires_at <= ?", (now.isoformat(timespec="seconds"),))
+        conn.execute(
+            "INSERT INTO lt_deleted_plan (token, expires_at, max_item_id, snapshot) VALUES (?, ?, ?, ?)",
+            (token, expires_at, max(ids), json.dumps({"items": items, "goals": goals}, ensure_ascii=False)),
+        )
         conn.execute("DELETE FROM lt_item WHERE id = ?", (item_id,))
-        if row["parent_id"]:
-            # 지워진 항목의 형제를 기준으로 상위 사슬을 다시 계산한다.
-            sib = conn.execute(
-                "SELECT id FROM lt_item WHERE parent_id = ? LIMIT 1", (row["parent_id"],)
-            ).fetchone()
-            if sib:
-                _lt_rollup(conn, sib["id"])
-    return JSONResponse({"ok": True})
+        _lt_rollup_parent(conn, items[0]["parent_id"])
+    return JSONResponse({"ok": True, "undo_token": token, "expires_at": expires_at,
+                         "title": items[0]["title"], "deleted": len(items)})
+
+
+@router.post("/plan/item/restore")
+async def plan_item_restore(request: Request):
+    form = await request.form()
+    token = form.get("token") or ""
+    now = datetime.now(KST).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM lt_deleted_plan WHERE expires_at <= ?", (now,))
+        saved = conn.execute("SELECT snapshot FROM lt_deleted_plan WHERE token = ?", (token,)).fetchone()
+        if not saved:
+            return JSONResponse({"ok": False, "error": "복원할 수 있는 시간이 지났습니다"}, status_code=404)
+        snapshot = json.loads(saved["snapshot"])
+        items = snapshot["items"]
+        first = items[0]
+        ids = [item["id"] for item in items]
+        marks = ",".join("?" for _ in ids)
+        if conn.execute(f"SELECT 1 FROM lt_item WHERE id IN ({marks}) LIMIT 1", ids).fetchone():
+            return JSONResponse({"ok": False, "error": "같은 번호의 새 항목이 있어 복원할 수 없습니다"},
+                                status_code=409)
+        parent = first["parent_id"]
+        parent_area = conn.execute("SELECT area_id FROM lt_item WHERE id = ?", (parent,)).fetchone()
+        if parent and (not parent_area or parent_area["area_id"] != first["area_id"]):
+            return JSONResponse({"ok": False, "error": "상위 항목을 먼저 원래 영역에 복원하세요"},
+                                status_code=409)
+        area_ids = set(item["area_id"] for item in items)
+        area_marks = ",".join("?" for _ in area_ids)
+        area_count = conn.execute(
+            f"SELECT COUNT(*) FROM lt_area WHERE id IN ({area_marks})", tuple(area_ids)
+        ).fetchone()[0]
+        if area_count != len(area_ids):
+            return JSONResponse({"ok": False, "error": "삭제된 영역이 있어 복원할 수 없습니다"}, status_code=409)
+        columns = ", ".join(_RESTORE_FIELDS)
+        values = ", ".join("?" for _ in _RESTORE_FIELDS)
+        conn.executemany(
+            f"INSERT INTO lt_item ({columns}) VALUES ({values})",
+            (tuple(item[key] for key in _RESTORE_FIELDS) for item in items),
+        )
+        conn.executemany(
+            "INSERT INTO weekly_lt_goal (week_start, item_id, goal_text, updated_at) "
+            "VALUES (:week_start, :item_id, :goal_text, :updated_at)", snapshot["goals"],
+        )
+        conn.execute("DELETE FROM lt_deleted_plan WHERE token = ?", (token,))
+        _lt_rollup(conn, first["id"])
+    return JSONResponse({"ok": True, "id": first["id"], "restored": len(items)})
 
 
 # -- 장기플랜 ---------------------------------------------------------------
@@ -871,6 +982,10 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
                 a = fs
     cols, header = _plan_columns(level, a)
     span_start, span_end = cols[0]["start"], cols[-1]["end"]
+    span_days = (span_end - span_start).days + 1
+    for col in cols:
+        col["days"] = (col["end"] - col["start"]).days + 1
+        col["start_pct"] = (col["start"] - span_start).days / span_days * 100
     with get_conn() as conn:
         areas = [
             dict(x)
@@ -894,7 +1009,7 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
         ).fetchone()[0]
     # 지난 항목(종료일이 오늘 이전)은 기본으로 보여 주고, 체크박스를 켤 때만 숨긴다.
     # 0이면 체크박스도 내보내지 않는다.
-    past_count = sum(1 for row in gantt for b in row["bars"] if b["past"])
+    past_count = len({b["id"] for row in gantt for b in row["bars"] if b["past"]})
     prev_anchor, next_anchor = _plan_nav(level, a)
     order = list(PLAN_LEVELS)
     i = order.index(level)
@@ -929,12 +1044,12 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
             "span_start": span_start.strftime("%Y-%m-%d"),
             "span_end": span_end.strftime("%Y-%m-%d"),
             # 화면 가로폭을 이 날수로 나눠 픽셀↔날짜를 환산한다(막대를 끈 만큼만 움직이게).
-            "span_days": (span_end - span_start).days + 1,
+            "span_days": span_days,
             # 오늘 세로선 자리(보이는 기간에 대한 %). 기간 밖이면 None이라 선을 안 그린다.
-            "today_pct": (round((today - span_start).days
-                                / ((span_end - span_start).days + 1) * 100, 3)
+            "today_pct": (round((today - span_start).days / span_days * 100, 3)
                           if span_start <= today <= span_end else None),
             "default_start": default_start.strftime("%Y-%m-%d"),
+            "default_end": (default_start + timedelta(days=min(6, (span_end - default_start).days))).isoformat(),
         },
     )
 

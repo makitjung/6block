@@ -16,7 +16,7 @@
     --text: #202124;
     --text-soft: #3c4043;
     --text-muted: #5f6368;
-    --text-subtle: #80868b;
+    --text-subtle: #626b75;
 
     /* accent (Google blue) */
     --accent: #1a73e8;
@@ -24,6 +24,7 @@
     --accent-deep: #1765cc;
     --accent-soft: #e8f0fe;
     --accent-soft-text: #1967d2;
+    --on-accent: #ffffff;
 
     /* semantic */
     --core: #1a73e8;
@@ -53,8 +54,9 @@
 
     /* 장기 간트 막대: 색은 영역(--gt-tone), 진하기는 계층 단계. 최상위가 가장 진하다.
        글자는 톤을 거의 검정에 섞어 네 단계 어디에서든 읽히게 한다. */
-    --gt-mix-0: 78%;  --gt-mix-1: 42%;  --gt-mix-2: 14%;
+    --gt-mix-0: 40%;  --gt-mix-1: 25%;  --gt-mix-2: 13%;
     --gt-tx-mix: 14%;  --gt-tx-base: #0b0d10;
+    --gt-progress-mix: 22%;
 
     /* shape */
     --r-sm: 8px;
@@ -84,12 +86,13 @@
     --text: #e8eaed;
     --text-soft: #c7cad1;
     --text-muted: #9aa0a6;
-    --text-subtle: #71757c;
+    --text-subtle: #a0a8b4;
     --accent: #8ab4f8;
     --accent-2: #aecbfa;
     --accent-deep: #8ab4f8;
     --accent-soft: #1f2a3d;
     --accent-soft-text: #aecbfa;
+    --on-accent: #172847;
     --core: #8ab4f8;
     --buffer: #5f6368;
     --success: #81c995;
@@ -112,8 +115,9 @@
     --cal-yellow: #fdd663;
     --cal-red: #f28b82;
     /* 다크에서는 톤 자체가 밝은 파스텔이라 덜 섞고, 글자는 흰색 쪽으로 밝힌다. */
-    --gt-mix-0: 46%;  --gt-mix-1: 26%;  --gt-mix-2: 10%;
+    --gt-mix-0: 24%;  --gt-mix-1: 15%;  --gt-mix-2: 8%;
     --gt-tx-mix: 12%;  --gt-tx-base: #ffffff;
+    --gt-progress-mix: 14%;
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --sh-2: 0 2px 6px rgba(0, 0, 0, 0.5);
     --sh-3: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -230,7 +234,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 
 .primary-btn {
     appearance: none; border: none;
-    background: var(--accent); color: #fff; font-weight: 600;
+    background: var(--accent); color: var(--on-accent); font-weight: 600;
     padding: 9px 20px; border-radius: var(--r-pill); font-size: 14px;
     box-shadow: var(--sh-1);
     transition: background .15s ease, box-shadow .15s ease, transform .12s ease;
@@ -273,7 +277,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: var(--accent); background: var(--accent-soft); border-color: var(--accent);
 }
 .hero-date { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.hero-date-main { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.hero-date-main { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
 .hero-date-sub { color: var(--text-muted); font-size: 12px; }
 .hero-actions { display: flex; gap: 8px; align-items: center; }
 
@@ -1793,9 +1797,10 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 /* 해·분기·달이 바뀌는 자리의 세로선. 열 경계에 맞춰 격자 전체 높이로 하나만 긋는다. */
 .gt-brkline {
     position: absolute; top: 0; bottom: 0; width: 0; z-index: 2;
-    left: calc(var(--lead-w) + (100% - var(--lead-w)) * var(--i) / var(--cols));
+    left: calc(var(--lead-w) + (100% - var(--lead-w)) * var(--p) / 100);
     border-left: 2px solid var(--border-strong); pointer-events: none;
 }
+.gt-brkline[data-lv=""] { border-left: 1px solid var(--border); z-index: 0; }
 .gt-brkline[data-lv="year"] { border-left-color: var(--accent); }
 /* 머리글에도 같은 자리에 선과 바뀐 단위 이름을 작게 */
 .gt-col.is-brk { border-left: 2px solid var(--border-strong); }
@@ -1816,10 +1821,6 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 }
 .gt-track {
     position: relative; flex: 1 1 auto; min-width: 0;
-    /* 격자선은 있는 듯 없는 듯. 막대가 주인공이라 선이 세면 지저분해진다. */
-    background-image: repeating-linear-gradient(to right,
-        color-mix(in srgb, var(--border) 60%, transparent) 0 1px,
-        transparent 1px calc(100% / var(--cols)));
 }
 /* 오늘 세로선. 늘 그어 두면 눈에 너무 띄어서 '오늘 선'을 켤 때만 나온다. */
 .gt-todayline { display: none; }
@@ -1838,7 +1839,7 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .gt-headrow { position: sticky; top: 0; z-index: 3; background: var(--bg); }
 .gt-headlead { font-size: 12px; font-weight: 700; color: var(--text-muted); }
 .gt-headtrack {
-    display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+    display: grid; grid-template-columns: var(--gt-columns);
     background-image: none; border-bottom: 1px solid var(--border);
 }
 .gt-col {
@@ -1929,7 +1930,7 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 /* 진척은 막대 안쪽을 같은 색 더 진하게 채워 한눈에 얼마나 갔는지 보인다 */
 .gt-fill {
     position: absolute; left: 0; top: 0; bottom: 0;
-    background: color-mix(in srgb, var(--gt-tone) 42%, transparent);
+    background: color-mix(in srgb, var(--gt-tone) var(--gt-progress-mix), transparent);
     border-right: 1px solid color-mix(in srgb, var(--gt-tone) 55%, transparent);
 }
 .gt-bartext {
@@ -2340,3 +2341,128 @@ a.wk-task:hover { border-color: var(--border-strong); }
     background: var(--surface); color: var(--text-muted);
 }
 .dp-foot-btn:hover { background: var(--surface-3); color: var(--text); }
+
+/* 데스크톱 작업 화면과 공통 키보드 포커스 */
+.sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.skip-link {
+    position: fixed; z-index: 100; top: 8px; left: 12px; transform: translateY(-200%);
+    background: var(--surface); color: var(--accent-deep); padding: 8px 12px;
+    border: 1px solid var(--border-focus); border-radius: var(--r-sm);
+}
+.skip-link:focus { transform: none; }
+:where(a, button, input, select, textarea, summary):focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+}
+main:focus { outline: none; }
+main.main-today { max-width: 1480px; }
+main.main-week, main.main-plan { max-width: 1640px; }
+
+.day-hero .hero-main { display: block; }
+.day-hero .hero-nav, .week-hero .hero-nav, .plan-hero .hero-nav {
+    flex-direction: row; gap: 4px;
+}
+.day-hero .hero-nav .icon-btn, .week-hero .hero-nav .icon-btn, .plan-hero .hero-nav .icon-btn {
+    width: 34px; height: 34px;
+}
+.day-close-btn {
+    min-height: 34px; color: var(--accent-soft-text);
+    border-color: var(--border-focus); background: var(--accent-soft);
+}
+.day-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+.day-work, .day-rail { min-width: 0; }
+.day-block-toolbar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 8px; margin-bottom: 10px;
+}
+.day-block-nav { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.day-block-jump {
+    min-width: 34px; min-height: 30px; padding: 3px 8px; border: 1px solid var(--border);
+    border-radius: var(--r-sm); background: var(--surface); color: var(--text-soft);
+    font-size: 12px; font-weight: 700; text-align: center; text-decoration: none;
+}
+.day-block-jump:hover, .day-block-jump[aria-current="location"] {
+    color: var(--accent-soft-text); background: var(--accent-soft); border-color: var(--border-focus);
+}
+.day-work .block { scroll-margin-top: 106px; }
+.day-work .block.is-current { border-color: var(--accent); }
+.day-work .block-label { font-size: 14px; }
+.day-work .slot { min-height: 42px; }
+.day-work .slot-do { font-size: 14px; }
+.day-work .slot-did-btn {
+    width: auto; min-height: 28px; padding: 2px 8px;
+    border-color: var(--border-strong); color: var(--text-soft); white-space: nowrap;
+}
+.day-work .slot-did-btn.has-did { border-color: var(--success); color: var(--success); }
+.day-work .slot-did-btn:hover, .day-work .slot-did-btn[aria-expanded="true"] {
+    color: var(--accent-soft-text); border-color: var(--border-focus); background: var(--accent-soft);
+}
+.day-work .slot-do-wrap { min-width: 0; }
+.day-notes { margin-top: 16px; }
+.day-review-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.day-rail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.day-rail-card { margin: 0; padding: 14px 16px; }
+.day-rail-card .card-title { margin: 0 0 8px; font-size: 15px; }
+.day-rail-card .ctx-empty { margin: 0; font-size: 13px; }
+.day-rail-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.day-rail-head .card-title { margin: 0 auto 0 0; }
+.day-rail-link { flex: 0 0 auto; font-size: 12px; }
+.day-rail .agenda { grid-template-columns: minmax(0, 1fr); }
+.day-rail .agenda-row { font-size: 13px; padding-block: 4px; }
+.day-rail .wk-tasks, .day-rail .lt-strip-cols { grid-template-columns: minmax(0, 1fr); }
+.day-rail .wk-task, .day-rail .lt-chip { min-height: 28px; }
+.day-rail .wk-task { display: block; padding: 4px 6px; }
+.day-rail .lt-chip-title { font-size: 13px; }
+.day-event-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.day-event-add input[type="text"] { grid-column: 1 / -1; }
+.day-rail .gp-input { min-width: 0; border-color: var(--border); font-size: 13px; }
+.week-overview { margin-bottom: 16px; }
+.week-overview .day-wd, .week-overview .mini-name, .week-overview .mini-plan { font-size: 12px; }
+.week-overview .mini-name { border-color: var(--border); }
+.week-overview .day-head.is-today { background: var(--accent-soft); }
+.week-overview .mini-go { white-space: nowrap; }
+.main-plan .plan-bar, .main-plan .plan-crumb, .main-plan .plan-scroll { max-width: none; }
+.main-plan .plan-scroll { padding-inline: 0; }
+.main-plan .plan-bar, .main-plan .plan-crumb { padding-inline: 0; }
+.plan-pastbox[hidden], .plan-inspector[hidden], .gt-e-revert-period[hidden], .gt-e-period-status[hidden] { display: none; }
+.plan-workspace { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 14px; }
+.plan-workspace .plan-scroll { min-width: 0; width: 100%; margin: 0; }
+.plan-inspector { min-width: 0; }
+.plan-inspector .gt-edit { margin: 0; }
+.plan-inspector .gt-e-crumb { order: -1; flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+.plan-inspector .gt-e-row .gt-e-title { flex-basis: 100%; }
+.plan-inspector .gt-e-dates { width: 100%; padding-inline: 0; justify-content: space-between; }
+.plan-inspector .gt-e-dates .dp { flex: 1 1 0; min-width: 0; }
+.gt-e-period-status { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; }
+.gt-e-period-status.is-error { color: var(--danger); }
+.gt-e-apply-period:disabled { color: var(--text-subtle); opacity: .7; cursor: default; }
+.gt-f-block { width: auto; }
+.gt-bartext { font-size: 12.5px; }
+.gt-col-sub { font-size: 12px; }
+.gt-form { position: relative; z-index: 3; }
+
+@media (min-width: 1180px) {
+    .plan-workspace:has(.plan-inspector:not([hidden])) { grid-template-columns: minmax(0, 1fr) minmax(285px, 320px); }
+    .plan-workspace .plan-scroll { max-height: calc(100dvh - 190px); overflow: auto; }
+    .plan-inspector { position: sticky; top: 66px; }
+}
+
+@media (min-width: 980px) {
+    .day-workspace { grid-template-columns: minmax(0, 1fr) minmax(265px, 28%); }
+    .day-block-toolbar {
+        position: sticky; top: 54px; z-index: 12;
+        padding-block: 5px; background: var(--bg);
+    }
+    .day-rail { position: sticky; top: 68px; }
+    .week-overview .day-head { position: sticky; top: 53px; z-index: 1; background: var(--surface); }
+    .week-overview .day-head.is-today { background: var(--accent-soft); }
+}
+@media (max-width: 640px) {
+    .day-week-link { display: none; }
+    .day-work .slot-do { font-size: 13px; }
+    .day-work .slot-did-btn { padding-inline: 3px; }
+    .did-action-detail { display: none; }
+}

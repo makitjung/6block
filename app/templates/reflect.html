@@ -17,19 +17,22 @@
             </div>
             <div class="rf-line">
                 <label for="rf-title">제목</label>
-                <input type="text" id="rf-title" placeholder="구글 캘린더 제목칸에 들어갑니다" autocomplete="off">
+                <input type="text" id="rf-title" placeholder="고결감 제목" autocomplete="off">
                 <button type="button" id="rf-err" class="rf-err" hidden title="문제가 있습니다 — 누르면 내용" aria-label="문제 보기">!</button>
                 {# 태그·다시 볼 날. Record 고결감 탭과 같은 ＋ 다(2026-08-19 사용자 요청) —
                    같은 일을 하는 칸이 프로그램마다 다르게 생기면 어느 쪽에서 뭘 할 수
                    있는지 외워야 한다. 내용 캡션 행을 통째로 걷어 내용칸을 길게 썼다. #}
                 <button type="button" id="rf-extra-btn" class="rf-mini rf-ico rf-x" title="태그 · 다시 볼 날 붙이기" aria-label="태그와 다시 볼 날"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="rf-x-n" id="rf-extra-n" hidden></span></button>
                 {% if gcal_write_on %}
-                <button type="button" id="rf-sync-now" class="rf-mini rf-ico" title="구글 캘린더에서 지금 가져오기" aria-label="지금 동기화"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+                <button type="button" id="rf-sync-now" class="rf-mini rf-ico" title="구글 캘린더와 지금 동기화" aria-label="지금 동기화"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                 {% endif %}
                 <button type="button" id="rf-add" class="rf-mini primary-btn">저장</button>
             </div>
             <div class="rf-errbox" id="rf-errbox" hidden></div>
-            <textarea id="rf-text" class="rf-text" rows="15" placeholder="구글 캘린더 설명칸에 들어갑니다"></textarea>
+            <textarea id="rf-text" class="rf-text" rows="15" aria-label="고결감 내용" placeholder="내용"></textarea>
+            {% if gcal_write_on %}
+            <p class="rf-sync-status" id="rf-sync-status" role="status">{% if sync_status.pending %}캘린더 반영 대기 {{ sync_status.pending }}건{% endif %}</p>
+            {% endif %}
         </section>
 
         <section class="reflect-upcoming-wrap" id="reflect-upcoming">
@@ -39,20 +42,22 @@
 
     <div class="reflect-right">
         <div class="reflect-filter">
-            <div class="rf-search">
-                <input type="search" id="rf-search-input" value="{{ q }}" placeholder="고결감 검색 (제목·내용·태그 · 오타·부분도 찾음)" autocomplete="off">
-            </div>
+            <form class="rf-search" id="rf-search" action="/reflect" method="get">
+                <input type="search" id="rf-search-input" name="q" value="{{ q }}" placeholder="전체 기록 검색 · 제목, 내용, 태그" aria-label="전체 고결감 검색" autocomplete="off">
+                <input type="hidden" name="kind" value="{{ kind }}">
+                <input type="hidden" name="tag" value="{{ tag }}">
+            </form>
             <nav class="rf-kinds" aria-label="종류 필터">
-                <a href="/reflect?kind=" class="{% if not kind %}is-active{% endif %}">전체</a>
+                <a href="/reflect?q={{ q | urlencode }}&amp;tag={{ tag | urlencode }}" data-rf-kind="" {% if not kind %}class="is-active" aria-current="true"{% endif %}>전체</a>
                 {% for k in kinds %}
-                <a href="/reflect?kind={{ k }}" class="{% if kind == k %}is-active{% endif %}">{{ k }}</a>
+                <a href="/reflect?kind={{ k | urlencode }}&amp;q={{ q | urlencode }}&amp;tag={{ tag | urlencode }}" data-rf-kind="{{ k }}" {% if kind == k %}class="is-active" aria-current="true"{% endif %}>{{ k }}</a>
                 {% endfor %}
             </nav>
-            <button type="button" id="rf-tagtog" class="rf-tagtog" title="태그로 좁히기">🏷 태그</button>
+            <button type="button" id="rf-tagtog" class="rf-tagtog" aria-expanded="false" aria-controls="rf-tagchips">태그</button>
         </div>
         <div class="rf-tagchips" id="rf-tagchips" hidden></div>
 
-        <div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}">
+        <div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}" data-page="{{ page }}" data-focus="{{ focus or '' }}">
             {% include "_reflect_list.html" %}
         </div>
     </div>
@@ -62,7 +67,7 @@
    내용을 적는다. 저장은 원본 행으로 간다(서버가 사본 수정을 거부한다). #}
 <div id="rf-edit-modal" class="rf-modal" hidden>
     <div class="rf-modal-backdrop"></div>
-    <div class="rf-modal-box" role="dialog" aria-label="기록 보기·수정">
+    <div class="rf-modal-box" role="dialog" aria-modal="true" aria-labelledby="rf-modal-headline">
         <div class="rf-modal-acts">
             <button type="button" id="rf-modal-del" class="rf-modal-close">삭제</button>
             <button type="button" class="rf-modal-close rf-modal-x">닫기</button>
@@ -79,15 +84,15 @@
         <div class="rf-line">
             <label for="rf-modal-title">제목</label>
             <input type="text" id="rf-modal-title" autocomplete="off">
-            <span class="rf-lab">기록일</span>
+            <label class="rf-lab" for="rf-modal-event">기록일</label>
             <input type="date" id="rf-modal-event">
             <button type="button" id="rf-modal-save" class="rf-mini primary-btn">저장</button>
         </div>
         <div class="rf-line">
-            <span class="rf-lab">내용</span>
-            <span class="rf-lab rf-push">태그</span>
+            <label class="rf-lab" for="rf-modal-text">내용</label>
+            <label class="rf-lab rf-push" for="rf-modal-tags">태그</label>
             <input type="text" id="rf-modal-tags" class="rf-tagin" autocomplete="off">
-            <span class="rf-lab">다시</span>
+            <label class="rf-lab" for="rf-modal-review">다시 볼 날</label>
             <input type="date" id="rf-modal-review">
         </div>
         <textarea id="rf-modal-text" class="rf-modal-text"></textarea>

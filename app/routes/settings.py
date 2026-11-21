@@ -48,6 +48,7 @@ from app.db import (
     get_settings,
     get_weekday_concepts,
     get_weekday_overrides,
+    template_day_blocks,
     template_has_times,
     set_setting,
 )
@@ -157,31 +158,44 @@ def api_health():
 
 
 def _backup_status() -> list[dict]:
-    """로컬·클라우드 백업 폴더의 최신 .sql 덤프 상태(파일명·크기KB·경과일)를 돌려준다."""
+    """백업 파일의 끝까지 작성 여부와 게시 전 복원 검사 결과를 돌려준다."""
+    from scripts.backup import backup_targets, dump_state
+
     today = datetime.now(KST).date()
     out = []
-    for label, d in (("로컬", BACKUP_DIR), ("클라우드", CLOUD_BACKUP_DIR)):
-        info = {"label": label, "ok": False, "name": "없음", "kb": 0, "age": None}
+    for label, d in backup_targets(BACKUP_DIR, CLOUD_BACKUP_DIR):
+        info = {"label": label, "ok": False, "verified": False, "name": "없음",
+                "kb": 0, "age": None, "reason": "백업 파일 없음"}
         try:
-            files = sorted(d.glob("blocks-*.sql"))  # 파일명이 YYYYMMDD라 사전식=시간순
+            files = sorted(p for p in d.glob("blocks-*.sql") if re.fullmatch(r"blocks-\d{8}\.sql", p.name))
             if files:
                 latest = files[-1]
-                info["ok"] = True
                 info["name"] = latest.name
                 info["kb"] = round(latest.stat().st_size / 1024)
-                m = re.match(r"blocks-(\d{8})\.sql", latest.name)
-                if m:
-                    fd = datetime.strptime(m.group(1), "%Y%m%d").date()
-                    info["age"] = (today - fd).days
-        except Exception:
-            pass
+                fd = datetime.strptime(latest.stem.removeprefix("blocks-"), "%Y%m%d").date()
+                info["age"] = (today - fd).days
+                info["ok"], info["verified"] = dump_state(latest)
+                if info["verified"]:
+                    info["reason"] = "복원 검사 통과"
+                elif info["ok"]:
+                    info["reason"] = "복원 미검증"
+                else:
+                    info["reason"] = "작성 미완료"
+        except (OSError, ValueError):
+            info["reason"] = "백업 파일을 확인하지 못했습니다"
         out.append(info)
     return out
 
 
 def _routine_times() -> list[str]:
-    """고정 할일 규칙에서 고를 수 있는 시작시각. 요일마다 블록 시간이 다를 수 있어 7일치를 합친다."""
+    """고정 할일에 쓸 수 있는 시각에는 세션시간 템플릿의 실제 슬롯 시각도 포함한다."""
     times = {s for wd in range(7) for _i, _l, s, _e in slots_for_day(get_day_blocks(wd))}
+    with get_conn() as conn:
+        templates = conn.execute("SELECT times_common, times_wd FROM cat_template WHERE kind = 'S'").fetchall()
+    for template in templates:
+        for wd in range(7):
+            blocks = template_day_blocks(template["times_common"], template["times_wd"], wd)
+            times.update(start for _i, _label, start, _end in slots_for_day(blocks))
     return sorted(times)
 
 
@@ -1068,17 +1082,16 @@ async def settings_ai_test():
 @router.post("/settings/backup")
 def settings_backup():
     """scripts/backup.py를 즉시 실행해 .sql 덤프를 만든다."""
-    try:
-        import importlib.util
+    from scripts.backup import dump
 
-        path = BASE_DIR.parent / "scripts" / "backup.py"
-        spec = importlib.util.spec_from_file_location("backup", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        mod.dump()
-        return JSONResponse({"ok": True})
+    try:
+        targets = dump()
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=500)
+    failed = [t["label"] for t in targets if not t["ok"]]
+    error = f"백업 실패 · {', '.join(failed)}" if failed else ""
+    return JSONResponse({"ok": not failed, "targets": targets, "backup": _backup_status(),
+                         "error": error}, status_code=500 if failed else 200)
 
 
 @router.get("/settings/export.csv")

@@ -27,18 +27,20 @@
 </div>
 {% endmacro %}
 <form method="post" action="/week/save/{{ week_start }}" class="week-form" accept-charset="UTF-8">
-    <section class="hero">
+    <input type="hidden" name="schedule_version" value="{{ schedule_version }}">
+    <section class="hero week-hero">
         <div class="hero-nav">
             <a href="/week/{{ prev_week }}" class="icon-btn" aria-label="지난 주">‹</a>
             <a href="/week/{{ next_week }}" class="icon-btn" aria-label="다음 주">›</a>
         </div>
         {# 제목은 두 줄. 위에 기간(크게), 아래에 주차(작게). 글자 크기는 그대로 두고 순서만 바꿨다 #}
         <div class="hero-date">
-            <div class="hero-date-main">{{ dates[0] | short_date }}~{{ dates[6] | short_date }}</div>
+            <h1 class="hero-date-main">{{ week_start[:4] }}년 {{ dates[0] | short_date }}–{{ dates[6] | short_date }}</h1>
             <div class="hero-wk-line"><span class="hero-wk">{{ week_no }}주차</span></div>
         </div>
         {# 저장 버튼은 없앴다. 모든 칸이 손을 떼는 즉시 저장된다(bindAutosaveAll) #}
         <div class="hero-actions">
+            {% if today not in dates %}<a class="ghost-btn" href="/week">이번 주로</a>{% endif %}
             <button type="button" class="ghost-btn" id="wk-stats-toggle"
                     aria-expanded="false" aria-controls="wk-stats">통계</button>
         </div>
@@ -79,58 +81,9 @@
         {% endif %}
     </section>
 
-    <section class="meta-card">
-        <div class="meta-2col">
-            <!-- 왼쪽: 목표. 장기 항목마다 한 란 + 장기와 무관한 자유 란 3개 -->
-            <div class="meta-goal" data-week="{{ week_start }}">
-                <span class="field-label">목표
-                    <button type="button" class="hint" data-hint="이 주에 걸친 장기 최하위 항목이 한 줄씩 섭니다. 기간이 한 해·한 분기·한 달과 딱 맞는 항목(중점)은 여기 안 섭니다 &mdash; 그 아래 짧은 기간을 만들어 구체적인 할 일을 담는 자리이기 때문입니다. 평소엔 장기 탭 이름을 그대로 쓰고, ✎를 누르면 그 주만의 문구를 따로 적을 수 있습니다(비우면 다시 장기 이름). 그 문구는 오늘 탭 주간 띠에도 그대로 보입니다. 진척률을 고치면 장기 탭 막대에 바로 반영되고, 아래 1~3번은 장기와 무관한 그 주만의 목표입니다." aria-label="설명">?</button>
-                    <span class="card-sub"><a href="/plan?level=week&amp;anchor={{ week_start }}">장기 탭</a></span></span>
-                {% for g in week_groups %}
-                {% if g.grouped %}
-                {# 같은 상위에서 내려온 것끼리 묶어, 늘어놓기만 했을 때 안 보이던
-                   '한 계획의 하위들'이라는 것을 머리줄과 세로선으로 보인다. #}
-                <div class="wg-group">
-                    <div class="wg-gtitle"><span class="wg-gcount">{{ g['items'] | length }}</span>{{ g.title }}</div>
-                    <div class="wg-gbody">
-                        {% for it in g['items'] %}{{ wg_row(it, false) }}{% endfor %}
-                    </div>
-                </div>
-                {% else %}
-                {% for it in g['items'] %}{{ wg_row(it, true) }}{% endfor %}
-                {% endif %}
-                {% endfor %}
-                {% for i in range(3) %}
-                <div class="wg-row wg-free">
-                    <span class="wg-no">{{ i + 1 }}</span>
-                    <input type="text" name="wgoal{{ i + 1 }}" value="{{ weekly_goals[i] }}" placeholder="그 밖의 이번 주 목표 {{ i + 1 }}" autocomplete="off" aria-label="이번 주 목표 {{ i + 1 }}">
-                </div>
-                {% endfor %}
-                {% if not week_groups %}
-                <div class="ctx-empty">이 주에 걸친 장기 항목이 없습니다. 장기 탭에서 계획 막대를 만들면 여기에 란이 생깁니다.</div>
-                {% endif %}
-            </div>
-            <!-- 오른쪽: 나머지 3가지 -->
-            <div class="meta-side">
-                <label class="field">
-                    <span class="field-label">약속 · 특이사항</span>
-                    <textarea name="appointments" rows="3" placeholder="고정 일정, 미팅, 외출">{{ (wmeta.appointments if wmeta else '') or '' }}</textarea>
-                </label>
-                <label class="field">
-                    <span class="field-label">각오</span>
-                    <textarea name="vow" rows="3" placeholder="한 주를 끌어가는 한 문장">{{ (wmeta.vow if wmeta else '') or '' }}</textarea>
-                </label>
-                <label class="field">
-                    <span class="field-label">메모</span>
-                    <textarea name="memo" rows="3" placeholder="가벼운 단상, 후회, 결심">{{ (wmeta.memo if wmeta else '') or '' }}</textarea>
-                </label>
-            </div>
-        </div>
-    </section>
-
-    <section class="card">
+    <section class="card week-overview" aria-labelledby="week-overview-heading">
         <div class="wk7-head">
-            <h2 class="card-title">7일 보기</h2>
+            <h2 class="card-title" id="week-overview-heading">7일 보기</h2>
             {% if week_templates %}
             {# 주간(W) 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다).
                그 안에서 고른 부분만 손댄다. 날짜 하나만 다르게 가려면 그 날 머리의 ⋯ 를 쓴다. #}
@@ -146,7 +99,7 @@
             </div>
             {% else %}
             <div class="wk-tpl-inline">
-                <a class="ghost-btn" href="/settings#set-tpl-list">주간 템플릿 만들기</a>
+                <a class="ghost-btn" href="/settings#set-g-structure">주간 템플릿 만들기</a>
                 <button type="button" class="ghost-btn" id="wk-names-toggle"
                         aria-expanded="false" aria-controls="wk-names">블록이름</button>
             </div>
@@ -225,14 +178,14 @@
                 </div>
                 {% for b in blocks_by_date[d] %}
                 {% set ename = (b.name or '').strip() or (themes_by_label.get(b.block_label) or '') %}
-                <div class="mini-block {% if b.is_core %}is-core {% if b.category_id %}cat-set{% else %}cat-unset{% endif %}{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}">
+                <div class="mini-block {% if b.is_core %}is-core {% if b.category_id %}cat-set{% else %}cat-unset{% endif %}{% else %}is-buffer{% endif %}{% if b.plan_text %} has-plan{% endif %}" data-date="{{ d }}" data-block-label="{{ b.block_label }}" data-start="{{ b.start_time }}" data-end="{{ b.end_time }}">
                     <div class="mini-head">
                         <span class="mini-left">
                             {% if b.is_core %}
                             <select name="bcat_{{ b.id }}" class="cat-select mini-cat" aria-label="블록 구분">
                                 <option value="">구분</option>
-                                {% for c in categories %}
-                                <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                                {% for c in categories if c.is_active or b.category_id == c.id %}
+                                <option value="{{ c.id }}" data-tone="{{ c.tone }}" {% if b.category_id == c.id %}selected{% endif %}>{{ c.name }}{% if not c.is_active %} (숨김){% endif %}</option>
                                 {% endfor %}
                             </select>
                             {% endif %}
@@ -257,6 +210,55 @@
                 {% endfor %}
             </article>
             {% endfor %}
+        </div>
+    </section>
+
+    <section class="meta-card">
+        <div class="meta-2col">
+            <!-- 왼쪽: 목표. 장기 항목마다 한 란 + 장기와 무관한 자유 란 3개 -->
+            <div class="meta-goal" data-week="{{ week_start }}">
+                <span class="field-label">목표
+                    <button type="button" class="hint" data-hint="이 주에 걸친 장기 최하위 항목이 한 줄씩 섭니다. 기간이 한 해·한 분기·한 달과 딱 맞는 항목(중점)은 여기 안 섭니다 &mdash; 그 아래 짧은 기간을 만들어 구체적인 할 일을 담는 자리이기 때문입니다. 평소엔 장기 탭 이름을 그대로 쓰고, ✎를 누르면 그 주만의 문구를 따로 적을 수 있습니다(비우면 다시 장기 이름). 그 문구는 오늘 탭 주간 띠에도 그대로 보입니다. 진척률을 고치면 장기 탭 막대에 바로 반영되고, 아래 1~3번은 장기와 무관한 그 주만의 목표입니다." aria-label="설명">?</button>
+                    <span class="card-sub"><a href="/plan?level=week&amp;anchor={{ week_start }}">장기 탭</a></span></span>
+                {% for g in week_groups %}
+                {% if g.grouped %}
+                {# 같은 상위에서 내려온 것끼리 묶어, 늘어놓기만 했을 때 안 보이던
+                   '한 계획의 하위들'이라는 것을 머리줄과 세로선으로 보인다. #}
+                <div class="wg-group">
+                    <div class="wg-gtitle"><span class="wg-gcount">{{ g['items'] | length }}</span>{{ g.title }}</div>
+                    <div class="wg-gbody">
+                        {% for it in g['items'] %}{{ wg_row(it, false) }}{% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                {% for it in g['items'] %}{{ wg_row(it, true) }}{% endfor %}
+                {% endif %}
+                {% endfor %}
+                {% for i in range(3) %}
+                <div class="wg-row wg-free">
+                    <span class="wg-no">{{ i + 1 }}</span>
+                    <input type="text" name="wgoal{{ i + 1 }}" value="{{ weekly_goals[i] }}" placeholder="그 밖의 이번 주 목표 {{ i + 1 }}" autocomplete="off" aria-label="이번 주 목표 {{ i + 1 }}">
+                </div>
+                {% endfor %}
+                {% if not week_groups %}
+                <div class="ctx-empty">이 주에 걸친 장기 항목이 없습니다. 장기 탭에서 계획 막대를 만들면 여기에 란이 생깁니다.</div>
+                {% endif %}
+            </div>
+            <!-- 오른쪽: 나머지 3가지 -->
+            <div class="meta-side">
+                <label class="field">
+                    <span class="field-label">약속 · 특이사항</span>
+                    <textarea name="appointments" rows="3" placeholder="고정 일정, 미팅, 외출">{{ (wmeta.appointments if wmeta else '') or '' }}</textarea>
+                </label>
+                <label class="field">
+                    <span class="field-label">각오</span>
+                    <textarea name="vow" rows="3" placeholder="한 주를 끌어가는 한 문장">{{ (wmeta.vow if wmeta else '') or '' }}</textarea>
+                </label>
+                <label class="field">
+                    <span class="field-label">메모</span>
+                    <textarea name="memo" rows="3" placeholder="가벼운 단상, 후회, 결심">{{ (wmeta.memo if wmeta else '') or '' }}</textarea>
+                </label>
+            </div>
         </div>
     </section>
 
