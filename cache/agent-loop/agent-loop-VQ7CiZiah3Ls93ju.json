@@ -1,0 +1,35 @@
+{
+ "root": "VQ7CiZiah3Ls93ju",
+ "task": "6block 사용 확대 대비 기능·신뢰성·디자인 읽기 전용 감사",
+ "level": "high",
+ "writeRoot": "/Users/jinhyugjung/dev/6block",
+ "startedAt": 1795263167972,
+ "runId": "run-1795263167972-460p31i1j0k",
+ "roles": {},
+ "planned": {},
+ "frozen": null,
+ "shards": null,
+ "shardsAt": null,
+ "rebinds": [],
+ "retired": [],
+ "abandoned": [],
+ "completed": [],
+ "roots": {
+  "product": [
+   "/Users/jinhyugjung/dev/6block"
+  ],
+  "scratch": [
+   "/Users/jinhyugjung/.aside/u/0/sessions/2026-11-21_VQ7CiZiah3Ls93ju/tmp"
+  ],
+  "exclude": [
+   "/Users/jinhyugjung/dev/6block/.git",
+   "/Users/jinhyugjung/dev/6block/.venv",
+   "/Users/jinhyugjung/dev/6block/.env",
+   "/Users/jinhyugjung/dev/6block/secrets",
+   "/Users/jinhyugjung/dev/6block/.claude",
+   "/Users/jinhyugjung/dev/6block/.codex"
+  ],
+  "maxFiles": 10000,
+  "maxBytes": 104857600
+ }
+}
