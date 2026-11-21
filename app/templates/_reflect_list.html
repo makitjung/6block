@@ -40,7 +40,7 @@
         <span class="rf-date mono">{{ it.event_date }}</span>
         {# 캘린더에 잘 올라간 것은 아무 말도 하지 않는다. 안 올라간 것만 알린다.
            눌러서 다시 올린다 — 알리기만 하고 고칠 길이 없으면 그 표시는 막다른 길이다 #}
-        {% if not it.synced %}<button type="button" class="rf-sync off" data-id="{{ it.id }}"
+        {% if not it.synced %}<button type="button" class="rf-sync off" data-id="{{ it.id }}" data-sync-state="{{ it.sync_state }}"
             {% if it.sync_state in ('off', 'calendar_changed') %}disabled{% endif %}
             title="{% if it.sync_state == 'off' %}구글 캘린더를 설정하세요{% elif it.sync_state == 'calendar_changed' %}기존 캘린더 설정을 확인하세요{% else %}캘린더 반영 다시 시도{% endif %}">
             {% if it.sync_state == 'pending' %}반영 대기{% elif it.sync_state == 'failed' %}반영 실패 · 재시도{% elif it.sync_state == 'off' %}로컬 저장{% elif it.sync_state == 'calendar_changed' %}설정 확인{% else %}캘린더에 올리기{% endif %}

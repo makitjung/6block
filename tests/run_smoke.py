@@ -313,7 +313,7 @@ def run_checks(db_path):
     # 주간 제목은 두 줄(위 기간 · 아래 주차). 요일 표기 줄은 없앴다.
     check("주간 제목은 기간 위 · 주차 아래",
           '<span class="hero-wk">31주차</span>' in h
-          and '<div class="hero-date-main">7.27~8.2</div>' in h
+          and '<h1 class="hero-date-main">2026년 7.27–8.2</h1>' in h
           and h.find("hero-date-main") < h.find("hero-wk-line")
           and "월요일 주" not in h, h.count("hero-date-main"))
     check("주간 통계는 접혀서 나간다",
@@ -678,16 +678,17 @@ def run_checks(db_path):
     check("감사·반성 3칸 저장", row and row[0]["gratitude"] == "가\n나\n",
           row[0]["gratitude"] if row else None)
 
-    # 15. 오늘 컨셉 3칸(목표·달성·감사반성 세 열 바로 위, 같은 격자)
+    # 15. 오늘 컨셉과 돌아보기, 오른쪽 일정·할 일 목록
     code, html = get("/day/2026-07-31")
     check("오늘 탭에 컨셉 3칸", html.count('name="concept') == 3, html.count('name="concept'))
-    check("컨셉은 목표 3열 바로 위",
-          0 < html.find('class="concept-row"') < html.find('class="goal-plan"'))
+    check("컨셉은 돌아보기 칸 안에서 달성·감사반성 바로 위",
+          0 < html.find('class="context-card day-notes"') < html.find('class="concept-row"')
+          < html.find('class="goal-plan day-review-fields"'))
     check("컨셉은 날짜 줄에서 빠졌다", "hero-concept" not in html)
-    # 주간 띠: Things3 할 일은 장기 목록 아래에 온다(띠가 그려질 때만 본다)
-    check("주간 띠는 장기 목록 다음에 할 일",
-          'class="lt-strip"' not in html
-          or html.find('class="lt-strip-cols"') < html.find('id="wk-tasks"'))
+    _c, today_html = get("/today")
+    check("일정과 Things3 목록은 별도 오른쪽 카드에 표시",
+          0 < today_html.find('class="day-rail"') < today_html.find('id="agenda-events"')
+          < today_html.find('id="wk-tasks"'))
     post("/save/field", {"entity": "meta", "id": "2026-07-31", "field": "concept1",
                          "concept1": "몰입", "concept2": "", "concept3": "정리"})
     row = db_query(db_path, "SELECT concept FROM daily_meta WHERE date='2026-07-31'")
@@ -732,8 +733,11 @@ def run_checks(db_path):
           and 'type="submit"' not in html and 'type="submit"' not in wk)
     check("맨 위 막대에 새로고침 아이콘", 'id="page-refresh"' in html and 'id="page-refresh"' in wk)
     check("로고는 오늘 탭 지금 블록으로", 'id="logo-now"' in html and 'href="/today"' in html)
-    check("오늘 탭 지표는 '평가' 버튼으로", 'id="kpi-toggle"' in html and "평가" in html
-          and 'id="eval-panel" hidden' in html)
+    _c, today_html = get("/today")
+    check("오늘 탭 지표는 하루 마감, 지난 날짜는 하루 통계 버튼으로",
+          'id="kpi-toggle"' in html and ">하루 통계" in html
+          and 'id="kpi-toggle"' in today_html and ">하루 마감" in today_html
+          and 'id="eval-panel" hidden' in today_html)
     # 17-3. 주간 7일 보기: 물음표 없음 · 템플릿은 고르면 바로 적용 · 블록이름은 버튼으로 편다
     check("7일 보기 물음표 없음", "7일 보기\n" in wk or "7일 보기</h2>" in wk)
     check("템플릿 적용·편집 버튼 없음",
@@ -1085,8 +1089,8 @@ def run_checks(db_path):
           html.count('class="rf-line"') >= 2 and 'id="rf-add"' in html)
     check("문제 알림은 평소 숨어 있다", 'id="rf-err"' in html and 'id="rf-errbox"' in html)
     check("태그로 좁히는 단추가 있다", 'id="rf-tagtog"' in html)
-    check("카드는 제목 1줄·본문 2줄 구성",
-          'class="rf-card-title"' in html and 'class="rf-card-text"' in html)
+    check("카드의 제목은 키보드로 열 수 있고 본문도 표시",
+          '<button type="button" class="rf-card-title rf-open">' in html and 'class="rf-card-text"' in html)
     check("카드 아래 미리보기·더보기는 없앴다",
           'class="rf-preview"' not in html and "rf-more" not in html)
     check("수정창에 기록일 칸이 있다", 'id="rf-modal-event"' in html)

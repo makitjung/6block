@@ -10,6 +10,8 @@ from app.integrations import gcal_write
 
 _sync_lock = threading.Lock()
 _last_pull = ""
+_last_events = None
+_retry_pull_at = 0.0
 _RETRY_SECONDS = 120
 
 
@@ -45,10 +47,11 @@ def _queue(conn, calendar, event_id, item_id, operation, move_date=False):
     )
 
 
-def remove(conn, row, *, remote_deleted=False):
+def remove(conn, row, *, remote_deleted=False, clear_parent=True):
     """원본과 사본을 정리하고 아직 남은 캘린더 이벤트를 삭제 대기열에 넣는다."""
     if row["source_id"]:
-        conn.execute("UPDATE reflection SET review_date = NULL WHERE id = ?", (row["source_id"],))
+        if clear_parent:
+            conn.execute("UPDATE reflection SET review_date = NULL WHERE id = ?", (row["source_id"],))
         related = [row]
     else:
         related = [row, *conn.execute("SELECT * FROM reflection WHERE source_id = ?", (row["id"],))]
@@ -76,6 +79,8 @@ def _send(job):
     event_id = job["event_id"]
     if operation == "delete":
         return event_id if gcal_write.delete_event(event_id) else None
+    if job["kind"] is None:
+        return None
     args = [job["kind"], job["title"], job["text"], job["tags"], job["event_date"]]
     if job["source_id"]:
         args.insert(2, job["parent_note"] or "")
@@ -139,7 +144,11 @@ def _merge(events):
             ).fetchone()
             if job and (not job["done"] or job["operation"] == "delete"):
                 continue
-            row = conn.execute("SELECT * FROM reflection WHERE gcal_event_id = ?", (event_id,)).fetchone()
+            row = conn.execute(
+                "SELECT r.* FROM reflection r LEFT JOIN reflection_sync_job j ON j.item_id = r.id "
+                "WHERE r.gcal_event_id = ? AND (j.calendar_id IS NULL OR j.calendar_id = ?)",
+                (event_id, calendar),
+            ).fetchone()
             if event.get("cancelled"):
                 if row and (job is None or job["confirmed"]):
                     remove(conn, row, remote_deleted=True)
@@ -181,7 +190,7 @@ def status(conn):
 
 def run(*, force=False, item_id=None, pull=False):
     """한 번에 한 묶음만 전송한다. 네트워크 중에는 SQLite 연결을 잡지 않는다."""
-    global _last_pull
+    global _last_pull, _last_events, _retry_pull_at
     if not gcal_write.enabled() and item_id is None:
         return {"state": "off"}
     if not _sync_lock.acquire(blocking=False):
@@ -189,16 +198,23 @@ def run(*, force=False, item_id=None, pull=False):
     try:
         _send_pending(force=force, item_id=item_id)
         if pull:
+            error = {"state": "error", "error": "캘린더 기록을 가져오지 못했습니다"}
+            if not force and time.monotonic() < _retry_pull_at:
+                return error
             try:
                 if force:
                     gcal_write.invalidate_cache()
                 today = datetime.now(KST).date()
                 window = timedelta(days=730)
                 events = gcal_write.list_reflection_events(today - window, today + window, strict=True)
-                _merge(events)
-                _last_pull = datetime.now(KST).isoformat(timespec="seconds")
+                if events is not _last_events:
+                    _merge(events)
+                    _last_events = events
+                    _last_pull = datetime.now(KST).isoformat(timespec="seconds")
+                _retry_pull_at = 0.0
             except Exception:
-                return {"state": "error", "error": "캘린더 기록을 가져오지 못했습니다"}
+                _retry_pull_at = time.monotonic() + 20
+                return error
         return {"state": "ok"}
     finally:
         _sync_lock.release()

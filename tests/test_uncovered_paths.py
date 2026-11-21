@@ -6,9 +6,8 @@ import types
 import pytest
 
 import app.db as db
-import app.routes.reflect as reflect_routes
 import app.routes.settings as settings_routes
-from app.integrations import gcal_write
+from app.integrations import gcal_write, reflection_sync
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -72,7 +71,7 @@ def test_원본을_지우면_다시보기_사본도_함께_사라진다(conn):
     _add_reflection(conn, source_id=src, event_date="2026-09-01")
     row = conn.execute("SELECT * FROM reflection WHERE id = ?", (src,)).fetchone()
 
-    reflect_routes._cascade_local_delete(conn, row)
+    reflection_sync.remove(conn, row, remote_deleted=True)
 
     assert _ids(conn) == []
 
@@ -83,7 +82,7 @@ def test_사본을_지우면_원본의_다시_볼_날짜가_풀린다(conn):
     copy_id = _add_reflection(conn, source_id=src, event_date="2026-09-01")
     row = conn.execute("SELECT * FROM reflection WHERE id = ?", (copy_id,)).fetchone()
 
-    reflect_routes._cascade_local_delete(conn, row)
+    reflection_sync.remove(conn, row, remote_deleted=True)
 
     assert _ids(conn) == [src]
     left = conn.execute("SELECT review_date FROM reflection WHERE id = ?", (src,)).fetchone()
@@ -96,7 +95,7 @@ def test_사본이_없는_원본을_지워도_다른_기록은_남는다(conn):
     target = _add_reflection(conn, kind="결정")
     row = conn.execute("SELECT * FROM reflection WHERE id = ?", (target,)).fetchone()
 
-    reflect_routes._cascade_local_delete(conn, row)
+    reflection_sync.remove(conn, row, remote_deleted=True)
 
     assert _ids(conn) == [keep]
 

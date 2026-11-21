@@ -413,7 +413,7 @@ def list_reflection_events(start: date, end: date, *, strict=False) -> list[dict
     """
     if not enabled():
         return []
-    key = (start.isoformat(), end.isoformat(), strict)
+    key = (GCAL_WRITE_CALENDAR_ID, start.isoformat(), end.isoformat(), strict)
     now = time.time()
     if (
         _list_cache["items"] is not None

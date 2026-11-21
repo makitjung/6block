@@ -192,16 +192,15 @@ def test_정적_번들이_한없이_커지지_않는다():
 # -- 장기 편집칸 자동저장 -------------------------------------------------------
 
 
-def test_장기_편집칸의_모든_입력에_자동저장이_붙어_있다():
-    """저장 버튼을 안 눌러도 저장돼야 한다. 손잡이는 bindEditBox 안에 있어야 한다
-    (편집칸은 <template> 안이라 나중에 세워진다)."""
+def test_장기_편집칸에는_자동저장과_기간_적용이_있다():
+    """기간은 시작·종료를 함께 적용하고 나머지 필드는 자동저장한다."""
     start = APP_JS.index("function bindEditBox(")
     end = APP_JS.index("\n        }", APP_JS.index(".gt-e-child", start))
     body = APP_JS[start:end]
-    for sel in ['.gt-e-title', '.gt-e-start', '.gt-e-end', '.gt-e-progress',
-                '.gt-e-blocks input', '.gt-e-hidden', '.gt-e-masked']:
+    for sel in ['.gt-e-title', '.gt-e-progress', '.gt-e-blocks input', '.gt-e-hidden', '.gt-e-masked']:
         assert sel in body, f"{sel} 에 자동저장이 안 붙어 있다"
-    assert "saveItemField" in body, "편집칸이 한 칸 저장을 안 쓴다"
+    assert "saveItemField(id, range, true)" in body
+    assert "{start: start.value, end: end.value}" in body
 
 
 def test_장기_자동저장은_칸마다_다시_그리지_않는다():
@@ -220,7 +219,7 @@ def test_달력은_월요일부터_시작한다():
     """브라우저 기본 달력은 한국어 환경에서 일요일부터 선다. 그래서 직접 그린다."""
     assert "const DP_WD = ['월', '화', '수', '목', '금', '토', '일'];" in APP_JS
     # 그 달 1일이 몇 칸 뒤에 오는지: getDay() 는 일요일이 0 이라 +6 %7 로 월요일을 0 으로 맞춘다
-    assert "(new Date(dpView.getFullYear(), dpView.getMonth(), 1).getDay() + 6) % 7" in APP_JS
+    assert "(dpView.getDay() + 6) % 7" in APP_JS
 
 
 def test_브라우저_기본_달력은_감춘다():

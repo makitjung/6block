@@ -98,8 +98,7 @@ def _reflect_ctx(q="", kind="", tag="", page=1, limit=PAGE_SIZE, focus=None, *, 
             (today,),
         ).fetchall()
         tag_rows = conn.execute("SELECT DISTINCT tags FROM reflection WHERE COALESCE(tags, '') != ''")
-        all_tags = sorted({"#" + t for row in tag_rows for t in _tag_keys(row["tags"])},
-                          key=_normalized)
+        all_tags = list(dict.fromkeys(t.rstrip(",") for row in tag_rows for t in row["tags"].split()))
         sync_status = reflection_sync.status(conn)
     items = []
     enabled = gcal_write.enabled()
@@ -127,11 +126,9 @@ def _reflect_ctx(q="", kind="", tag="", page=1, limit=PAGE_SIZE, focus=None, *, 
 
 
 def _reflect_sig(ctx):
-    data = (
-        ctx["q"], ctx["kind"], ctx["tag"], ctx["page"], ctx["pages"], ctx["total"],
-        ctx["items"], ctx["upcoming_reviews"], ctx["all_tags"],
-    )
-    return hashlib.sha256(repr(data).encode()).hexdigest()
+    data = tuple(ctx.get(key) for key in
+                 ("q", "kind", "tag", "page", "pages", "total", "items", "upcoming_reviews", "all_tags"))
+    return hashlib.md5(repr(data).encode()).hexdigest()
 
 
 @router.get("/reflect")
@@ -191,7 +188,7 @@ def _insert_record(conn, kind, title, text, tags, event_date, now, *, review_dat
 def _save_review_copy(conn, item_id, kind, title, text, tags, event_date, review_date, now):
     child = conn.execute("SELECT * FROM reflection WHERE source_id = ?", (item_id,)).fetchone()
     if not review_date or review_date == event_date:
-        return reflection_sync.remove(conn, child) if child else False
+        return reflection_sync.remove(conn, child, clear_parent=False) if child else False
     title = f"다시보기: {title}"
     if child is None:
         child_id = _insert_record(conn, kind, title, text, tags, review_date, now, source_id=item_id)
@@ -210,6 +207,9 @@ def _save_response(background, queued, **result):
 @router.post("/reflect/add")
 async def reflect_add(request: Request, background: BackgroundTasks):
     form = await request.form()
+    request_key = (form.get("request_key") or "").strip()
+    if request_key and not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", request_key):
+        return JSONResponse({"ok": False, "error": "요청 키를 확인하세요"}, status_code=400)
     kind = form.get("kind") if form.get("kind") in REFLECT_KINDS else "고민"
     title = (form.get("title") or "").strip()
     text = (form.get("text") or "").strip()
@@ -222,7 +222,16 @@ async def reflect_add(request: Request, background: BackgroundTasks):
     review_date = review_date.isoformat() if review_date else None
     now = datetime.now(KST).isoformat(timespec="seconds")
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if request_key:
+            existing = conn.execute(
+                "SELECT item_id FROM reflection_add_request WHERE request_key = ?", (request_key,)
+            ).fetchone()
+            if existing:
+                return _save_response(background, False, id=existing["item_id"], synced=False)
         item_id = _insert_record(conn, kind, title, text, tags, event_date, now, review_date=review_date)
+        if request_key:
+            conn.execute("INSERT INTO reflection_add_request VALUES (?, ?)", (request_key, item_id))
         queued = reflection_sync.queue_save(conn, item_id)
         copy_queued = _save_review_copy(conn, item_id, kind, title, text, tags, event_date, review_date, now)
     return _save_response(background, queued or copy_queued, id=item_id, synced=False)
@@ -299,9 +308,15 @@ def reflect_delete(item_id: RowId, background: BackgroundTasks):
 async def reflect_review_note(item_id: RowId, request: Request, background: BackgroundTasks):
     note = ((await request.form()).get("note") or "").strip()
     with get_conn() as conn:
-        cur = conn.execute("UPDATE reflection SET review_note = ? WHERE id = ?", (note, item_id))
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT COALESCE(source_id, id) AS original FROM reflection WHERE id = ?",
+                           (item_id,)).fetchone()
+        if not row:
+            return JSONResponse({"ok": False}, status_code=404)
+        original_id = row["original"]
+        cur = conn.execute("UPDATE reflection SET review_note = ? WHERE id = ?", (note, original_id))
         if not cur.rowcount:
             return JSONResponse({"ok": False}, status_code=404)
-        child = conn.execute("SELECT id FROM reflection WHERE source_id = ?", (item_id,)).fetchone()
+        child = conn.execute("SELECT id FROM reflection WHERE source_id = ?", (original_id,)).fetchone()
         queued = reflection_sync.queue_save(conn, child["id"]) if child else False
     return _save_response(background, queued)

@@ -759,9 +759,31 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 오프라인·동기화 대기 표시 (상단 막대) */
 .net-status {
     font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: var(--r-pill);
-    white-space: nowrap; letter-spacing: 0.01em;
+    color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border);
+    white-space: nowrap; letter-spacing: 0.01em; cursor: pointer;
 }
-.net-status.pending { background: var(--warm-soft); color: var(--warm); }
+.net-status.pending { background: var(--accent-soft); color: var(--accent-soft-text); }
+.net-status.attention { border-color: var(--danger); color: var(--text); }
+.save-queue {
+    width: min(580px, calc(100vw - 24px)); max-height: 85vh; padding: 20px;
+    color: var(--text); background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--sh-2);
+}
+.save-queue::backdrop { background: rgb(0 0 0 / 42%); }
+.save-queue h2 { font-size: 18px; margin: 0 0 10px; }
+.save-queue h3 { font-size: 14px; margin: 0 0 6px; }
+.save-queue p { margin: 6px 0; color: var(--text-soft); overflow-wrap: anywhere; }
+.save-queue-list { display: grid; gap: 8px; margin-top: 14px; }
+.save-queue-entry { padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.save-queue-entry .ghost-btn { margin: 5px 6px 0 0; }
+.save-queue-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.rollover-result {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin: 0 0 12px; padding: 8px 12px; background: var(--accent-soft);
+    color: var(--accent-soft-text); border-radius: var(--r-sm);
+}
+.wk-template-result { margin: 0 0 10px; padding: 8px 12px; color: var(--text-soft); background: var(--surface-2); border-radius: var(--r-sm); }
+.slot-did:not(.open) > .did-pop { display: none; }
 
 /* 실시간 갱신 표시 점 */
 .live-dot {
@@ -832,9 +854,9 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     padding: 4px 10px; border-radius: var(--r-sm); transition: background .15s ease;
 }
 .day-head a:hover { background: var(--surface-3); }
-.day-head.is-today a { background: var(--accent); color: #fff; }
+.day-head.is-today a { background: var(--accent); color: var(--on-accent); }
 .day-wd { font-size: 11px; color: var(--text-muted); }
-.day-head.is-today .day-wd { color: rgba(255,255,255,0.85); }
+.day-head.is-today .day-wd { color: var(--on-accent); }
 .day-date { font-size: 14px; font-weight: 700; }
 .day-allday { display: flex; flex-direction: column; gap: 3px; margin-bottom: 2px; }
 .allday-chip {
@@ -1029,7 +1051,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     border-radius: var(--r-md); box-shadow: var(--sh-2);
     padding: 8px; display: none; flex-direction: column; gap: 4px;
 }
-.hover-wrap:hover .hover-pop,
+.hover-wrap:not(.slot-did):hover .hover-pop,
 .hover-wrap.open .hover-pop { display: flex; }
 .pop-row {
     display: flex; align-items: center; gap: 8px;
@@ -1323,6 +1345,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
     color: var(--danger); background: var(--danger-soft); white-space: nowrap;
     border: 0; font-family: inherit; cursor: pointer; }
 .rf-sync.off:disabled { opacity: 0.6; cursor: default; }
+.rf-sync.off[data-sync-state="off"], .rf-sync.off[data-sync-state="calendar_changed"] {
+    opacity: 1; color: var(--text-muted); background: var(--surface-2);
+}
+.rf-sync.off[data-sync-state="pending"], .rf-sync.off[data-sync-state="local"] {
+    color: var(--accent-soft-text); background: var(--accent-soft);
+}
 /* 이동 시 잠깐 강조 */
 .rf-card.flash { animation: rfFlash 1.2s ease; }
 @keyframes rfFlash { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: var(--sh-1); } }
@@ -1490,7 +1518,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-upcoming-head { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .rf-upcoming-head .rf-count { background: var(--surface-hover); border-radius: 8px; padding: 0 6px; font-weight: 400; }
 .rf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.rf-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 4px 6px 4px 10px; cursor: pointer; font-size: 12px; max-width: 300px; }
+.rf-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 4px 6px 4px 10px; cursor: pointer; font-size: 12px; max-width: 300px; text-decoration: none; }
 .rf-chip:hover { border-color: var(--accent); }
 .rf-chip-date { color: var(--warm); white-space: nowrap; }
 .rf-chip-title { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
@@ -1503,6 +1531,12 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 /* 두 열로 고정한다(Record 고결감과 같다). 격자는 기본이 늘리기라 옆에 선 다시보기
    카드 높이에 맞춰 멀쩡한 카드까지 늘어나므로 제 높이로 세운다. */
 .reflect-right .reflect-grid { grid-template-columns: repeat(2, 1fr); align-items: start; }
+.rf-pages { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; }
+.rf-pages span { margin-right: auto; }
+.rf-pages a { text-decoration: none; }
+.rf-empty { grid-column: 1 / -1; }
+.rf-sync-status { margin: 6px 0 0; color: var(--text-muted); font-size: 12px; }
+.rf-sync-status:empty { display: none; }
 
 /* 고결감: 카드 — 크기를 전부 같게 못 박는다. 넘치는 것은 카드를 눌러 창에서 본다
    (Record 고결감과 같은 구성, 2026-08-03). 머리 1줄·제목 1줄·본문 2줄·메타 1줄. */
@@ -1523,6 +1557,7 @@ textarea::placeholder, input::placeholder { color: var(--text-subtle); }
 .rf-card .rf-del:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
 .rf-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.4;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-open { display: block; width: 100%; text-align: left; border: 0; padding: 0; background: none; cursor: pointer; }
 /* 딱 두 줄. 줄간격의 두 배로 잡아야 셋째 줄이 반 잘려 보이지 않는다 */
 .rf-card-text { font-size: 13px; line-height: 1.6; color: var(--text-soft); white-space: pre-wrap;
     height: 3.2em; overflow: hidden; overflow-wrap: anywhere; }
@@ -1558,7 +1593,7 @@ button.rf-tag.is-active { color: var(--accent); border-color: var(--accent); bac
 .rf-tagtog { font-size: 12.5px; padding: 5px 12px; border-radius: var(--r-pill);
     border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
 .rf-tagtog.is-active { color: var(--accent); border-color: var(--accent); }
-.rf-tagchips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; }
+.rf-tagchips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; max-height: 10rem; overflow: auto; }
 .rf-tagchips[hidden] { display: none; }
 
 /* 고결감: 카드를 눌러 여는 창. 고치는 창이라 다른 창보다 넓고 높다(기본의 1.5배) */
@@ -2295,7 +2330,7 @@ a.wk-task:hover { border-color: var(--border-strong); }
    대신 옆의 단추가 직접 그린 월요일 시작 달력을 연다. */
 .dp input[type="date"] { display: none; }
 .dp-cal {
-    width: 20px; height: 20px; flex: 0 0 auto; padding: 0; cursor: pointer;
+    width: 24px; height: 24px; flex: 0 0 auto; padding: 0; cursor: pointer;
     border: none; background: none; color: var(--text-muted); opacity: .7;
     display: inline-flex; align-items: center; justify-content: center;
 }
@@ -2333,7 +2368,7 @@ a.wk-task:hover { border-color: var(--border-strong); }
 .dp-day.is-out { color: var(--text-subtle); }
 .dp-day.is-weekend { color: var(--text-muted); }
 .dp-day.is-today { border-color: var(--accent); font-weight: 700; }
-.dp-day.is-sel { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.dp-day.is-sel { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 .dp-foot { display: flex; gap: 6px; margin-top: 6px; }
 .dp-foot-btn {
     flex: 1; padding: 5px 0; cursor: pointer; font-size: 12px;
@@ -2432,6 +2467,11 @@ main.main-week, main.main-plan { max-width: 1640px; }
 .plan-workspace .plan-scroll { min-width: 0; width: 100%; margin: 0; }
 .plan-inspector { min-width: 0; }
 .plan-inspector .gt-edit { margin: 0; }
+.plan-inspector .gt-form { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.plan-inspector .gt-form[hidden] { display: none; }
+.plan-inspector .gt-f-title, .plan-inspector .gt-f-len, .plan-inspector .gt-f-parent-label { grid-column: 1 / -1; }
+.plan-inspector .gt-f-parent-label:empty { display: none; }
+.plan-inspector .gt-f-area, .plan-inspector .gt-f-block, .plan-inspector .gt-form > .dp { width: 100%; min-width: 0; }
 .plan-inspector .gt-e-crumb { order: -1; flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
 .plan-inspector .gt-e-row .gt-e-title { flex-basis: 100%; }
 .plan-inspector .gt-e-dates { width: 100%; padding-inline: 0; justify-content: space-between; }
@@ -2451,13 +2491,20 @@ main.main-week, main.main-plan { max-width: 1640px; }
 }
 
 @media (min-width: 980px) {
+    .topbar-inner { padding-block: 8px; }
+    .topbar-right .pomo { position: relative; inset: auto; z-index: 1; }
+    .topbar-right .pomo-dial { width: 42px; height: 42px; box-shadow: none; opacity: 1; }
+    .topbar-right .pomo-time { font-size: 12px; }
+    .topbar-right .pomo-phase { font-size: 8px; letter-spacing: .03em; }
+    .topbar-right .pomo-controls { top: calc(100% + 5px); right: 0; bottom: auto; left: auto; width: 176px; }
+    .set-nav { top: 59px; }
     .day-workspace { grid-template-columns: minmax(0, 1fr) minmax(265px, 28%); }
     .day-block-toolbar {
-        position: sticky; top: 54px; z-index: 12;
+        position: sticky; top: 59px; z-index: 12;
         padding-block: 5px; background: var(--bg);
     }
-    .day-rail { position: sticky; top: 68px; }
-    .week-overview .day-head { position: sticky; top: 53px; z-index: 1; background: var(--surface); }
+    .day-rail { position: sticky; top: 71px; }
+    .week-overview .day-head { position: sticky; top: 59px; z-index: 1; background: var(--surface); }
     .week-overview .day-head.is-today { background: var(--accent-soft); }
 }
 @media (max-width: 640px) {

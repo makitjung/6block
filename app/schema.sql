@@ -194,6 +194,11 @@ CREATE TABLE IF NOT EXISTS reflection_sync_job (
 );
 CREATE INDEX IF NOT EXISTS idx_reflection_sync_item ON reflection_sync_job(item_id);
 
+CREATE TABLE IF NOT EXISTS reflection_add_request (
+    request_key TEXT PRIMARY KEY,
+    item_id INTEGER NOT NULL
+);
+
 -- 템플릿. 한 표가 다섯 종류를 모두 담는다(표 이름은 옛 '구분 템플릿'에서 왔다).
 --   S 세션시간 · T 고정할일 · N 블록이름 · C 구분 · W 주간
 -- 화면 이름은 kind + no 로 짓는다(S1 · T2 · N1 · C1). 주간만 별도명칭을 붙여 W1(집중주)

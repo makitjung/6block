@@ -664,7 +664,8 @@
                     waiting.add(key);
                     if (r.status < 500 && ![408, 425, 429].includes(r.status)) {
                         const data = await r.json().catch(() => ({}));
-                        storeWrite({ ...op, failure: data.error || String(r.status), currentValue: data.current_value });
+                        storeWrite({ ...op, failure: data.error || String(r.status),
+                            failedStatus: r.status, currentValue: data.current_value });
                     }
                 }
             } catch (e) { break; }   // 연결이 끊겼다면 다음 연결에서 다시 시도
@@ -761,6 +762,16 @@
                         'legacy-draft': '이전 버전에서 보관한 입력입니다. 아래 내용을 복사해 현재 화면에서 붙여넣을 수 있습니다.',
                     };
                     entry.append(el('p', '', messages[failure.failure] || '서버에서 저장 요청을 다시 확인해야 합니다.'));
+                    if (failure.failedStatus === 403) {
+                        const resend = el('button', 'ghost-btn', '다시 보내기');
+                        resend.type = 'button';
+                        resend.addEventListener('click', async () => {
+                            storeWrite({ ...failure, failure: undefined, failedStatus: undefined });
+                            await flushQueue();
+                            showWrites();
+                        });
+                        entry.append(resend);
+                    }
                 }
                 if (failure) {
                     const clear = el('button', 'ghost-btn', '대기 항목에서 제거');
@@ -769,8 +780,7 @@
                         entries.forEach((op) => cancelQueued(op.id));
                         const field = trackedFields.get(latest.writeKey);
                         if (field && failure.currentValue !== undefined) {
-                            field.value = String(failure.currentValue ?? '');
-                            paintStoredField(field.el, field.params.field, field.value);
+                            syncTrackedField(field, failure.currentValue ?? '', true);
                         }
                         showWrites();
                     });
@@ -978,6 +988,7 @@
             id: b.dataset.blockId,
             label: b.querySelector('.block-label')?.textContent.trim() || '',
             name: b.querySelector('.block-name-input')?.value.trim() || '',
+            identity: fieldIdentity(b, 'block'),
         }));
     }
     function openInboxBlocks(item) {
@@ -993,21 +1004,27 @@
             chip.type = 'button';
             chip.className = 'inbox-block-chip';
             chip.textContent = b.name ? `${b.label} · ${b.name}` : b.label;
-            chip.addEventListener('click', () => assignInbox(item, b.id));
+            chip.addEventListener('click', () => assignInbox(item, b));
             box.appendChild(chip);
         });
         box.hidden = false;
     }
-    function assignInbox(item, blockId) {
+    async function assignInbox(item, block) {
         const id = item.dataset.id;
         if (String(id).indexOf('tmp-') === 0) { toast('먼저 동기화가 필요합니다'); return; }
-        const body = new URLSearchParams({ item_id: id, block_id: blockId }).toString();
+        const plan = document.querySelector('textarea[name="plan_' + block.id + '"]');
+        const tracked = plan ? trackField(plan, 'block', block.id, 'plan_text') : null;
+        await flushEdits();
+        if (tracked && loadQueue().some((op) => op.writeKey === tracked.key)) {
+            toast('블록 계획의 저장 상태를 먼저 확인해 주세요.');
+            return;
+        }
+        const body = new URLSearchParams({ item_id: id, block_id: block.id, ...block.identity }).toString();
         fetch('/inbox/assign', { method: 'POST', headers: FORM_HEADERS, body })
             .then((r) => r.json())
             .then((data) => {
                 if (!data.ok) { toast('보내기 실패'); return; }
-                const ta = document.querySelector('textarea[name="plan_' + data.block_id + '"]');
-                if (ta) ta.value = data.plan_text;
+                if (tracked && data.plan_text !== undefined) syncTrackedField(tracked, data.plan_text);
                 item.remove();
                 bumpInboxCount(-1);
                 toast('블록 계획으로 보냈습니다');
@@ -1073,7 +1090,8 @@
             }
         }
         if (target) {
-            scrollToEl(target);
+            if (linked) target.scrollIntoView({ behavior: 'instant', block: 'center' });
+            else scrollToEl(target);
             lastNowSlot = currentSlotKey();
             if (!isSlot) {
                 target.classList.add('flash');
@@ -2604,9 +2622,13 @@
     let ganttBusy = false;
     const PLAN_UNDO_KEY = 'plan-undo';
     let deletedPlan = null;
+    let undoExpiryTimer = null;
     try { deletedPlan = JSON.parse(sessionStorage.getItem(PLAN_UNDO_KEY) || 'null'); } catch (e) {}
 
     function showPlanUndo(record) {
+        clearTimeout(undoExpiryTimer);
+        const expires = Date.parse(record?.expires_at);
+        if (!(expires > Date.now())) record = null;
         deletedPlan = record;
         try {
             if (record) sessionStorage.setItem(PLAN_UNDO_KEY, JSON.stringify(record));
@@ -2617,6 +2639,7 @@
             undo.hidden = !record;
             undo.title = record ? '최근 삭제한 ' + record.title + ' 복원(삭제 후 10분)' : '';
         }
+        if (record) undoExpiryTimer = setTimeout(() => showPlanUndo(null), expires - Date.now());
     }
 
     // 화면 전체(location.reload) 대신 간트 부분만 새로 받아 갈아끼운다. 스크롤 자리와
@@ -2637,6 +2660,7 @@
                 const x = box.scrollLeft;
                 const y = box.scrollTop;
                 const inspector = document.getElementById('plan-inspector');
+                if (dpText && (box.contains(dpText) || inspector?.contains(dpText))) dpHide();
                 if (inspector) { inspector.replaceChildren(); inspector.hidden = true; }
                 box.replaceWith(fresh);
                 fresh.scrollLeft = x;
@@ -2647,6 +2671,10 @@
                     if (!control || !next) continue;
                     control.hidden = next.hidden;
                     control.querySelector('span').textContent = next.querySelector('span').textContent;
+                }
+                for (const sel of ['.plan-hero .hero-date', '.plan-hero .hero-nav', '.plan-crumb', '.plan-levels']) {
+                    const replacement = doc.querySelector(sel);
+                    if (replacement) document.querySelector(sel)?.replaceWith(replacement);
                 }
                 // 서버가 방금 옮긴 항목을 따라 보는 기간을 바꿨으면 주소도 그 기간으로 맞춘다
                 const anchor = fresh.querySelector('.gantt')?.dataset.anchor;
@@ -2707,6 +2735,9 @@
         const inspector = document.getElementById('plan-inspector');
         let editing = null;
         let adding = null;
+        let writes = Promise.resolve();
+        let writeCount = 0;
+        let returnFocus = null;
         const groupFor = (block) => gantt.querySelector('.gt-group[data-block="' + block + '"]');
         // 위쪽 체크박스로 켜 둔 상태를 새 격자에도 옮긴다(부분 새로고침에서 잃지 않게)
         gantt.classList.toggle('show-today',
@@ -2718,10 +2749,17 @@
         // 다시 그리면 치는 중에 초점이 튀므로, 편집칸을 닫을 때 한 번만 그린다.
         let dirtyRedraw = null;
         const flushRedraw = () => {
-            if (!dirtyRedraw) return false;
+            if (!dirtyRedraw || writeCount) return false;
             const id = dirtyRedraw;
             dirtyRedraw = null;
-            refreshGantt(id);
+            const target = returnFocus;
+            returnFocus = null;
+            refreshGantt(id, () => {
+                if (!target) return;
+                const bar = document.querySelector('.gt-group[data-block="' + target.block + '"] .gt-bar[data-id="' + target.id + '"]');
+                const fallback = document.getElementById('pg-add-item');
+                (bar?.getClientRects().length ? bar : fallback)?.focus({ preventScroll: true });
+            });
             return true;
         };
         const mayClose = () => {
@@ -2733,6 +2771,7 @@
             if (!mayClose()) return false;
             const old = editing;
             if (old) {
+                if (focus) returnFocus = { id: old.bar.dataset.id, block: old.box.dataset.block };
                 old.box.resetPeriod?.();
                 old.box.hidden = true;
                 old.bar.setAttribute('aria-expanded', 'false');
@@ -2754,7 +2793,10 @@
             gantt.querySelectorAll('.gt-bar.is-editing')
                  .forEach((b) => b.classList.remove('is-editing'));
             litGanttFamily(gantt, null);
-            if (!flushRedraw() && focus) old?.bar.focus();
+            if (!flushRedraw() && focus) {
+                old?.bar.focus();
+                if (!writeCount) returnFocus = null;
+            }
             return true;
         };
         // 격자의 빈 곳을 누르면 닫는다. 입력칸 안이라도 칸·버튼이 아닌 빈 자리를 누르면
@@ -2773,7 +2815,7 @@
         gantt.addEventListener('mouseover', (e) => {
             if (gantt.querySelector('.gt-bar.is-dragging, .gt-bar.is-resizing')) return;
             // 편집칸·추가칸이 열려 있으면 켜지 않는다(적는 칸 뒤가 깨끗해야 읽힌다)
-            if (editing || gantt.querySelector('.gt-form:not([hidden])')) {
+            if (editing || adding) {
                 litGanttFamily(gantt, null);
                 return;
             }
@@ -2823,6 +2865,7 @@
             restore.onclick = async () => {
                 if (!deletedPlan || !mayClose()) return;
                 restore.disabled = true;
+                await writes;
                 const d = await postForm('/plan/item/restore', { token: deletedPlan.undo_token });
                 restore.disabled = false;
                 if (d?.ok) {
@@ -2901,7 +2944,7 @@
                 b.addEventListener('click', () => {
                     const si = form.querySelector('.gt-f-start');
                     const ei = form.querySelector('.gt-f-end');
-                    const start = si.value ? new Date(si.value + 'T00:00:00') : new Date();
+                    const start = new Date((si.value || kstDateString()) + 'T00:00:00');
                     if (!si.value) si.value = ymd(start);
                     ei.value = ymd(addSpan(start, b.dataset.len));
                     syncDateParts(si);      // 코드가 넣은 값을 연·월·일 3칸에도 반영
@@ -2965,6 +3008,7 @@
             if (deleting || !mayClose()) return;
             deleting = true;
             try {
+                await writes;
                 const response = await fetch('/plan/item/delete-preview/' + encodeURIComponent(id));
                 const preview = await response.json();
                 if (!preview?.ok) { toast(preview?.error || '삭제 범위를 확인하지 못했습니다'); return; }
@@ -3042,7 +3086,7 @@
             });
         };
 
-        bindGanttDrag(gantt);
+        bindGanttDrag(gantt, () => !writeCount && editing?.box.dataset.periodDirty !== '1');
         drawGanttLinks(gantt);
         if (!again) {
             window.addEventListener('resize', () => {
@@ -3058,14 +3102,18 @@
         // 편집칸의 한 칸만 보내 저장한다. redraw 를 주면 막대 자리가 달라지는 것이므로
         // 다시 그릴 것으로 적어 둔다(그리기는 편집칸을 닫을 때 한 번).
         function saveItemField(id, data, redraw) {
-            const body = { id: id };
-            Object.keys(data).forEach((k) => { body[k] = data[k]; });
-            return postForm('/plan/item/update', body).then((d) => {
-                if (!d || !d.ok) { toast((d && d.error) || '저장 실패'); return d; }
+            writeCount += 1;
+            writes = writes.then(async () => {
+                const result = await postForm('/plan/item/update', {id, ...data});
+                if (!result?.ok) { toast(result?.error || '저장 실패'); return result; }
                 autosaveToast();
                 if (redraw) dirtyRedraw = id;
-                return d;
+                return result;
+            }).finally(() => {
+                writeCount -= 1;
+                if (gantt.isConnected && (!editing && !adding || pendingForm || pendingEdit)) flushRedraw();
             });
+            return writes;
         }
 
         function bindEditBox(box) {
@@ -3076,22 +3124,28 @@
             if (title) {
                 let timer = null;
                 let last = title.value;
+                let savedTitle = last;
+                const paintTitle = (value) => {
+                    barsOf(id).forEach((bar) => {
+                        bar.dataset.title = value;
+                        bar.querySelector('.gt-bartext').textContent = value;
+                    });
+                    box.querySelector('.gt-e-crumb b').textContent = value;
+                };
                 const flushTitle = () => {
                     if (timer) { clearTimeout(timer); timer = null; }
                     const v = (title.value || '').trim();
                     // 빈 이름은 서버가 안 받는다(이름 없는 막대가 생기면 누를 수가 없다).
                     if (!v || v === last) return;
                     last = v;
-                    barsOf(id).forEach((b) => {
-                        b.dataset.title = v;
-                        const t = b.querySelector('.gt-bartext');
-                        if (t) t.textContent = v;
+                    paintTitle(v);
+                    saveItemField(id, { title: v }).then((result) => {
+                        if (result?.ok) savedTitle = v;
+                        else if (v === last) {
+                            last = savedTitle;
+                            paintTitle(savedTitle);
+                        }
                     });
-                    // 머리줄 경로(영역 › 상위 › 제목)의 제목도 함께 고친다. 예전에는 막대
-                    // 글자만 바뀌고 편집칸 위의 이름은 옛것 그대로라, 무엇을 고쳤는지 헷갈렸다.
-                    const crumb = box.querySelector('.gt-e-crumb b');
-                    if (crumb) crumb.textContent = v;
-                    saveItemField(id, { title: v });
                 };
                 title.addEventListener('change', flushTitle);
                 title.addEventListener('blur', flushTitle);
@@ -3150,7 +3204,8 @@
             const prog = box.querySelector('.gt-e-progress');
             prog?.addEventListener('change', () => {
                 if (prog.disabled || prog.value === '') return;
-                const v = Math.max(0, Math.min(100, Number(prog.value) || 0));
+                const v = Math.max(0, Math.min(100, Math.round(Number(prog.value) || 0)));
+                prog.value = String(v);
                 barsOf(id).forEach((b) => {
                     const f = b.querySelector('.gt-fill');
                     if (f) f.style.width = v + '%';
@@ -3451,14 +3506,17 @@
         const cal = document.createElement('button');
         cal.type = 'button';
         cal.className = 'dp-cal';
-        cal.tabIndex = -1;
         cal.title = '달력에서 고르기';
         cal.setAttribute('aria-label', '달력에서 고르기');
+        cal.setAttribute('aria-haspopup', 'dialog');
+        cal.setAttribute('aria-controls', 'date-picker');
+        cal.setAttribute('aria-expanded', 'false');
+        cal.disabled = native.disabled;
         cal.innerHTML = DP_CAL_SVG;
         cal.addEventListener('click', () => {
             if (native.disabled) return;
-            if (dpPop && !dpPop.hidden && dpText === text) dpHide();
-            else dpShow(box, text);
+            if (dpPop && !dpPop.hidden && dpButton === cal) dpHide(true);
+            else dpShow(box, text, cal, native.value);
         });
         native.parentNode.insertBefore(box, native);
         box.append(text, cal, native);
@@ -3478,7 +3536,11 @@
             syncing = false;
         };
         // date 입력 -> 한 칸. 달력으로 고르거나 코드가 값을 넣었을 때 되돌려 받는다.
-        const pull = () => { if (syncing) return; text.value = native.value || ''; };
+        const pull = () => {
+            if (syncing) return;
+            text.value = native.value || '';
+            text.removeAttribute('aria-invalid');
+        };
         pull();
         native.addEventListener('change', pull);
         native.dpSync = pull;
@@ -3487,6 +3549,8 @@
             const masked = dateMask(text.value);
             if (text.value !== masked) text.value = masked;
             push();
+            if (masked.length === 10 && !native.value) text.setAttribute('aria-invalid', 'true');
+            else text.removeAttribute('aria-invalid');
         });
         text.addEventListener('blur', () => {
             // 다 못 채웠으면 지운다(반쪽 날짜를 남겨 두지 않는다).
@@ -3510,15 +3574,21 @@
         + '<path d="M8 3v4M16 3v4M3 10h18"/></svg>';
     let dpPop = null;       // 달력 창(하나만 만든다)
     let dpText = null;      // 지금 고치는 중인 한 칸 입력
+    let dpButton = null;    // 달력을 연 버튼
     let dpView = null;      // 보고 있는 달의 1일
 
     function dpEnsure() {
         if (dpPop) return dpPop;
         dpPop = el('div', 'dp-pop');
+        dpPop.id = 'date-picker';
+        dpPop.setAttribute('role', 'dialog');
+        dpPop.setAttribute('aria-labelledby', 'date-picker-month');
         dpPop.hidden = true;
         const head = el('div', 'dp-head');
         const prev = el('button', 'dp-nav', '‹');
         const title = el('span', 'dp-title');
+        title.id = 'date-picker-month';
+        title.setAttribute('aria-live', 'polite');
         const next = el('button', 'dp-nav', '›');
         prev.type = 'button';
         next.type = 'button';
@@ -3538,43 +3608,88 @@
         document.body.appendChild(dpPop);
         dpPop.dpTitle = title;
         dpPop.dpGrid = grid;
+        dpPop.dpPrev = prev;
+        dpPop.dpNext = next;
         const step = (n) => {
-            dpView = new Date(dpView.getFullYear(), dpView.getMonth() + n, 1);
-            dpPaint();
+            const focused = document.activeElement;
+            dpView.setMonth(dpView.getMonth() + n);
+            dpPaint(ymd(dpView));
+            if (focused?.disabled) dpFocusDay(ymd(dpView));
         };
         prev.addEventListener('click', () => step(-1));
         next.addEventListener('click', () => step(1));
-        todayBtn.addEventListener('click', () => dpPick(new Date()));
+        todayBtn.addEventListener('click', () => dpPick(new Date(kstDateString() + 'T00:00:00')));
         clearBtn.addEventListener('click', () => dpPick(null));
         grid.addEventListener('click', (e) => {
             const b = e.target.closest('.dp-day');
             if (b) dpPick(new Date(b.dataset.d + 'T00:00:00'));
         });
+        grid.addEventListener('keydown', (e) => {
+            const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+            const key = e.target.dataset.d;
+            if (!key || !delta) return;
+            e.preventDefault();
+            const nextDay = new Date(key + 'T00:00:00');
+            nextDay.setDate(nextDay.getDate() + delta);
+            if (nextDay.getFullYear() < 1 || nextDay.getFullYear() > 9999) return;
+            const nextKey = ymd(nextDay);
+            if (!dpFocusDay(nextKey)) {
+                dpView = nextDay;
+                dpView.setDate(1);
+                dpPaint(nextKey);
+                dpFocusDay(nextKey);
+            }
+        });
+        dpPop.addEventListener('keydown', (e) => {
+            if (e.key !== 'Tab') return;
+            const stops = [...dpPop.querySelectorAll('button:not(:disabled)')].filter((b) => b.tabIndex === 0);
+            if (e.target !== (e.shiftKey ? stops[0] : stops.at(-1))) return;
+            e.preventDefault();
+            dpHide(true);
+        });
         return dpPop;
     }
 
     // 6주(42칸)를 늘 그린다. 달마다 줄 수가 달라지면 창 높이가 들썩인다.
-    function dpPaint() {
+    function dpPaint(active) {
         const grid = dpPop.dpGrid;
         dpPop.dpTitle.textContent = dpView.getFullYear() + '년 ' + (dpView.getMonth() + 1) + '월';
+        dpPop.dpPrev.disabled = dpView.getFullYear() === 1 && dpView.getMonth() === 0;
+        dpPop.dpNext.disabled = dpView.getFullYear() === 9999 && dpView.getMonth() === 11;
         grid.textContent = '';
-        const lead = (new Date(dpView.getFullYear(), dpView.getMonth(), 1).getDay() + 6) % 7;
+        const lead = (dpView.getDay() + 6) % 7;
         const sel = dpText && dpText.value.length === 10 ? dpText.value : '';
-        const today = ymd(new Date());
+        const today = kstDateString();
         const frag = document.createDocumentFragment();
         for (let i = 0; i < 42; i++) {
-            const d = new Date(dpView.getFullYear(), dpView.getMonth(), 1 - lead + i);
+            const d = new Date(dpView);
+            d.setDate(1 - lead + i);
             const key = ymd(d);
             const b = el('button', 'dp-day', String(d.getDate()));
             b.type = 'button';
             b.dataset.d = key;
+            b.setAttribute('aria-label', key);
+            b.tabIndex = key === active ? 0 : -1;
+            b.disabled = d.getFullYear() < 1 || d.getFullYear() > 9999;
             if (d.getMonth() !== dpView.getMonth()) b.classList.add('is-out');
-            if (key === today) b.classList.add('is-today');
+            if (key === today) { b.classList.add('is-today'); b.setAttribute('aria-current', 'date'); }
+            b.setAttribute('aria-pressed', key === sel ? 'true' : 'false');
             if (key === sel) b.classList.add('is-sel');
             if ((d.getDay() + 6) % 7 >= 5) b.classList.add('is-weekend');
             frag.appendChild(b);
         }
         grid.appendChild(frag);
+    }
+
+    function dpFocusDay(date) {
+        const grid = dpPop.dpGrid;
+        const next = grid.querySelector('[data-d="' + date + '"]:not(:disabled)');
+        if (!next) return false;
+        const previous = grid.querySelector('[tabindex="0"]');
+        if (previous) previous.tabIndex = -1;
+        next.tabIndex = 0;
+        next.focus({preventScroll: true});
+        return true;
     }
 
     // 고른 날짜를 한 칸에 넣는다. 저장은 한 칸이 내는 input 이 그대로 이어 간다.
@@ -3583,21 +3698,30 @@
             dpText.value = d ? ymd(d) : '';
             dpText.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        dpHide();
+        dpHide(true);
     }
 
-    function dpHide() {
+    function dpHide(restoreFocus = false) {
         if (dpPop) dpPop.hidden = true;
+        if (dpButton) {
+            dpButton.setAttribute('aria-expanded', 'false');
+            if (restoreFocus) dpButton.focus({preventScroll: true});
+        }
         dpText = null;
+        dpButton = null;
     }
 
-    function dpShow(box, text) {
+    function dpShow(box, text, button, selected) {
         dpEnsure();
+        dpHide();
         dpText = text;
-        const base = text.value.length === 10 ? new Date(text.value + 'T00:00:00') : new Date();
-        dpView = new Date(base.getFullYear(), base.getMonth(), 1);
+        dpButton = button;
+        button.setAttribute('aria-expanded', 'true');
+        const date = selected || kstDateString();
+        dpView = new Date(date + 'T00:00:00');
+        dpView.setDate(1);
         dpPop.hidden = false;
-        dpPaint();
+        dpPaint(date);
         // 누른 칸 바로 아래. 아래가 모자라면 위로 올리고, 좌우는 화면 안으로 넣는다.
         const r = box.getBoundingClientRect();
         const w = dpPop.offsetWidth;
@@ -3608,6 +3732,7 @@
         if (r.bottom + h + 8 > window.innerHeight) top = r.top - h - 4;
         dpPop.style.left = Math.max(8, left) + window.scrollX + 'px';
         dpPop.style.top = Math.max(8, top) + window.scrollY + 'px';
+        dpFocusDay(date);
     }
 
     document.addEventListener('pointerdown', (e) => {
@@ -3616,12 +3741,16 @@
         dpHide();
     });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') dpHide();
+        if (e.key === 'Escape' && dpPop && !dpPop.hidden) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            dpHide(true);
+        }
     });
 
     // 'YYYY-MM-DD' 문자열(로컬 기준)
     function ymd(d) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
     // 시작일에서 그 길이만큼 뒤의 '종료일'(마지막 날). 1개월=한 달 뒤 하루 전.
     function addSpan(start, len) {
@@ -3732,7 +3861,7 @@
     // 좌우로 끌면 끈 픽셀을 그대로 날짜로 바꿔 그만큼 기간이 옮겨지고(열 단위로 튀지 않는다),
     // 다른 막대 위에 놓으면 그 막대의 하위계획이 된다. 다른 블록(B1~B6·미지정) 줄에 놓으면
     // 잡은 줄에서 빠져 놓은 줄로 옮겨간다. 마우스·터치 모두 같은 포인터 이벤트로 처리한다.
-    function bindGanttDrag(gantt) {
+    function bindGanttDrag(gantt, canDrag) {
         // 보이는 기간 전체 날수. 트랙 폭을 이걸로 나누면 1px이 며칠인지 나온다.
         const spanDays = parseInt(gantt.dataset.days, 10) || 1;
         const daysPerPx = (track) => {
@@ -3908,6 +4037,7 @@
 
         gantt.querySelectorAll('.gt-bar').forEach((bar) => {
             bar.addEventListener('pointerdown', (e) => {
+                if (!canDrag()) return;
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
                 const r = bar.getBoundingClientRect();
                 const off = e.clientX - r.left;
@@ -4249,9 +4379,10 @@
         if (!block || !['block', 'slot'].includes(entity)) return {};
         const row = entity === 'slot' ? el.closest('.slot') : block;
         if (!row) return {};
-        const identity = { date: block.dataset.date, start_time: row.dataset.start, end_time: row.dataset.end };
-        if (entity === 'block') identity.block_label = block.dataset.blockLabel;
-        return identity;
+        return {
+            date: block.dataset.date, block_label: block.dataset.blockLabel,
+            start_time: row.dataset.start, end_time: row.dataset.end,
+        };
     }
     function normalizeField(field, value) {
         const text = String(value ?? '');
@@ -4277,8 +4408,8 @@
     }
     function trackField(el, entity, id, field, extra = {}) {
         const params = { entity, id: String(id), field, ...fieldIdentity(el, entity), ...extra };
-        const { date, start_time, end_time, week_start, label } = params;
-        const key = JSON.stringify([entity, params.id, field, date, start_time, end_time, week_start, label]);
+        const { date, block_label, start_time, end_time, week_start, label } = params;
+        const key = JSON.stringify([entity, params.id, field, date, block_label, start_time, end_time, week_start, label]);
         if (trackedFields.has(key)) return trackedFields.get(key);
         if (!savedDrafts) {
             savedDrafts = new Map(loadQueue().filter((op) => op.writeKey).map((op) => [op.writeKey, op]));
@@ -4311,6 +4442,14 @@
         tracked.value = value;
         flushQueue();
     }
+    function syncTrackedField(tracked, value, force = false) {
+        const { el, params } = tracked;
+        const displayed = normalizeField(params.field, fieldValue(el));
+        const previous = tracked.value;
+        tracked.value = normalizeField(params.field, value);
+        tracked.syncDisplay?.(tracked.value);
+        if (force || displayed === previous) paintStoredField(el, params.field, tracked.value);
+    }
     function flushEdits() {
         pendingEdits.forEach((save) => save());
         return flushQueue();
@@ -4334,6 +4473,7 @@
             pendingEdits.add(flush);
             if (!e.isComposing) timer = setTimeout(flush, 800);
         };
+        tracked.syncDisplay = (value) => { shownValue = value; };
         el.addEventListener('change', flush);
         el.addEventListener('blur', flush);
         el.addEventListener('input', schedule);
@@ -4365,8 +4505,17 @@
         const list = document.getElementById('reflect-list');
         const upcoming = document.getElementById('reflect-upcoming');
         if (!compose && !list) return;
-        let lastSig = list ? (list.dataset.sig || null) : null;
-        const curKind = () => new URLSearchParams(location.search).get('kind') || '';
+        const searchInput = document.getElementById('rf-search-input');
+        const searchForm = document.getElementById('rf-search');
+        const kindLinks = Array.from(document.querySelectorAll('[data-rf-kind]'));
+        let kind = searchForm.elements.kind.value;
+        let tagFilter = searchForm.elements.tag.value;
+        let page = Number(list.dataset.page) || 1;
+        let lastSig = list.dataset.sig;
+        let requestNo = 0;
+        let pollRunning = false;
+        let searchTimer;
+        let tags = window._rfTags || [];
 
         // ---- 문제 알림: 잘 도는 동안은 아무 말도 하지 않는다 ----
         // 실패했을 때만 제목 행에 빨간 느낌표가 서고, 누르면 무엇이 문제이고 무엇을
@@ -4385,90 +4534,120 @@
                 errBox.textContent = problemMsg + ' ';
                 const again = document.createElement('button');
                 again.type = 'button'; again.className = 'rf-mini'; again.textContent = '다시 시도';
-                again.addEventListener('click', () => { problem(''); refreshReflect(true); });
+                again.addEventListener('click', () => { problem(''); refreshReflect({ interactive: true }); });
                 errBox.appendChild(again);
                 errBox.hidden = false;
             });
         }
 
         // 대상 카드로 스크롤·강조(미도래 칩이 쓴다)
-        function focusCard(id) {
+        async function focusCard(id) {
             if (!id || !list) return;
-            const card = list.querySelector('.rf-card[data-id="' + id + '"]');
+            let card = document.getElementById('rf-card-' + id);
+            if (!card) {
+                await refreshReflect({ focus: id, interactive: true });
+                card = document.getElementById('rf-card-' + id);
+            }
+            if (!card && (kind || tagFilter || searchInput.value)) {
+                kind = tagFilter = searchInput.value = '';
+                await refreshReflect({ focus: id, interactive: true });
+                card = document.getElementById('rf-card-' + id);
+            }
             if (!card) return;
             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+            card.querySelector('.rf-open')?.focus({ preventScroll: true });
         }
 
         function deleteItem(id, after) {
             if (!window.confirm('이 기록을 삭제합니다. 캘린더 이벤트도 함께 지웁니다.')) return;
             postForm('/reflect/delete/' + id, {}).then((d) => {
-                if (d && d.ok) { if (after) after(); toast('삭제'); problem(''); refreshReflect(true); }
+                if (d && d.ok) {
+                    if (after) after();
+                    toast(d.sync_state === 'pending' ? '기록 삭제됨 · 캘린더 반영 대기' : '기록 삭제됨');
+                    problem('');
+                    refreshReflect({ interactive: true });
+                }
                 else problem('지우지 못했습니다. 잠시 뒤 다시 시도해주세요.');
             }).catch(() => problem('지우지 못했습니다. 연결을 확인해주세요.'));
         }
 
-        // ---- 부분 갱신: 목록·미도래를 서버 진실로 다시 그린다 ----
-        function refreshReflect(force) {
-            if (!list) return Promise.resolve();
-            const url = '/reflect/list?kind=' + encodeURIComponent(curKind()) + (force ? '&force=1' : '');
-            return fetch(url).then((r) => r.json()).then((d) => {
-                if (!d || !d.ok) return;
-                if (!force) {
-                    if (d.sig === lastSig) return;                                    // 변화 없음
-                    const ae = document.activeElement;
-                    if (ae && list.contains(ae)) return;                              // 입력·인라인수정 중 보호
-                }
-                lastSig = d.sig;
-                if (upcoming) upcoming.innerHTML = d.upcoming_html;
-                list.innerHTML = d.list_html;
-                bindList(); bindUpcoming(); applySearch();
-            }).catch(() => {});
+        function filters() {
+            return new URLSearchParams({ q: searchInput.value.trim(), kind, tag: tagFilter, page: String(page) });
         }
 
-        // ---- 유사검색(오타·부분도 찾음) + 태그 좁히기 ----
-        let tagFilter = '';
-        function applySearch() {
-            const searchInput = document.getElementById('rf-search-input');
-            if (!list) return;
-            const items = Array.from(list.querySelectorAll('.rf-card'));
-            const noMatch = list.querySelector('.rf-no-match');
-            const norm = (s) => (s || '').normalize('NFC').toLowerCase();
-            const subseq = (n, h) => {
-                let i = 0;
-                for (let k = 0; k < h.length && i < n.length; k++) if (h[k] === n[i]) i++;
-                return i >= n.length;
-            };
-            const score = (toks, hay) => {
-                let sc = 0;
-                for (const t of toks) {
-                    if (hay.indexOf(t) >= 0) sc += 2;
-                    else if (subseq(t, hay)) sc += 1;
-                    else return 0;
-                }
-                return sc;
-            };
-            // 태그는 '#' 를 떼고 견준다. 6block 은 '#AI' 로, Record 는 'AI' 로 적어 두므로
-            // 그대로 견주면 같은 태그가 둘로 갈린다.
-            const inTag = (el) => !tagFilter ||
-                (el.dataset.tags || '').split(/\s+/).map(bareTag).indexOf(tagFilter) >= 0;
-            const q = norm(searchInput ? searchInput.value.trim() : '');
-            const toks = q ? q.split(/\s+/).filter(Boolean) : [];
-            let shown = 0;
-            if (!toks.length) {
-                items.forEach((el) => {
-                    el.hidden = !inTag(el);
-                    if (!el.hidden) { list.appendChild(el); shown += 1; }
-                });
-            } else {
-                const scored = items.map((el, idx) => ({
-                    el, idx, s: inTag(el) ? score(toks, el.dataset.search || norm(el.textContent)) : 0,
-                }));
-                scored.forEach((o) => { o.el.hidden = o.s === 0; });
-                scored.filter((o) => o.s > 0).sort((a, b) => b.s - a.s || a.idx - b.idx)
-                    .forEach((o) => { list.appendChild(o.el); shown += 1; });
+        function paintFilters(push) {
+            searchForm.elements.kind.value = kind;
+            searchForm.elements.tag.value = tagFilter;
+            kindLinks.forEach((link) => {
+                const active = link.dataset.rfKind === kind;
+                link.classList.toggle('is-active', active);
+                if (active) link.setAttribute('aria-current', 'true');
+                else link.removeAttribute('aria-current');
+                const query = filters();
+                query.set('kind', link.dataset.rfKind);
+                query.delete('page');
+                link.href = '/reflect?' + query;
+            });
+            const query = filters();
+            for (const key of ['q', 'kind', 'tag']) {
+                if (!query.get(key)) query.delete(key);
             }
-            if (noMatch) { noMatch.hidden = !(items.length && shown === 0); list.appendChild(noMatch); }
+            if (page === 1) query.delete('page');
+            const target = '/reflect' + (query.size ? '?' + query : '');
+            if (target !== location.pathname + location.search) {
+                if (push) history.pushState(null, '', target);
+                else history.replaceState(null, '', target);
+            }
+        }
+
+        function paintCalendar(status) {
+            const region = document.getElementById('rf-sync-status');
+            if (!region || !status) return;
+            const parts = [];
+            if (status.state === 'error') parts.push(status.error);
+            if (status.failed) parts.push('캘린더 반영 실패 ' + status.failed + '건');
+            if (status.pending) parts.push('반영 대기 ' + status.pending + '건');
+            if (status.last_pull) {
+                parts.push('마지막 가져오기 ' + status.last_pull.slice(5, 16).replace('T', ' '));
+            }
+            const message = parts.join(' · ');
+            if (region.textContent !== message) region.textContent = message;
+        }
+
+        async function refreshReflect({ sync = false, force = false, focus = '', interactive = false, push = false } = {}) {
+            const current = ++requestNo;
+            const query = filters();
+            const filterKey = query.toString();
+            query.set('sync', sync ? '1' : '0');
+            if (force) query.set('force', '1');
+            if (focus) query.set('focus', focus);
+            if (interactive) list.setAttribute('aria-busy', 'true');
+            try {
+                const response = await fetch('/reflect/list?' + query, { cache: 'no-store' });
+                if (!response.ok) throw new Error('고결감 목록 조회 실패');
+                const data = await response.json();
+                paintCalendar(data.sync);
+                if (current !== requestNo || filterKey !== filters().toString()) return data.sync;
+                if (!interactive && document.activeElement?.matches('.rf-note')) return data.sync;
+                page = data.page;
+                if (interactive) paintFilters(push);
+                if (data.sig !== lastSig) {
+                    lastSig = data.sig;
+                    tags = data.tags;
+                    if (upcoming) upcoming.innerHTML = data.upcoming_html;
+                    list.innerHTML = data.list_html;
+                    bindList(); bindUpcoming();
+                    if (!tagChips.hidden) drawTagChips();
+                }
+                return data.sync;
+            } catch {
+                const error = '기록을 가져오지 못했습니다. 연결을 확인해주세요.';
+                if (interactive) problem(error);
+                return { state: 'error', error };
+            } finally {
+                if (interactive) list.removeAttribute('aria-busy');
+            }
         }
 
         // ---- 태그 칩: 평소 접혀 있다. 칩이 목록보다 길어지면 정작 목록이 밀린다 ----
@@ -4476,23 +4655,24 @@
         const tagChips = document.getElementById('rf-tagchips');
         function drawTagChips() {
             if (!tagChips) return;
-            const seen = [];
-            (window._rfTags || []).forEach((t) => {
-                const b = bareTag(t);
-                if (b && seen.indexOf(b) < 0) seen.push(b);
-            });
-            const tags = seen.slice(0, 24);
             tagChips.innerHTML = '';
             if (!tags.length) return;
-            [''].concat(tags).forEach((t) => {
+            const seen = new Set();
+            ['태그 전체', ...tags].forEach((t, index) => {
+                const key = index ? bareTag(t).normalize('NFC').toLowerCase() : '';
+                if (seen.has(key)) return;
+                seen.add(key);
                 const b = document.createElement('button');
                 b.type = 'button';
-                b.className = 'rf-tag rf-tag-btn' + (tagFilter === t ? ' is-active' : '');
-                b.textContent = t || '태그 전체';
+                b.className = 'rf-tag rf-tag-btn' + (tagFilter === key ? ' is-active' : '');
+                b.setAttribute('aria-pressed', String(tagFilter === key));
+                b.textContent = t;
                 b.addEventListener('click', () => {
-                    tagFilter = (tagFilter === t) ? '' : t;
+                    tagFilter = (tagFilter === key) ? '' : key;
+                    page = 1;
                     drawTagChips();
-                    applySearch();
+                    tagChips.querySelector('[aria-pressed="true"]')?.focus();
+                    refreshReflect({ interactive: true, push: true });
                 });
                 tagChips.appendChild(b);
             });
@@ -4501,6 +4681,7 @@
             tagTog.addEventListener('click', () => {
                 tagChips.hidden = !tagChips.hidden;
                 tagTog.classList.toggle('is-active', !tagChips.hidden);
+                tagTog.setAttribute('aria-expanded', String(!tagChips.hidden));
                 if (!tagChips.hidden) drawTagChips();
             });
         }
@@ -4512,14 +4693,16 @@
         let openCard = null;
         let saveCard = null;
 
-        function closeSrc() { if (srcModal) srcModal.hidden = true; }
+        function closeSrc() {
+            if (!srcModal || srcModal.hidden) return;
+            srcModal.hidden = true;
+            document.getElementById('rf-modal-src')?.focus();
+        }
         function closeModal() {
             closeSrc();
             if (modal) { modal.hidden = true; modal.dataset.id = ''; }
-            const wasRevisit = !!(openCard && openCard.dataset.source);
+            openCard?.querySelector('.rf-open')?.focus({ preventScroll: true });
             openCard = null; saveCard = null;
-            // 다시 볼 내용은 창에서 고쳤어도 목록 카드에는 옛 글이 남는다. 닫을 때 맞춘다.
-            if (wasRevisit) refreshReflect(true);
         }
 
         // 원문 창에 세우는 것은 원본의 값이다. 원본 카드가 목록에 있으면 그 값을 쓰고,
@@ -4537,8 +4720,8 @@
                 };
             }
             return {
-                title: card.dataset.ptitle || '', kind: card.dataset.kind || '',
-                date: '', text: card.dataset.ptext || '',
+                title: card.dataset.ptitle || '', kind: card.dataset.pkind || '',
+                date: card.dataset.pevent || '', text: card.dataset.ptext || '',
             };
         }
 
@@ -4549,6 +4732,7 @@
             document.getElementById('rf-src-date').textContent = [s.kind, s.date].join(' ').trim();
             document.getElementById('rf-src-text').textContent = s.text;
             srcModal.hidden = false;
+            document.getElementById('rf-src-close')?.focus();
         }
 
         function openEditModal(card) {
@@ -4558,8 +4742,12 @@
             const origin = revisit && list
                 ? list.querySelector('.rf-card[data-id="' + card.dataset.source + '"]') : null;
             openCard = card;
-            saveCard = origin || card;
-            modal.dataset.id = saveCard.dataset.id;
+            saveCard = !revisit || origin ? (origin || card).dataset : {
+                id: card.dataset.source, title: card.dataset.ptitle, text: card.dataset.ptext,
+                tags: card.dataset.ptags, kind: card.dataset.pkind, event: card.dataset.pevent,
+                review: card.dataset.reviewDateParent,
+            };
+            modal.dataset.id = saveCard.id;
             document.getElementById('rf-modal-headline').textContent = revisit ? '다시보기' : '기록 고치기';
             // 날짜칸은 자체 위젯이 한 칸을 덧씌운다. 코드가 값을 넣었으면 그 칸도 맞춰야
             // 화면에 보인다(syncDateParts).
@@ -4569,14 +4757,14 @@
                 el.value = v || '';
                 if (el.type === 'date') syncDateParts(el);
             };
-            set('rf-modal-title', saveCard.dataset.title);
-            set('rf-modal-tags', saveCard.dataset.tags);
-            set('rf-modal-event', saveCard.dataset.event);
-            set('rf-modal-review', saveCard.dataset.review);
-            const kind = saveCard.dataset.kind || '';
+            set('rf-modal-title', saveCard.title);
+            set('rf-modal-tags', saveCard.tags);
+            set('rf-modal-event', saveCard.event);
+            set('rf-modal-review', saveCard.review);
+            const kind = saveCard.kind || '';
             modal.querySelectorAll('input[name="rfmk"]').forEach((r) => { r.checked = (r.value === kind); });
             const box = document.getElementById('rf-modal-text');
-            box.value = revisit ? (card.dataset.note || '') : (saveCard.dataset.text || '');
+            box.value = revisit ? (card.dataset.note || '') : (saveCard.text || '');
             box.placeholder = revisit ? '다시 볼 내용' : '내용';
             const srcBtn = document.getElementById('rf-modal-src');
             srcBtn.hidden = !revisit;
@@ -4588,8 +4776,10 @@
             setTimeout(() => document.getElementById('rf-modal-title')?.focus(), 30);
         }
 
-        function saveModal() {
+        async function saveModal() {
             if (!modal || !saveCard) return;
+            const button = document.getElementById('rf-modal-save');
+            if (button.disabled) return;
             const revisit = !!(openCard && openCard.dataset.source);
             const box = (document.getElementById('rf-modal-text').value || '').trim();
             const kind = (modal.querySelector('input[name="rfmk"]:checked') || {}).value || '';
@@ -4597,32 +4787,43 @@
             const tags = normalizeTags((document.getElementById('rf-modal-tags').value || '').trim());
             const event_date = document.getElementById('rf-modal-event').value || '';
             const review_date = document.getElementById('rf-modal-review').value || '';
-            // 다시보기의 내용 칸은 다시 볼 내용이다. 본문 자리로 보내면 원본 본문을 덮어써
-            // 버리므로, 메모는 메모 길로 보내고 본문은 원본 것을 그대로 되쓴다.
-            const text = revisit ? (saveCard.dataset.text || '') : box;
+            const text = revisit ? (saveCard.text || '') : box;
             if (!title && !text) { toast('제목이나 내용을 입력하세요'); return; }
-            const note = revisit
-                ? fetch('/reflect/review-note/' + saveCard.dataset.id, {
-                    method: 'POST', headers: FORM_HEADERS,
-                    body: new URLSearchParams({ note: box }).toString(),
-                }).then((r) => r.json())
-                : Promise.resolve({ ok: true });
-            note.then(() => fetch('/reflect/update/' + saveCard.dataset.id, {
-                method: 'POST', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind, title, text, tags, review_date, event_date }).toString(),
-            })).then((r) => r.json()).then((d) => {
-                if (!d || !d.ok) { problem('고치지 못했습니다. 잠시 뒤 다시 시도해주세요.'); toast('저장 실패'); return; }
-                problem(''); toast('저장됨'); closeModal(); refreshReflect(true);
-            }).catch(() => { problem('고치지 못했습니다. 연결을 확인해주세요.'); toast('저장 실패'); });
+            const data = { kind, title, text, tags, review_date, event_date };
+            if (revisit) data.review_note = box;
+            button.disabled = true;
+            const result = await postForm('/reflect/update/' + saveCard.id, data);
+            button.disabled = false;
+            if (!result?.ok) {
+                const message = result?.error || '고치지 못했습니다. 연결을 확인해주세요.';
+                problem(message); toast(message); return;
+            }
+            problem('');
+            toast(result.sync_state === 'pending' ? '기록 저장됨 · 캘린더 반영 대기' : '기록 저장됨');
+            closeModal();
+            refreshReflect({ interactive: true });
         }
 
         if (modal) {
             modal.querySelectorAll('.rf-modal-x, .rf-modal-backdrop')
                 .forEach((el) => el.addEventListener('click', closeModal));
             document.addEventListener('keydown', (e) => {
-                if (e.key !== 'Escape') return;
-                if (srcModal && !srcModal.hidden) { closeSrc(); return; }
-                if (!modal.hidden) closeModal();
+                const open = srcModal && !srcModal.hidden ? srcModal : (!modal.hidden ? modal : null);
+                if (!open) return;
+                if (e.key === 'Escape') {
+                    if (open === srcModal) closeSrc();
+                    else closeModal();
+                }
+                if (e.key === 'Tab') {
+                    const controls = [...open.querySelectorAll('button, input, textarea, [tabindex="0"]')]
+                        .filter((control) => !control.disabled && control.tabIndex >= 0 && control.getClientRects().length);
+                    const first = controls[0], last = controls.at(-1);
+                    if ((!e.shiftKey && document.activeElement === last) ||
+                        (e.shiftKey && document.activeElement === first)) {
+                        e.preventDefault();
+                        (e.shiftKey ? last : first)?.focus();
+                    }
+                }
             });
             bindListEditor(document.getElementById('rf-modal-text'));
             document.getElementById('rf-modal-save')?.addEventListener('click', saveModal);
@@ -4640,6 +4841,16 @@
 
         function bindList() {
             if (!list) return;
+            list.querySelectorAll('[data-rf-page]').forEach((link) => {
+                link.addEventListener('click', (e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    page = Number(link.dataset.rfPage);
+                    refreshReflect({ interactive: true, push: true }).then(() => {
+                        list.querySelector('[data-rf-page]')?.focus({ preventScroll: true });
+                    });
+                });
+            });
             list.querySelectorAll('.rf-del').forEach((b) =>
                 b.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -4653,18 +4864,25 @@
                     e.stopPropagation();
                     if (b.disabled) return;
                     b.disabled = true;
-                    b.textContent = '올리는 중';
+                    const label = b.textContent;
+                    b.textContent = '반영 중';
                     fetch('/reflect/sync/' + b.dataset.id, { method: 'POST' })
                         .then((r) => r.json())
                         .then((d) => {
-                            if (d && d.synced) { b.remove(); return; }
+                            if (d && d.synced) {
+                                toast('캘린더 반영 완료');
+                                refreshReflect({ interactive: true });
+                                return;
+                            }
                             b.disabled = false;
-                            b.textContent = '캘린더 안 됨';
-                            toast('캘린더에 못 올렸어요. 구글 연결을 확인해주세요.');
+                            b.textContent = label;
+                            toast(d?.error || '캘린더 반영 실패');
+                            refreshReflect({ interactive: true });
                         })
                         .catch(() => {
                             b.disabled = false;
-                            b.textContent = '캘린더 안 됨';
+                            b.textContent = label;
+                            toast('캘린더 반영 실패 · 연결을 확인해주세요.');
                         });
                 }));
 
@@ -4680,26 +4898,31 @@
             list.querySelectorAll('.rf-note').forEach((ta) => {
                 if (ta.dataset.rfnote) return;
                 ta.dataset.rfnote = '1';
+                const writeKey = 'reflection-note:' + ta.dataset.target;
+                const pending = loadQueue().findLast((op) => op.writeKey === writeKey);
+                if (pending) ta.value = new URLSearchParams(pending.body).get('note') ?? ta.value;
                 let timer = null, sent = ta.value;
                 const flush = () => {
+                    pendingEdits.delete(flush);
                     if (timer) { clearTimeout(timer); timer = null; }
                     if (ta.value === sent) return;
                     sent = ta.value;
-                    fetch('/reflect/review-note/' + ta.dataset.target, {
-                        method: 'POST', headers: FORM_HEADERS,
-                        body: new URLSearchParams({ note: ta.value }).toString(),
-                    }).then((r) => r.json()).then((d) => {
-                        if (d && d.ok) {
-                            const card = ta.closest('.rf-card');
-                            if (card) card.dataset.note = ta.value;
-                            problem('');
-                            if (typeof autosaveToast === 'function') autosaveToast();
-                        } else problem('다시 볼 내용을 저장하지 못했습니다.');
-                    }).catch(() => problem('다시 볼 내용을 저장하지 못했습니다. 연결을 확인해주세요.'));
+                    const card = ta.closest('.rf-card');
+                    if (card) card.dataset.note = sent;
+                    enqueue({
+                        id: genId(), writeKey, kind: 'reflect-note', label: '다시 볼 내용',
+                        url: '/reflect/review-note/' + ta.dataset.target, headers: FORM_HEADERS,
+                        body: new URLSearchParams({ note: sent }).toString(),
+                    });
+                    flushQueue();
                 };
                 ta.addEventListener('change', flush);
                 ta.addEventListener('blur', flush);
-                ta.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(flush, 1200); });
+                ta.addEventListener('input', () => {
+                    pendingEdits.add(flush);
+                    if (timer) clearTimeout(timer);
+                    timer = setTimeout(flush, 1200);
+                });
             });
         }
 
@@ -4707,7 +4930,11 @@
         function bindUpcoming() {
             if (!upcoming) return;
             upcoming.querySelectorAll('.rf-chip').forEach((chip) =>
-                chip.addEventListener('click', () => focusCard(chip.dataset.target)));
+                chip.addEventListener('click', (e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    focusCard(chip.dataset.target);
+                }));
         }
 
         // ---- 태그 · 다시 볼 날 창(제목 행의 ＋) ----
@@ -4751,7 +4978,8 @@
 
         // ---- 작성칸(저장) ----
         bindListEditor(document.getElementById('rf-text'));
-        document.getElementById('rf-add')?.addEventListener('click', () => {
+        document.getElementById('rf-add')?.addEventListener('click', (e) => {
+            const button = e.currentTarget;
             const ta = document.getElementById('rf-text');
             const titleEl = document.getElementById('rf-title');
             const title = (titleEl?.value || '').trim();
@@ -4760,45 +4988,100 @@
             const kind = (document.querySelector('input[name="rk"]:checked') || {}).value || '고민';
             const tags = normalizeTags((document.getElementById('rf-tags').value || '').trim());
             const review_date = document.getElementById('rf-review')?.value || '';
+            const id = genId();
             const op = {
-                id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind, title, text, tags, review_date }).toString(),
+                id, kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind, title, text, tags, review_date, request_key: id }).toString(),
             };
+            const clear = () => {
+                if (titleEl.value.trim() === title) titleEl.value = '';
+                if (ta.value.trim() === text) ta.value = '';
+                const tagsEl = document.getElementById('rf-tags');
+                const dateEl = document.getElementById('rf-review');
+                if (normalizeTags(tagsEl.value.trim()) === tags) tagsEl.value = '';
+                if (dateEl.value === review_date) dateEl.value = '';
+                syncDateParts(dateEl);
+                paintRfExtra();
+            };
+            button.disabled = true;
             fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
-                .then((r) => r.json())
+                .then((r) => { if (r.status >= 500) throw new Error('retry'); return r.json(); })
                 .then((d) => {
                     if (!d.ok) { problem('저장하지 못했습니다. 잠시 뒤 다시 시도해주세요.'); toast('저장 실패'); return; }
                     problem('');
-                    toast(d.synced ? '기록 · 캘린더 반영' : '기록함 (캘린더 미반영)');
-                    titleEl.value = ''; ta.value = '';
-                    document.getElementById('rf-tags').value = '';
-                    document.getElementById('rf-review').value = '';
-                    syncDateParts(document.getElementById('rf-review'));
-                    paintRfExtra();      // 비웠으니 ＋ 의 개수·날짜도 함께 내린다
-                    refreshReflect(true);
+                    toast(d.sync_state === 'pending' ? '기록 저장됨 · 캘린더 반영 대기' : '기록 저장됨');
+                    clear();
+                    refreshReflect({ interactive: true });
                 })
-                .catch(() => { enqueue(op); toast('저장 대기 · 연결되면 전송'); });
+                .catch(() => { enqueue(op); clear(); toast('저장 대기 · 연결되면 전송'); })
+                .finally(() => { button.disabled = false; });
         });
 
         // 초기 바인딩
         bindList();
         bindUpcoming();
-        const searchInput = document.getElementById('rf-search-input');
-        if (searchInput) {
-            searchInput.addEventListener('input', applySearch);
-            if (searchInput.value.trim()) applySearch();   // 딥링크 q 반영
+        if (tagFilter && tagTog && tagChips) {
+            tagTog.setAttribute('aria-expanded', 'true');
+            tagTog.classList.add('is-active');
+            tagChips.hidden = false;
+            drawTagChips();
         }
+        if (list.dataset.focus) focusCard(list.dataset.focus);
+        function searchNow() {
+            clearTimeout(searchTimer);
+            page = 1;
+            refreshReflect({ interactive: true });
+        }
+        searchForm.addEventListener('submit', (e) => { e.preventDefault(); searchNow(); });
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimer);
+            if (!e.isComposing) searchTimer = setTimeout(searchNow, 250);
+        });
+        searchInput.addEventListener('compositionend', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(searchNow, 250);
+        });
+        kindLinks.forEach((link) => link.addEventListener('click', (e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            kind = link.dataset.rfKind;
+            page = 1;
+            refreshReflect({ interactive: true, push: true });
+        }));
+        window.addEventListener('popstate', () => {
+            clearTimeout(searchTimer);
+            const params = new URLSearchParams(location.search);
+            searchInput.value = params.get('q') || '';
+            kind = params.get('kind') || '';
+            tagFilter = params.get('tag') || '';
+            page = Number(params.get('page')) || 1;
+            if (!tagChips.hidden) drawTagChips();
+            refreshReflect({ interactive: true });
+        });
 
         // 자동 폴링·수동 동기화(구글 연동이 켜진 경우에만)
         const syncBtn = document.getElementById('rf-sync-now');
         if (syncBtn) {
-            syncBtn.addEventListener('click', () => {
-                syncBtn.disabled = true; toast('동기화 중…');
-                refreshReflect(true).finally(() => { syncBtn.disabled = false; toast('동기화 완료'); });
+            syncBtn.addEventListener('click', async () => {
+                syncBtn.disabled = true;
+                toast('동기화 중…');
+                const status = await refreshReflect({ sync: true, force: true });
+                syncBtn.disabled = false;
+                if (status?.state === 'ok' && !status.pending) toast('동기화 완료');
+                else if (status?.state === 'busy') toast('동기화 중입니다. 잠시 뒤 확인해주세요.');
+                else if (status?.pending) toast('캘린더 반영 대기 ' + status.pending + '건');
+                else toast(status?.error || '동기화 실패');
             });
-            setInterval(() => { if (!document.hidden) refreshReflect(false); }, 60000);
-            window.addEventListener('focus', () => refreshReflect(false));
-            document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshReflect(false); });
+            const poll = async () => {
+                if (document.hidden || pollRunning || list.hasAttribute('aria-busy') || syncBtn.disabled) return;
+                pollRunning = true;
+                try { await refreshReflect({ sync: true }); }
+                finally { pollRunning = false; }
+            };
+            setTimeout(poll, 1200);
+            setInterval(poll, 60000);
+            window.addEventListener('focus', poll);
+            document.addEventListener('visibilitychange', poll);
         }
     }
 
@@ -4821,7 +5104,8 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && !modal.hidden) close();
         });
-        document.getElementById('rm-save')?.addEventListener('click', () => {
+        document.getElementById('rm-save')?.addEventListener('click', (e) => {
+            const button = e.currentTarget;
             const ta = document.getElementById('rm-text');
             const titleEl = document.getElementById('rm-title');
             const title = (titleEl?.value || '').trim();
@@ -4830,22 +5114,30 @@
             const kind = (modal.querySelector('input[name="rmk"]:checked') || {}).value || '고민';
             const tags = normalizeTags((document.getElementById('rm-tags').value || '').trim());
             const review_date = document.getElementById('rm-review')?.value || '';
+            const id = genId();
             const op = {
-                id: genId(), kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
-                body: new URLSearchParams({ kind: kind, title: title, text: text, tags: tags, review_date: review_date }).toString(),
+                id, kind: 'reflect-add', url: '/reflect/add', headers: FORM_HEADERS,
+                body: new URLSearchParams({ kind, title, text, tags, review_date, request_key: id }).toString(),
             };
+            const clear = () => {
+                ta.value = '';
+                if (titleEl) titleEl.value = '';
+                document.getElementById('rm-tags').value = '';
+                const date = document.getElementById('rm-review');
+                date.value = '';
+                syncDateParts(date);
+            };
+            button.disabled = true;
             fetch(op.url, { method: 'POST', headers: op.headers, body: op.body })
-                .then((r) => r.json())
+                .then((r) => { if (r.status >= 500) throw new Error('retry'); return r.json(); })
                 .then((d) => {
                     if (!d.ok) { toast('저장 실패'); return; }
-                    toast(d.synced ? '기록 · 캘린더 반영' : '기록함');
-                    ta.value = '';
-                    if (titleEl) titleEl.value = '';
-                    document.getElementById('rm-tags').value = '';
-                    document.getElementById('rm-review').value = '';
+                    toast(d.sync_state === 'pending' ? '기록 저장됨 · 캘린더 반영 대기' : '기록 저장됨');
+                    clear();
                     close();
                 })
-                .catch(() => { enqueue(op); toast('저장 대기 · 연결되면 전송'); close(); });
+                .catch(() => { enqueue(op); clear(); toast('저장 대기 · 연결되면 전송'); close(); })
+                .finally(() => { button.disabled = false; });
         });
     }
 
@@ -4920,78 +5212,158 @@
         });
     }
 
+    function confirmChange(title, detail, changes, approve) {
+        const dialog = el('dialog', 'save-queue');
+        const heading = el('h2', '', title);
+        heading.id = 'change-preview-title';
+        dialog.setAttribute('aria-labelledby', heading.id);
+        const actions = el('div', 'save-queue-actions');
+        const cancel = el('button', 'ghost-btn', '취소');
+        const accept = el('button', 'primary-btn', approve);
+        cancel.type = accept.type = 'button';
+        cancel.value = 'cancel';
+        accept.value = 'approve';
+        cancel.autofocus = true;
+        cancel.addEventListener('click', () => dialog.close('cancel'));
+        accept.addEventListener('click', () => dialog.close('approve'));
+        actions.append(cancel, accept);
+        const list = el('div', 'save-queue-list');
+        changes.forEach(({ label, summary }) => {
+            const entry = el('section', 'save-queue-entry');
+            entry.append(el('h3', '', label), el('p', '', summary));
+            list.append(entry);
+        });
+        dialog.append(heading, el('p', '', detail), list, actions);
+        document.body.append(dialog);
+        return new Promise((resolve) => {
+            dialog.addEventListener('close', () => {
+                resolve(dialog.returnValue === 'approve');
+                dialog.remove();
+            }, { once: true });
+            dialog.showModal();
+        });
+    }
+
     // ---- 블록 PLAN 이월(내일로) ------------------------------------------
+    const rolloverUndoKey = '6block-rollover-undo';
+    function showRolloverUndo() {
+        const form = document.querySelector('.day-form');
+        if (!form) return;
+        let record;
+        try { record = JSON.parse(sessionStorage.getItem(rolloverUndoKey) || 'null'); }
+        catch (e) { return; }
+        if (!record || record.date !== form.dataset.date) return;
+        const remaining = record.until - Date.now();
+        if (remaining <= 0) {
+            sessionStorage.removeItem(rolloverUndoKey);
+            return;
+        }
+        const banner = el('div', 'rollover-result');
+        const message = el('span', '', record.message);
+        message.setAttribute('role', 'status');
+        const undo = el('button', 'ghost-btn', '이월 취소');
+        undo.type = 'button';
+        banner.append(message, undo);
+        const block = document.getElementById('blk-' + record.blockOrder);
+        if (block) block.prepend(banner);
+        else form.querySelector('.day-hero')?.after(banner);
+        const expire = () => {
+            sessionStorage.removeItem(rolloverUndoKey);
+            banner.remove();
+        };
+        const expiration = setTimeout(expire, remaining);
+        undo.addEventListener('click', async () => {
+            undo.disabled = true;
+            await flushEdits();
+            const result = await postForm('/block/rollover/undo', { undo_token: record.token });
+            if (result?.ok) {
+                clearTimeout(expiration);
+                expire();
+                location.reload();
+            } else {
+                undo.disabled = false;
+                message.textContent = result?.error === 'rollover-changed' || result?.error === 'stale-schedule'
+                    ? '이월한 뒤 내용이나 시간표가 바뀌어 취소할 수 없습니다.' : '이월 취소에 실패했습니다.';
+            }
+        });
+    }
     function bindRollover() {
+        showRolloverUndo();
         document.querySelectorAll('.block-rollover').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                // 화면에 적힌 것을 그대로 함께 보낸다(블록 PLAN 과 그 블록 슬롯의 DO 칸).
-                // 이 버튼을 누르면 방금 고친 칸에서 blur 가 나며 자동저장도 같이 출발하는데,
-                // 둘 중 무엇이 서버에 먼저 닿을지는 정해져 있지 않다. 예전에는 이월이 먼저
-                // 닿아 방금 적은 것을 못 보고 '비어 있다'고 되돌려 보냈다.
-                const body = { block_id: btn.dataset.blockId };
-                const plan = document.querySelector(
-                    'textarea[name="plan_' + btn.dataset.blockId + '"]');
-                if (plan) body.plan = plan.value;
-                // .block-stack 은 하루 전체를 감싸는 통이고, 블록 하나는 article.block 이다.
+            btn.addEventListener('click', async () => {
                 const block = btn.closest('article.block');
-                if (block) {
-                    block.querySelectorAll('[name^="do_"]').forEach((el) => {
-                        body[el.name] = el.value;
-                    });
-                }
-                postForm('/block/rollover', body).then((d) => {
-                    if (!d || !d.ok) {
-                        toast(d && d.error === 'empty'
-                            ? '이 블록에 넘길 내용이 없습니다'
-                            : '이월 실패');
+                const form = block?.closest('.day-form');
+                if (!form) return;
+                flushEdits();
+                const body = {
+                    block_id: btn.dataset.blockId, ...fieldIdentity(btn, 'block'),
+                    schedule_version: form.elements.schedule_version?.value || '',
+                };
+                block.querySelectorAll('[name^="do_"]').forEach((input) => { body[input.name] = input.value; });
+                const plan = block.querySelector('textarea[name^="plan_"]');
+                if (plan) body.plan = plan.value;
+                btn.disabled = true;
+                try {
+                    const preview = await postForm('/block/rollover', { ...body, mode: 'preview' });
+                    if (!preview?.ok) {
+                        toast(preview?.error === 'empty' ? '이 블록에 넘길 내용이 없습니다.'
+                            : preview?.error === 'stale-schedule' ? '시간표가 바뀌었습니다. 입력을 확인한 뒤 최신 화면을 열어 주세요.'
+                                : '이월 내용을 확인하지 못했습니다.');
+                        return;
+                    }
+                    const changes = (preview.conflicts || []).map((item) => ({
+                        label: (item.slot === 'PLAN' ? '블록 계획' : item.slot) + ' · 덮어쓰기',
+                        summary: (item.current || '비어 있음') + ' → ' + item.replacement
+                            + (item.has_actual ? ' · 기존 실행 기록 유지' : ''),
+                    }));
+                    for (const item of preview.skipped_slots || []) {
+                        changes.push({ label: item.slot + ' · 오늘에 남음', summary: item.text });
+                    }
+                    if (!preview.moved && !preview.plan) {
+                        await confirmChange('이월할 자리가 없습니다', preview.date + ' ' + preview.label, changes, '확인');
                         return;
                     }
                     const parts = [];
-                    if (d.moved) parts.push(d.moved + '칸');
-                    if (d.plan) parts.push('PLAN');
-                    let msg = '내일 ' + (d.label || '') + '로 '
-                        + (parts.join(' · ') || '내용') + ' 이월';
-                    if (d.skipped) msg += ' · ' + d.skipped + '칸은 자리가 없어 못 넘김';
-                    toast(msg);
-                    // 넘긴 자리로 곧장 데려간다. 넘겨 놓고 다음 날로 손수 넘어가
-                    // 그 블록을 찾아 내려가던 걸음을 없앤다.
-                    // 잠깐 기다렸다 옮기는 것은 방금 고친 칸에서 함께 출발한 자동저장이
-                    // 닿을 틈을 주기 위해서다(화면을 떠나면 가는 중인 요청이 끊긴다).
-                    if (d.date) {
-                        setTimeout(() => {
-                            location.href = '/day/' + d.date
-                                + (d.block_order === undefined ? '' : '#blk-' + d.block_order);
-                        }, 800);
+                    if (preview.moved) parts.push('할 일 ' + preview.moved + '칸');
+                    if (preview.plan) parts.push('블록 계획');
+                    const message = '내일 ' + preview.label + '에 ' + parts.join('과 ') + '을 옮겼습니다.';
+                    const proceed = await confirmChange('내일로 이월',
+                        preview.date + ' ' + preview.label + '에 ' + parts.join(' · ') + '을 복사합니다.',
+                        changes, '이월');
+                    if (!proceed) return;
+                    const result = await postForm('/block/rollover', {
+                        ...body, mode: 'apply', preview_token: preview.preview_token,
+                    });
+                    if (!result?.ok) {
+                        toast(result?.error === 'rollover-changed'
+                            ? '이월할 내용이 바뀌었습니다. 다시 미리보기를 열어 주세요.' : '이월을 저장하지 못했습니다.');
+                        return;
                     }
-                });
+                    if (result.undo_token) {
+                        try {
+                            sessionStorage.setItem(rolloverUndoKey, JSON.stringify({
+                                date: result.date, token: result.undo_token,
+                                blockOrder: result.block_order, message, until: Date.now() + 5 * 60 * 1000,
+                            }));
+                        } catch (e) {}
+                    }
+                    location.assign('/day/' + result.date + '#blk-' + result.block_order);
+                } finally {
+                    btn.disabled = false;
+                }
             });
         });
     }
 
     // ---- 하루 마감(하루 평가 · 내일 가장 중요한 일 → 내일 목표) ----
     // 하루 마감 '기록이 빈 슬롯'. 여기서 적으면 곧바로 저장하고 위 블록의 같은 슬롯에도 옮긴다.
-    // 위 슬롯 줄과 이름(name)이 겹치면 폼 저장 때 서로 덮어써서, 이 칸들은 이름 없이 두고
-    // data-slot 으로 직접 저장한다.
+    // 위 슬롯의 저장 상태를 공유해 어느 자리에서 적어도 같은 기록을 갱신한다.
     function bindCatchup() {
         const list = document.getElementById('cu-list');
         if (!list) return;
         const countEl = document.getElementById('cu-count');
         const emptyEl = document.getElementById('cu-empty');
 
-        // 위 블록에 있는 같은 슬롯의 칸들. 두 화면이 어긋나 보이지 않게 함께 맞춘다.
-        const mirror = (id, did, done) => {
-            const ta = document.querySelector(`textarea[name="did_${id}"]`);
-            if (ta && did !== null) {
-                ta.value = did;
-                ta.closest('.slot-did')?.querySelector('.slot-did-btn')
-                    ?.classList.toggle('has-did', !!did);
-            }
-            const cb = document.querySelector(`.slot-check[data-slot="${id}"]`);
-            if (cb && done !== null) {
-                cb.checked = done;
-                cb.closest('.slot')?.classList.toggle('is-done', done);
-            }
-        };
         const settle = (row) => {
             row.classList.add('is-filled');
             const left = list.querySelectorAll('.cu-row:not(.is-filled)').length;
@@ -5010,16 +5382,31 @@
             const didField = trackField(didInBlock || checkInBlock, 'slot', id, 'did_text');
             const doneField = trackField(checkInBlock, 'slot', id, 'done');
             input.value = didField.value;
+            check.checked = doneField.value === '1';
+            if (input.value || check.checked) settle(row);
 
+            let timer;
             const saveDid = () => {
+                clearTimeout(timer);
+                pendingEdits.delete(saveDid);
                 const v = input.value.trim();
                 if (!v) return;
                 saveTrackedField(didField, v);
-                mirror(id, v, null);
-                settle(row);
+                syncTrackedField(didField, v, true);
+                if (document.activeElement !== input) settle(row);
             };
+            const schedule = (e) => {
+                clearTimeout(timer);
+                pendingEdits.add(saveDid);
+                if (!e.isComposing) timer = setTimeout(saveDid, 800);
+            };
+            input.addEventListener('input', schedule);
+            input.addEventListener('compositionend', schedule);
             input.addEventListener('change', saveDid);
-            input.addEventListener('blur', saveDid);
+            input.addEventListener('blur', () => {
+                saveDid();
+                if (didField.value) settle(row);
+            });
             input.addEventListener('keydown', (e) => {
                 // 한글 조합 중의 Enter 는 조합을 확정하는 키라 가로채면 글자가 잘린다.
                 if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
@@ -5031,7 +5418,7 @@
 
             check.addEventListener('change', () => {
                 saveTrackedField(doneField, fieldValue(check));
-                mirror(id, null, check.checked);
+                syncTrackedField(doneField, fieldValue(check), true);
                 if (check.checked) settle(row);
             });
 
@@ -5051,15 +5438,30 @@
         // 하루 평가는 name="day_review" 로 자동저장에 걸려 있다(bindAutosaveAll).
         // 고결감 기록은 슬롯의 '고민' 버튼이 여는 작성창(bindReflectModal) 하나로 모았다.
         const tom = document.getElementById('sd-tomorrow');
-        const saveTom = () => {
+        const button = document.getElementById('sd-tomorrow-btn');
+        const saveTom = async () => {
             const t = (tom?.value || '').trim();
-            if (!t) return;
-            postForm('/meta/tomorrow-goal', { date: date, text: t }).then((d) => {
-                if (d && d.ok) { toast('내일 목표로 저장'); }
-                else toast('저장 실패');
-            });
+            if (!t || !button || button.disabled) return;
+            const body = { date, text: t };
+            button.disabled = true;
+            try {
+                const preview = await postForm('/meta/tomorrow-goal', { ...body, mode: 'preview' });
+                if (!preview?.ok) { toast('내일 목표를 확인하지 못했습니다.'); return; }
+                if (preview.current && preview.current !== t) {
+                    const replace = await confirmChange('내일 목표 1번 바꾸기', preview.date + '의 목표를 바꿉니다.',
+                        [{ label: '기존 목표 → 새 목표', summary: preview.current + ' → ' + t }], '바꾸기');
+                    if (!replace) return;
+                }
+                const result = await postForm('/meta/tomorrow-goal', {
+                    ...body, mode: 'apply', preview_token: preview.preview_token,
+                });
+                if (result?.ok) toast('내일 목표로 저장했습니다.');
+                else toast(result?.error === 'goal-changed' ? '다른 탭에서 목표가 바뀌었습니다. 다시 확인해 주세요.' : '저장 실패');
+            } finally {
+                button.disabled = false;
+            }
         };
-        document.getElementById('sd-tomorrow-btn')?.addEventListener('click', saveTom);
+        button?.addEventListener('click', saveTom);
         tom?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveTom(); }
         });
@@ -5088,6 +5490,32 @@
 
         // 주간 탭: 구분 템플릿은 고르는 즉시 그 주 전체에 적용된다(따로 누를 버튼이 없다)
         // 적용 결과를 사람 말로. 담은 부분만 적용되므로 실제로 들어간 것만 센다.
+        const templateStatusKey = '6block-template-result';
+        const templateStatus = el('p', 'wk-template-result');
+        templateStatus.setAttribute('role', 'status');
+        const templateHead = document.querySelector('.wk7-head');
+        if (templateHead) {
+            templateStatus.hidden = true;
+            templateHead.after(templateStatus);
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(templateStatusKey) || 'null');
+                if (saved?.path === location.pathname && saved.message) {
+                    templateStatus.textContent = saved.message;
+                    templateStatus.hidden = false;
+                    sessionStorage.removeItem(templateStatusKey);
+                }
+            } catch (e) {}
+        }
+        function showTemplateResult(message, reload) {
+            templateStatus.textContent = message;
+            templateStatus.hidden = false;
+            if (!reload) return;
+            try {
+                sessionStorage.setItem(templateStatusKey, JSON.stringify({ path: location.pathname, message }));
+            } catch (e) {}
+            flushEdits();
+            location.reload();
+        }
         const tplApplyMsg = (d) => {
             const parts = [];
             if (d.days) parts.push('세션시간 ' + d.days + '일');
@@ -5096,10 +5524,10 @@
             if (d.slots) parts.push('칸 구분 ' + d.slots + '칸');
             if (d.filled) parts.push('고정 할일 ' + d.filled + '칸');
             let msg = parts.length ? parts.join(' · ') + ' 적용' : '바뀐 것이 없습니다';
-            if (d.skipped_days) {
-                msg += ' · 적어 둔 것이 있는 ' + d.skipped_days
-                    + '일은 세션시간을 안 바꿨습니다';
-            }
+            if (d.skipped_dates?.length) msg += ' · 기록이 있는 날짜의 시간표 유지 ' + d.skipped_dates.join(', ');
+            if (d.overridden_dates?.length) msg += ' · 하루 템플릿 유지 ' + d.overridden_dates.join(', ');
+            if (d.preserved_cells) msg += ' · 직접 적은 내용 ' + d.preserved_cells + '칸 유지';
+            if (d.routine_skipped) msg += ' · 시간표 또는 기존 기록과 겹친 고정 할 일 ' + d.routine_skipped + '건 보류';
             return msg;
         };
 
@@ -5127,14 +5555,24 @@
             });
         });
         // 콤보에서 고른 값은 '종류:번호'(C:12). 종류를 따로 고르는 칸 없이 한 번에 건다.
-        const applyDayTpl = (pop, kind, tid) => {
-            postForm('/day/apply-template', {
+        let applyingTemplate = false;
+        const applyDayTpl = async (pop, kind, tid) => {
+            if (applyingTemplate) return;
+            applyingTemplate = true;
+            await flushEdits();
+            const result = await postForm('/day/apply-template', {
                 date: pop.dataset.date, kind: kind, template_id: tid,
-            }).then((d) => {
-                if (!d || !d.ok) { toast('적용 실패'); return; }
-                toast(d.cleared ? '이 날 걸어 둔 것을 뗐습니다' : tplApplyMsg(d));
-                setTimeout(() => location.reload(), 1200);   // 칩·격자를 서버 값으로 다시 그린다
             });
+            applyingTemplate = false;
+            if (!result?.ok) {
+                const select = pop.querySelector('.day-tpl-sel');
+                if (select) select.value = '';
+                showTemplateResult(result?.error === 'schedule-in-use'
+                    ? '기록이 있는 날짜의 시간표와 템플릿을 유지했습니다.' : '하루 템플릿을 적용하지 못했습니다.');
+                return;
+            }
+            showTemplateResult(result.cleared ? '하루 템플릿 연결을 해제했습니다. ' + tplApplyMsg(result)
+                : tplApplyMsg(result), true);
         };
         document.querySelectorAll('.day-tpl-pop').forEach((pop) => {
             pop.addEventListener('click', (e) => {
@@ -5154,21 +5592,25 @@
         }
 
         const wkTplSel = document.getElementById('wk-apply-tpl-sel');
-        wkTplSel?.addEventListener('change', () => {
+        const initialTemplate = wkTplSel?.value || '';
+        wkTplSel?.addEventListener('change', async () => {
+            if (applyingTemplate) { wkTplSel.value = initialTemplate; return; }
             const tid = wkTplSel.value;
-            if (!tid) return;
-            postForm('/week/apply-template',
-                     { week_start: wkTplSel.dataset.week, template_id: tid })
-                .then((d) => {
-                    if (!d || !d.ok) {
-                        wkTplSel.value = '';
-                        toast((d && d.error === 'empty-template')
-                            ? '이 주간 템플릿은 고른 것이 없습니다' : '적용 실패');
-                        return;
-                    }
-                    toast(tplApplyMsg(d));
-                    setTimeout(() => location.reload(), 1400);
-                });
+            applyingTemplate = true;
+            wkTplSel.disabled = true;
+            await flushEdits();
+            const result = await postForm('/week/apply-template',
+                { week_start: wkTplSel.dataset.week, template_id: tid });
+            applyingTemplate = false;
+            wkTplSel.disabled = false;
+            if (!result?.ok) {
+                wkTplSel.value = initialTemplate;
+                showTemplateResult(result?.error === 'empty-template'
+                    ? '이 주간 템플릿에 적용할 구성이 없습니다.' : '주간 템플릿을 적용하지 못했습니다.');
+                return;
+            }
+            showTemplateResult(result.cleared ? '주간 템플릿 선택을 비웠습니다. 적용된 기록과 시간표는 유지했습니다.'
+                : tplApplyMsg(result), true);
         });
 
         // 주간 탭: '블록이름'(B1~B6 이번 주 이름). 기본은 접힘.
@@ -5237,7 +5679,7 @@
         // 오늘 탭 '평가'(하루 지표 + 하루 평가·내일 한 가지 + 기록이 빈 슬롯).
         // 날짜 줄 오른쪽 버튼으로 그 자리에서 편다. 빈 슬롯 개수 뱃지는 그대로 둔다.
         const kpiBtn = document.getElementById('kpi-toggle');
-        const kpiLabel = kpiBtn?.firstChild?.nodeValue.trim();
+        const kpiLabel = kpiBtn?.firstChild?.nodeValue?.trim() || '하루 마감';
         kpiBtn?.addEventListener('click', () => {
             const box = document.getElementById('eval-panel');
             if (!box) return;
@@ -5429,7 +5871,9 @@
         // 브라우저 스크롤 복원이 초기 포커스를 덮어쓰지 않도록 수동 처리 후
         // 레이아웃이 끝난 시점(load + 약간의 지연)에 현재 블록으로 이동.
         if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-        const runScroll = () => setTimeout(initialScroll, 180);
+        const runScroll = () => setTimeout(() => {
+            if (Date.now() - lastUserInteract > 400) initialScroll();
+        }, 180);
         if (document.readyState === 'complete') runScroll();
         else window.addEventListener('load', runScroll, { once: true });
         setInterval(tick, TICK_MS);

@@ -51,11 +51,32 @@
                 <span id="save-announcement" class="sr-only" role="status"></span>
                 <span id="now-clock" class="now-clock mono"></span>
                 <button type="button" id="theme-toggle" class="theme-toggle" title="라이트/다크 전환" aria-label="테마 전환">◐</button>
+                <aside id="pomo" class="pomo" aria-label="포모도로 타이머">
+                    <button type="button" class="pomo-dial" title="집중 타이머 (눌러서 컨트롤 열고 닫기)" aria-expanded="false" aria-controls="pomo-controls">
+                        <svg class="pomo-ring" viewBox="0 0 100 100" aria-hidden="true">
+                            <circle class="pomo-ring-track" cx="50" cy="50" r="44"></circle>
+                            <circle class="pomo-ring-prog" cx="50" cy="50" r="44"></circle>
+                        </svg>
+                        <span class="pomo-center">
+                            <span class="pomo-time mono">—</span>
+                            <span class="pomo-phase">대기</span>
+                        </span>
+                    </button>
+                    <div class="pomo-controls" id="pomo-controls">
+                        <div class="pomo-slot mono"></div>
+                        <div class="pomo-actions">
+                            <button type="button" class="pomo-start" title="지금 슬롯 집중 25분 시작">시작</button>
+                            <button type="button" class="pomo-skip"  title="집중을 지금 끝내고 휴식으로(종소리)">완료</button>
+                            <button type="button" class="pomo-stop"  title="기록 없이 조용히 중지">중지</button>
+                        </div>
+                        <button type="button" class="pomo-auto" title="자동 모드 (슬롯이 시작될 때 자동 시작)">AUTO 모드</button>
+                    </div>
+                </aside>
             </div>
         </div>
     </header>
     <div id="stale-banner" class="stale-banner" hidden>
-        <span class="stale-text">오프라인 · 지난 날짜를 보고 있어요. 연결되면 오늘로 자동 이동합니다.</span>
+        <span class="stale-text">한국 날짜가 바뀌었습니다. 연결이 확인되면 오늘로 이동합니다.</span>
         <a href="/today" class="stale-go">오늘로</a>
     </div>
     {% if active in ['settings', 'analytics', 'data'] %}
@@ -68,28 +89,6 @@
     </div>
     {% endif %}
     <main id="main-content" tabindex="-1"{% if active in ['today', 'week', 'plan', 'reflect'] %} class="main-wide main-{{ active }}"{% endif %}>{% block content %}{% endblock %}</main>
-
-    <aside id="pomo" class="pomo" aria-label="포모도로 타이머">
-        <button type="button" class="pomo-dial" title="집중 타이머 (눌러서 컨트롤 열고 닫기)" aria-expanded="false">
-            <svg class="pomo-ring" viewBox="0 0 100 100" aria-hidden="true">
-                <circle class="pomo-ring-track" cx="50" cy="50" r="44"></circle>
-                <circle class="pomo-ring-prog" cx="50" cy="50" r="44"></circle>
-            </svg>
-            <span class="pomo-center">
-                <span class="pomo-time mono">—</span>
-                <span class="pomo-phase">대기</span>
-            </span>
-        </button>
-        <div class="pomo-controls">
-            <div class="pomo-slot mono"></div>
-            <div class="pomo-actions">
-                <button type="button" class="pomo-start" title="지금 슬롯 집중 25분 시작">시작</button>
-                <button type="button" class="pomo-skip"  title="집중을 지금 끝내고 휴식으로(종소리)">완료</button>
-                <button type="button" class="pomo-stop"  title="기록 없이 조용히 중지">중지</button>
-            </div>
-            <button type="button" class="pomo-auto" title="자동 모드 (슬롯이 시작될 때 자동 시작)">AUTO 모드</button>
-        </div>
-    </aside>
 
     <div id="toast" class="toast" aria-live="polite"></div>
 

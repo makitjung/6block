@@ -169,9 +169,7 @@ def _week_view(request: Request, monday: date):
             SELECT COUNT(*) FROM blocks b
             WHERE b.date IN ({placeholders}) AND b.is_core = 1
               AND TRIM(COALESCE(b.plan_text, '')) != ''
-              AND EXISTS (SELECT 1 FROM slots s WHERE s.block_id = b.id
-                          AND (s.done = 1 OR (TRIM(COALESCE(s.do_text, '')) != ''
-                                              AND s.is_routine = 0)))
+              AND EXISTS (SELECT 1 FROM slots s WHERE s.block_id = b.id AND {SLOT_HAS_CONTENT})
             """,
             dates,
         ).fetchone()[0]
@@ -523,6 +521,7 @@ def _schedule_can_change(conn, ds, wanted):
     conn.execute("SAVEPOINT check_schedule")
     _restore_template_fields(conn, ds, "N", "day")
     _restore_template_fields(conn, ds, "C")
+    _restore_template_fields(conn, ds, "T")
     can_change = not _day_has_content(conn, ds)
     if not can_change:
         conn.execute("ROLLBACK TO check_schedule")
@@ -747,7 +746,7 @@ async def week_apply_template(request: Request):
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         if not raw:
-            _mark_applied(conn, "week", ws, "W", None, now)
+            conn.execute("DELETE FROM tpl_applied WHERE scope = 'week' AND key = ?", (ws,))
             return JSONResponse({"ok": True, "cleared": True})
         try:
             tid = int_id(raw)

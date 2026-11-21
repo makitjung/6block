@@ -1,4 +1,5 @@
 # 장기플랜(연·분기·월·주 계획 막대)과 영역·항목 관리를 담당하는 라우터
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from hashlib import sha256
 import json
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.common import (
     KST,
+    RowId,
     _parse_date,
     int_id,
     opt_id,
@@ -35,7 +37,7 @@ def _parse_anchor(anchor: str) -> date:
 
 def _month_last(y: int, m: int) -> date:
     """그 달의 마지막 날."""
-    return (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
+    return date(y, m, monthrange(y, m)[1])
 
 
 def _plan_columns(level: str, anchor: date):
@@ -51,18 +53,19 @@ def _plan_columns(level: str, anchor: date):
     today = datetime.now(KST).date()
     cols: list[dict] = []
     if level == "year":
-        y0 = anchor.year - 1                    # 보고 있는 해가 두 번째
+        y0 = max(1, min(anchor.year - 1, date.max.year - 4))
         for y in range(y0, y0 + 5):
             cols.append({"key": str(y), "label": str(y), "sub": "",
                          "current": y == today.year, "week_link": None,
-                         "drill_level": "quarter", "drill_anchor": f"{y}-01-01",
+                         "drill_level": "quarter", "drill_anchor": date(y, 1, 1).isoformat(),
                          "start": date(y, 1, 1), "end": date(y, 12, 31),
                          "brk": "", "brk_level": ""})
         header = f"{y0}–{y0 + 4}"
     elif level == "quarter":
         q_start = date(anchor.year, (anchor.month - 1) // 3 * 3 + 1, 1)
+        first = min(_add_months(q_start, -3), date(date.max.year, 1, 1))
         for i in range(4):
-            s = _add_months(q_start, (i - 1) * 3)
+            s = _add_months(first, i * 3)
             y, m0 = s.year, s.month
             q = (m0 - 1) // 3 + 1
             cols.append({"key": f"{y}-Q{q}", "label": f"{q}분기",
@@ -70,15 +73,16 @@ def _plan_columns(level: str, anchor: date):
                          "current": y == today.year and (today.month - 1) // 3 + 1 == q,
                          "week_link": None,
                          "drill_level": "month",
-                         "drill_anchor": f"{y}-{m0:02d}-01",
+                         "drill_anchor": s.isoformat(),
                          "start": s, "end": _month_last(y, m0 + 2),
                          "brk": f"{y}년" if (q == 1 and i) else "",
                          "brk_level": "year" if (q == 1 and i) else ""})
         header = _span_header(cols)
     elif level == "month":
         m_start = date(anchor.year, anchor.month, 1)
+        first = min(_add_months(m_start, -1), date(date.max.year, 9, 1))
         for i in range(4):
-            s = _add_months(m_start, i - 1)
+            s = _add_months(first, i)
             y, m = s.year, s.month
             if m == 1:
                 brk, lv = f"{y}년", "year"
@@ -89,17 +93,18 @@ def _plan_columns(level: str, anchor: date):
             cols.append({"key": f"{y}-{m:02d}", "label": f"{m}월", "sub": "",
                          "current": y == today.year and m == today.month,
                          "week_link": None,
-                         "drill_level": "week", "drill_anchor": f"{y}-{m:02d}-01",
+                         "drill_level": "week", "drill_anchor": s.isoformat(),
                          "start": s, "end": _month_last(y, m),
                          "brk": brk if i else "", "brk_level": lv if i else ""})
         header = _span_header(cols)
     else:  # week
         cur_monday = today - timedelta(days=today.weekday())
-        first = anchor - timedelta(days=anchor.weekday() + 7)   # 보고 있는 주가 두 번째
+        last_monday = date.max.toordinal() - date.max.weekday()
+        first = max(1, min(anchor.toordinal() - anchor.weekday() - 7, last_monday - 21))
         prev_month = None
         for i in range(4):
-            monday = first + timedelta(weeks=i)
-            end = monday + timedelta(days=6)
+            monday = date.fromordinal(first + 7 * i)
+            end = date.fromordinal(min(monday.toordinal() + 6, date.max.toordinal()))
             if prev_month is None or monday.month == prev_month:
                 brk, lv = "", ""
             elif monday.month == 1:
@@ -107,7 +112,7 @@ def _plan_columns(level: str, anchor: date):
             else:
                 brk, lv = f"{monday.month}월", "month"
             prev_month = monday.month
-            key = monday.strftime("%Y-%m-%d")
+            key = monday.isoformat()
             cols.append({"key": key, "label": f"{monday.month}/{monday.day}",
                          "sub": f"~{end.month}/{end.day} · {monday.isocalendar()[1]}주",
                          "current": monday == cur_monday, "week_link": key,
@@ -129,15 +134,15 @@ def _span_header(cols) -> str:
 def _plan_nav(level: str, anchor: date):
     """이전/다음 anchor(YYYY-MM-DD 문자열) 쌍. 그 단위 하나만큼만 옮긴다."""
     if level == "year":
-        return f"{anchor.year - 1:04d}-01-01", f"{anchor.year + 1:04d}-01-01"
+        return (date(max(1, anchor.year - 1), 1, 1).isoformat(),
+                date(min(date.max.year, anchor.year + 1), 1, 1).isoformat())
     if level == "quarter":
-        return (_add_months(anchor, -3).strftime("%Y-%m-%d"),
-                _add_months(anchor, 3).strftime("%Y-%m-%d"))
+        return _add_months(anchor, -3).isoformat(), _add_months(anchor, 3).isoformat()
     if level == "month":
-        return (_add_months(anchor, -1).strftime("%Y-%m-%d"),
-                _add_months(anchor, 1).strftime("%Y-%m-%d"))
-    return ((anchor - timedelta(days=7)).strftime("%Y-%m-%d"),
-            (anchor + timedelta(days=7)).strftime("%Y-%m-%d"))
+        return _add_months(anchor, -1).isoformat(), _add_months(anchor, 1).isoformat()
+    ordinal = anchor.toordinal()
+    return (date.fromordinal(max(1, ordinal - 7)).isoformat(),
+            date.fromordinal(min(date.max.toordinal(), ordinal + 7)).isoformat())
 
 
 def _plan_breadcrumb(level: str, anchor: date):
@@ -150,7 +155,7 @@ def _plan_breadcrumb(level: str, anchor: date):
         "month": f"{anchor.month}월",
         "week": f"{monday.month}/{monday.day} 주",
     }
-    a = anchor.strftime("%Y-%m-%d")
+    a = anchor.isoformat()
     idx = PLAN_LEVELS.index(level)
     return [
         {"level": lv, "label": labels[lv], "anchor": a, "current": lv == level}
@@ -356,6 +361,10 @@ def _lt_rollup_parent(conn, parent_id: int | None):
 def _add_months(d: date, n: int) -> date:
     """달을 n개 더한 날짜. 그 달에 없는 날(1/31 + 1개월)은 말일로 맞춘다."""
     y = d.year + (d.month - 1 + n) // 12
+    if y < 1:
+        return date.min
+    if y > date.max.year:
+        return date.max
     m = (d.month - 1 + n) % 12 + 1
     return date(y, m, min(d.day, _month_last(y, m).day))
 
@@ -860,7 +869,7 @@ def _deletion_revision(items: list[dict]) -> str:
 
 
 @router.get("/plan/item/delete-preview/{item_id}")
-def plan_item_delete_preview(item_id: int):
+def plan_item_delete_preview(item_id: RowId):
     with get_conn() as conn:
         conn.execute("BEGIN")
         items = _deletion_items(conn, item_id)
@@ -1022,7 +1031,7 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
         {
             "level": level,
             "level_label": PLAN_LEVEL_LABELS[level],
-            "anchor": a.strftime("%Y-%m-%d"),
+            "anchor": a.isoformat(),
             "columns": cols,
             "header": header,
             "areas": areas,
@@ -1041,14 +1050,14 @@ def plan_view(request: Request, level: str = "week", anchor: str = "", focus: st
             "core_blocks": CORE_BLOCKS,
             "tones": TONES,
             "past_count": past_count,
-            "span_start": span_start.strftime("%Y-%m-%d"),
-            "span_end": span_end.strftime("%Y-%m-%d"),
+            "span_start": span_start.isoformat(),
+            "span_end": span_end.isoformat(),
             # 화면 가로폭을 이 날수로 나눠 픽셀↔날짜를 환산한다(막대를 끈 만큼만 움직이게).
             "span_days": span_days,
             # 오늘 세로선 자리(보이는 기간에 대한 %). 기간 밖이면 None이라 선을 안 그린다.
             "today_pct": (round((today - span_start).days / span_days * 100, 3)
                           if span_start <= today <= span_end else None),
-            "default_start": default_start.strftime("%Y-%m-%d"),
+            "default_start": default_start.isoformat(),
             "default_end": (default_start + timedelta(days=min(6, (span_end - default_start).days))).isoformat(),
         },
     )

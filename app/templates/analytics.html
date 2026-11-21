@@ -26,7 +26,7 @@
             <span class="fn-score-hint">계획 × 구체화 × 실행</span>
         </div>
         <div class="fn-score alt">
-            <span class="fn-score-label">실질 실행율</span>
+            <span class="fn-score-label">코어 슬롯 실행률</span>
             <span class="fn-score-val mono"><strong>{{ funnel.real_exec }}</strong>%</span>
             <span class="fn-score-hint">실행 슬롯 {{ funnel.done_slots }} / 전체 코어 {{ funnel.core_slots }}</span>
         </div>
@@ -48,7 +48,7 @@
             <span class="fn-step-sub mono">실행(done·한일) {{ funnel.executed_detailed }} / {{ funnel.detailed_slots }} · DO 입력 슬롯 중</span>
         </div>
     </div>
-    <p class="funnel-note">실행 점수는 세 단계의 곱이라 한 단계만 낮아도 크게 떨어집니다. 실질 실행율은 분모가 그 기간 코어 시간 전체라 계획을 적게 잡아도 올릴 수 없는 정직한 지표입니다. 7일은 주간, 30일은 월간으로 보세요.</p>
+    <p class="funnel-note">코어 슬롯 실행률은 계획이나 기록이 있는 날의 전체 코어 슬롯 중 ‘한 일’을 적거나 완료 체크를 한 비율입니다.</p>
 </section>
 {% endif %}
 
@@ -134,7 +134,7 @@
         <span class="kpi-value mono"><strong>{{ summary.total_hours }}</strong>h</span>
     </div>
     <div class="kpi">
-        <span class="kpi-label">평균 완료율</span>
+        <span class="kpi-label" title="할 일을 적거나 구분을 정했거나 실행을 기록한 슬롯 중 ‘한 일’ 또는 완료 체크가 있는 비율">평균 완료율</span>
         <span class="kpi-value mono"><strong>{{ summary.avg_done }}</strong>%</span>
     </div>
     <div class="kpi">
@@ -196,7 +196,7 @@
 
 {% if pd_data %}
 <section class="card">
-    <h2 class="card-title">PLAN→DO 달성률 <span class="card-sub">계획한 코어 블록 중 실행한 비율</span></h2>
+    <h2 class="card-title">PLAN→DO 달성률 <span class="card-sub">계획한 코어 블록 중 슬롯에 할 일이나 실행을 남긴 비율</span></h2>
     <div class="trend">
         {% for d in pd_data %}
         <div class="trend-col" title="{{ d.date }} · {{ d.achieved }}/{{ d.planned }}">
@@ -226,7 +226,7 @@
 
 {% if block_pd %}
 <section class="card">
-    <h2 class="card-title">블록별 계획 대비 실행 <span class="card-sub">계획한 코어 블록을 그 시간대에 실행한 비율</span></h2>
+    <h2 class="card-title">블록별 계획 구체화 <span class="card-sub">블록 계획을 그 시간대의 할 일이나 실행 기록으로 이은 비율</span></h2>
     <div class="trend">
         {% for b in block_pd %}
         <div class="trend-col" title="{{ b.label }} · {{ b.achieved }}/{{ b.planned }}">

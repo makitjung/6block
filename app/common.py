@@ -220,9 +220,9 @@ def _day_has_content(conn, date_str: str) -> bool:
     """
     if conn.execute(
         "SELECT 1 FROM slots WHERE date = ? AND ("
-        # 고정 할일만 들어 있는 칸은 사용자 입력이 아니다. 그래야 설정에서 블록 시간을
-        # 바꿨을 때 그 날이 새 시간표로 다시 만들어진다(고정 할일은 템플릿을 다시 고르면 복구).
-        "(is_routine = 0 AND (TRIM(COALESCE(do_text,'')) != '' OR category_id IS NOT NULL)) "
+        # 고정 할일과 별도로 구분을 직접 골랐을 수 있다. 시간표 적용이 명확히
+        # 템플릿에서 가져온 구분만 먼저 복원하고 이 판정에 맡긴다.
+        "(is_routine = 0 AND TRIM(COALESCE(do_text,'')) != '') OR category_id IS NOT NULL "
         "OR TRIM(COALESCE(did_text,'')) != '' OR done = 1 "
         # 그 주 할 일에 이어 둔 슬롯도 사용자 입력이다.
         "OR TRIM(COALESCE(wk_todo,'')) != '') LIMIT 1",
@@ -251,9 +251,9 @@ def _day_has_content(conn, date_str: str) -> bool:
 # 계획(do_text)·한 일(did_text)·완료 체크 중 하나라도 있으면 기록으로 본다. 다만 고정
 # 할일이 채워 넣은 칸은 사람이 적은 것이 아니라, 체크했거나 한 일을 적었을 때만 센다
 # (_day_has_content 와 같은 기준).
+SLOT_EXECUTED = "(s.done = 1 OR TRIM(COALESCE(s.did_text, '')) != '')"
 SLOT_HAS_CONTENT = (
-    "((s.is_routine = 0 AND TRIM(COALESCE(s.do_text, '')) != '') "
-    "OR TRIM(COALESCE(s.did_text, '')) != '' OR s.done = 1)"
+    f"((s.is_routine = 0 AND TRIM(COALESCE(s.do_text, '')) != '') OR {SLOT_EXECUTED})"
 )
 
 
@@ -267,22 +267,26 @@ def _has_applied_day_values(conn, date_str: str) -> bool:
 
 def ensure_day_skeleton(conn, date_str: str, *, schedule_change=False):
     """블록·슬롯이 없으면 생성한다. 설정이 바뀌었고 입력이 없는 날은 새 배치로 자동 재생성한다."""
-    day_blocks = day_blocks_for(date_str, conn)
-    if conn.execute(
-        "SELECT 1 FROM blocks WHERE date = ? LIMIT 1", (date_str,)
-    ).fetchone():
-        # 골격이 현재 설정과 같거나, 사용자가 입력한 내용이 있으면 그대로 둔다.
+    def needs_rebuild(day_blocks):
         if _skeleton_matches_config(conn, date_str, day_blocks) or _day_has_content(conn, date_str):
-            return
+            return False
         # An explicit template change clears and reapplies these copies together.
         # Browsing an older date must not erase its routine after a settings edit.
-        if not schedule_change and _has_applied_day_values(conn, date_str):
+        return schedule_change or not _has_applied_day_values(conn, date_str)
+
+    day_blocks = day_blocks_for(date_str, conn)
+    if not needs_rebuild(day_blocks):
+        return
+    if not conn.in_transaction:
+        # A browser write can arrive after the initial read. Acquire the write
+        # lock and check again before replacing any IDs or recorded fields.
+        conn.execute("BEGIN IMMEDIATE")
+        day_blocks = day_blocks_for(date_str, conn)
+        if not needs_rebuild(day_blocks):
             return
-        # 설정이 바뀌었고 입력이 없는 날은 옛 골격을 지우고 새 배치로 다시 만든다.
-        conn.execute("DELETE FROM slots WHERE date = ?", (date_str,))
-        conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
-        conn.execute("DELETE FROM template_values WHERE date = ? AND table_name IN ('blocks','slots')",
-                     (date_str,))
+    conn.execute("DELETE FROM blocks WHERE date = ?", (date_str,))
+    conn.execute("DELETE FROM template_values WHERE date = ? AND table_name IN ('blocks','slots')",
+                 (date_str,))
     now = datetime.now(KST).isoformat(timespec="seconds")
     # 점심·저녁 버퍼 블록은 기본 구분을 '기타'로 시드해 시간 분포 통계에 잡히게 한다.
     etc_row = conn.execute(

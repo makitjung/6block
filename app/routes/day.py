@@ -215,16 +215,17 @@ def _day_view(request: Request, date_str: str):
         inbox = conn.execute(
             "SELECT id, text FROM inbox WHERE done = 0 ORDER BY id DESC"
         ).fetchall()
-        # '다시 볼 날짜'가 이 날짜인 고민·감상(그날 다시 보라고 잡아둔 것)
         # 그날에 걸친 장기 계획(장기 탭 막대)을 오늘 화면 위에 띠로 노출
         lt_today = _lt_items_on(conn, d)
         # 그 주 '목표' 열에 적은 할 일 목록. 블록·슬롯을 여기에 이어 둔다(글은 직접 입력).
         wk_todos = week_todos(conn, wk_start)
+        # 다시보기 사본이 있어도 화면과 메모 편집의 대상은 원본 한 건이다.
         due_reflections = conn.execute(
-            "SELECT id, kind, title, text, tags, event_date, review_note FROM reflection "
-            "WHERE (review_date = ? AND source_id IS NULL) "
-            "   OR (source_id IS NOT NULL AND event_date = ?) "
-            "ORDER BY id DESC",
+            "SELECT r.id, r.kind, r.title, r.text, r.tags, r.event_date, r.review_note "
+            "FROM reflection r WHERE r.source_id IS NULL AND r.id IN ("
+            "SELECT id FROM reflection WHERE source_id IS NULL AND review_date = ? "
+            "UNION SELECT source_id FROM reflection WHERE source_id IS NOT NULL AND event_date = ?"
+            ") ORDER BY r.id DESC",
             (date_str, date_str),
         ).fetchall()
 
@@ -250,7 +251,8 @@ def _day_view(request: Request, date_str: str):
     for b in blocks:
         if b["is_core"] and (b["plan_text"] or "").strip():
             core_planned += 1
-            if any(s["done"] or (not s["is_routine"] and (s["do_text"] or "").strip())
+            if any(s["done"] or (s["did_text"] or "").strip()
+                   or (not s["is_routine"] and (s["do_text"] or "").strip())
                    for s in slots_by_block.get(b["id"], [])):
                 core_achieved += 1
     day_stats = {
@@ -618,6 +620,7 @@ async def save_field(request: Request):
             current = row[col]
             stored = value
             submitted = value
+            normalize = None
             if field == "bname":
                 # 일간 덮어쓰기 판정을 위해 주간 이름과 비교(None이면 상속)
                 wk = week_start(
@@ -635,12 +638,17 @@ async def save_field(request: Request):
                 if form.get("name_view") != "override":
                     current = current or inherited
                     submitted = stored or inherited
+                else:
+                    def normalize_override(text):
+                        return _name_override(text, inherited) or ""
+
+                    normalize = normalize_override
             elif field == "bcat":
                 stored = opt_id(value)
                 submitted = stored
             elif field in ("bloc", "wk_todo"):
                 stored = value or None
-            error = _edit_conflict(form, current, submitted)
+            error = _edit_conflict(form, current, submitted, normalize=normalize)
             if error is not None:
                 return error
             conn.execute(
@@ -738,6 +746,8 @@ async def save_field(request: Request):
             item_id = opt_id(form.get("id"))
             if not _parse_date(ws) or item_id is None:
                 return JSONResponse({"ok": False, "error": "bad-input"}, status_code=400)
+            if not conn.execute("SELECT 1 FROM lt_item WHERE id = ?", (item_id,)).fetchone():
+                return JSONResponse({"ok": False, "error": "not-found"}, status_code=404)
             row = conn.execute("SELECT goal_text FROM weekly_lt_goal WHERE week_start = ? AND item_id = ?",
                                (ws, item_id)).fetchone()
             error = _edit_conflict(form, row["goal_text"] if row else None, value.strip())
@@ -760,7 +770,7 @@ async def save_field(request: Request):
                 return JSONResponse({"ok": False, "error": "bad-label"}, status_code=400)
             row = conn.execute("SELECT theme_text FROM weekly_block_themes WHERE week_start = ? AND block_label = ?",
                                (ws, label)).fetchone()
-            error = _edit_conflict(form, row["theme_text"] if row else None, value)
+            error = _edit_conflict(form, row["theme_text"] if row else None, value, normalize=str.strip)
             if error is not None:
                 return error
             conn.execute(

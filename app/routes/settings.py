@@ -15,6 +15,7 @@ from app.common import (
     CORE_LABELS,
     KO_WEEKDAYS,
     KST,
+    SLOT_HAS_CONTENT,
     TPL_KIND_KEYS,
     TPL_KINDS,
     _off_loop,
@@ -304,15 +305,14 @@ def settings_view(request: Request):
 def _data_summary() -> dict:
     """데이터 탭 요약(기록 일수·슬롯 수·기간·미처리 수집함·활성 구분)."""
     with get_conn() as conn:
-        rec_filter = "(do_text IS NOT NULL AND TRIM(do_text) != '') OR done = 1"
         rec_days = conn.execute(
-            f"SELECT COUNT(DISTINCT date) FROM slots WHERE {rec_filter}"
+            f"SELECT COUNT(DISTINCT date) FROM slots s WHERE {SLOT_HAS_CONTENT}"
         ).fetchone()[0]
         slot_recs = conn.execute(
-            f"SELECT COUNT(*) FROM slots WHERE {rec_filter}"
+            f"SELECT COUNT(*) FROM slots s WHERE {SLOT_HAS_CONTENT}"
         ).fetchone()[0]
         span = conn.execute(
-            f"SELECT MIN(date), MAX(date) FROM slots WHERE {rec_filter}"
+            f"SELECT MIN(date), MAX(date) FROM slots s WHERE {SLOT_HAS_CONTENT}"
         ).fetchone()
         inbox_open = conn.execute(
             "SELECT COUNT(*) FROM inbox WHERE done = 0"

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.common import (
     KO_WEEKDAYS,
     KST,
+    SLOT_EXECUTED,
     SLOT_HAS_CONTENT,
     _ko_weekday,
     _like_pattern,
@@ -121,23 +122,32 @@ def _ai_insights(summary, weekday_data, block_pd, cats) -> str | None:
     return ai.complete(system, metrics, max_tokens=400, temperature=0.5)
 
 
+_ACTIVITY_DATES = (
+    "SELECT s.date FROM slots s WHERE s.date BETWEEN :start AND :end "
+    f"AND {SLOT_HAS_CONTENT} "
+    "UNION SELECT b.date FROM blocks b WHERE b.date BETWEEN :start AND :end AND b.is_core = 1 "
+    "AND (b.category_id IS NOT NULL OR TRIM(COALESCE(b.plan_text, '')) != '')"
+)
+
+
 def _exec_funnel(conn, start, end):
     """실행 퍼널: 코어 블록 계획(구분) → 슬롯 구체화(DO) → 슬롯 실행(done·한일) 3단계 비율과,
-    실행 점수(3단계 곱)·실질 실행율(실행 슬롯/전체 코어 슬롯)을 [start,end] 기간으로 계산한다.
+    계획이나 기록이 있는 날의 코어 슬롯을 분모로 삼아, 조회로 만들어진 빈 날짜는 제외한다.
     계획된 블록 = 구분(category_id)을 넣은 코어 블록. 실행 = done 체크 또는 '한일'(did_text) 기록.
     고정 할일이 채운 칸(is_routine=1)은 사람이 세운 계획이 아니므로 구체화에서 뺀다."""
+    period = {"start": start, "end": end}
     b = conn.execute(
         "SELECT COUNT(*) AS core_blocks, "
         "SUM(CASE WHEN category_id IS NOT NULL THEN 1 ELSE 0 END) AS designed_blocks "
-        "FROM blocks WHERE is_core = 1 AND date >= ? AND date <= ?",
-        (start, end),
+        f"FROM blocks WHERE is_core = 1 AND date IN ({_ACTIVITY_DATES})",
+        period,
     ).fetchone()
     s = conn.execute(
         "SELECT COUNT(*) AS slots_in_designed, "
         "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' AND s.is_routine = 0 "
         "         THEN 1 ELSE 0 END) AS detailed_slots, "
         "SUM(CASE WHEN TRIM(COALESCE(s.do_text,'')) != '' AND s.is_routine = 0 "
-        "         AND (s.done = 1 OR TRIM(COALESCE(s.did_text,'')) != '') THEN 1 ELSE 0 END) AS executed_detailed "
+        f"         AND {SLOT_EXECUTED} THEN 1 ELSE 0 END) AS executed_detailed "
         "FROM slots s JOIN blocks b ON b.id = s.block_id "
         "WHERE b.is_core = 1 AND b.category_id IS NOT NULL "
         "  AND s.date >= ? AND s.date <= ?",
@@ -145,10 +155,10 @@ def _exec_funnel(conn, start, end):
     ).fetchone()
     a = conn.execute(
         "SELECT COUNT(*) AS core_slots, "
-        "SUM(CASE WHEN s.done = 1 OR TRIM(COALESCE(s.did_text,'')) != '' THEN 1 ELSE 0 END) AS done_slots "
+        f"SUM(CASE WHEN {SLOT_EXECUTED} THEN 1 ELSE 0 END) AS done_slots "
         "FROM slots s JOIN blocks b ON b.id = s.block_id "
-        "WHERE b.is_core = 1 AND s.date >= ? AND s.date <= ?",
-        (start, end),
+        f"WHERE b.is_core = 1 AND s.date IN ({_ACTIVITY_DATES})",
+        period,
     ).fetchone()
     core_blocks = b["core_blocks"] or 0
     designed = b["designed_blocks"] or 0
@@ -177,7 +187,10 @@ def _analytics_data(rng: str) -> dict:
     today_s = today.strftime("%Y-%m-%d")
     with get_conn() as conn:
         if rng == "all":
-            row = conn.execute("SELECT MIN(date) FROM slots").fetchone()
+            row = conn.execute(
+                f"SELECT MIN(date) FROM ({_ACTIVITY_DATES})",
+                {"start": "0001-01-01", "end": today_s},
+            ).fetchone()
             start = row[0] or today_s
             range_label = "전체"
         else:
@@ -206,12 +219,10 @@ def _analytics_data(rng: str) -> dict:
         # 늘어서 '그날 다 흘려보냈다'처럼 보였다.
         day_rows = conn.execute(
             "SELECT date, "
-            "SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) AS done_cnt, "
-            # 고정 할일 칸은 계획으로 세지 않는다. 다만 체크(done)한 칸은 실행 막대가
-            # 계획 막대를 넘지 않도록 계획에도 넣는다.
-            "SUM(CASE WHEN (is_routine = 0 AND ((do_text IS NOT NULL AND TRIM(do_text) != '') "
-            "                                   OR category_id IS NOT NULL)) "
-            "         OR done = 1 THEN 1 ELSE 0 END) AS planned_cnt "
+            f"SUM(CASE WHEN {SLOT_EXECUTED} THEN 1 ELSE 0 END) AS done_cnt, "
+            # 계획이나 실행을 남긴 슬롯을 기준으로 하루 완료율을 낸다.
+            f"SUM(CASE WHEN ({SLOT_HAS_CONTENT} OR (s.is_routine = 0 AND s.category_id IS NOT NULL)) "
+            "         THEN 1 ELSE 0 END) AS planned_cnt "
             "FROM slots s WHERE date >= ? AND date <= ? GROUP BY date "
             f"HAVING SUM(CASE WHEN {SLOT_HAS_CONTENT} THEN 1 ELSE 0 END) > 0 "
             "ORDER BY date",
@@ -219,9 +230,7 @@ def _analytics_data(rng: str) -> dict:
         ).fetchall()
         pd_rows = conn.execute(
             "SELECT b.date, COUNT(*) AS planned, "
-            "SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id "
-            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '' AND s.is_routine = 0) "
-            "         OR s.done = 1)) "
+            f"SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id AND {SLOT_HAS_CONTENT}) "
             "    THEN 1 ELSE 0 END) AS achieved "
             "FROM blocks b WHERE b.is_core = 1 AND TRIM(COALESCE(b.plan_text, '')) != '' "
             "  AND b.date >= ? AND b.date <= ? GROUP BY b.date ORDER BY b.date",
@@ -230,9 +239,7 @@ def _analytics_data(rng: str) -> dict:
         # 블록별(B1~B6) 계획 대비 실행: 어느 시간대를 반복적으로 흘려보내는지 본다.
         block_pd_rows = conn.execute(
             "SELECT b.block_label AS lbl, MIN(b.block_order) AS ord, COUNT(*) AS planned, "
-            "SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id "
-            "    AND ((s.do_text IS NOT NULL AND TRIM(s.do_text) != '' AND s.is_routine = 0) "
-            "         OR s.done = 1)) "
+            f"SUM(CASE WHEN EXISTS(SELECT 1 FROM slots s WHERE s.block_id = b.id AND {SLOT_HAS_CONTENT}) "
             "    THEN 1 ELSE 0 END) AS achieved "
             "FROM blocks b WHERE b.is_core = 1 AND TRIM(COALESCE(b.plan_text, '')) != '' "
             "  AND b.date >= ? AND b.date <= ? GROUP BY b.block_label ORDER BY ord",
