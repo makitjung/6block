@@ -10,8 +10,29 @@ import pytest
 from app import db
 from app.common import today_str
 from app.integrations import gcal_write, reflection_sync
-from app.routes import settings
+from app.routes import reflect, settings
 from scripts import backup
+
+
+def test_reflect_renders_current_template_with_previous_server_context(client, monkeypatch):
+    current_context = reflect._reflect_ctx
+
+    def previous_context(*args, **kwargs):
+        ctx = current_context(*args, **kwargs)
+        for key in ("sync_status", "page", "pages", "total", "tag", "focus"):
+            del ctx[key]
+        ctx["gcal_write_on"] = True
+        return ctx
+
+    assert client.post("/reflect/add", data={"kind": "고민", "title": "검색할 기록"}).json()["ok"]
+    monkeypatch.setattr(reflect, "_reflect_ctx", previous_context)
+
+    for path in ("/reflect", "/reflect?q=검색할"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "검색할 기록" in response.text
+        assert 'id="rf-sync-status"' in response.text
+        assert 'data-page="1"' in response.text
 
 
 def test_day_review_shows_original_once_and_legacy_copy_link_edits_original(client):

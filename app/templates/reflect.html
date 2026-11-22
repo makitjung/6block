@@ -31,7 +31,7 @@
             <div class="rf-errbox" id="rf-errbox" hidden></div>
             <textarea id="rf-text" class="rf-text" rows="15" aria-label="고결감 내용" placeholder="내용"></textarea>
             {% if gcal_write_on %}
-            <p class="rf-sync-status" id="rf-sync-status" role="status">{% if sync_status.pending %}캘린더 반영 대기 {{ sync_status.pending }}건{% endif %}</p>
+            <p class="rf-sync-status" id="rf-sync-status" role="status">{% if sync_status is defined and sync_status.pending %}캘린더 반영 대기 {{ sync_status.pending }}건{% endif %}</p>
             {% endif %}
         </section>
 
@@ -57,7 +57,7 @@
         </div>
         <div class="rf-tagchips" id="rf-tagchips" hidden></div>
 
-        <div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}" data-page="{{ page }}" data-focus="{{ focus or '' }}">
+        <div class="reflect-grid" id="reflect-list" data-sig="{{ sig }}" data-page="{{ page | default(1) }}" data-focus="{{ focus or '' }}">
             {% include "_reflect_list.html" %}
         </div>
     </div>

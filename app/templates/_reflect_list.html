@@ -3,7 +3,7 @@
    카드는 크기가 같아야 목록을 눈으로 훑을 수 있다. 머리 1줄·제목 1줄·본문 2줄·메타 1줄로
    못 박고 넘치는 것은 카드를 눌러 여는 창에서 본다(Record 고결감과 같은 구성, 2026-08-03).
    다시보기 사본은 본문 자리에 다시 볼 내용을 세우고, 구분선 아래 원본 제목만 남긴다. #}
-{% if total or q or tag %}
+{% if pages is defined and (total or q or tag) %}
 <nav class="rf-pages" aria-label="고결감 목록 페이지">
     <span role="status">{{ total }}건{% if pages > 1 %} · {{ page }}/{{ pages }} 페이지{% endif %}</span>
     {% if page > 1 %}
